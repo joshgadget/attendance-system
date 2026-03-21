@@ -1,0 +1,1100 @@
+
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Bell,
+  BookOpen,
+  Calendar,
+  Camera,
+  CheckCircle2,
+  Clock3,
+  GraduationCap,
+  LayoutDashboard,
+  LoaderCircle,
+  LogOut,
+  RefreshCcw,
+  Search,
+  Send,
+  ShieldCheck,
+  UserPlus,
+  Users,
+  XCircle,
+} from 'lucide-react';
+import QRCode from 'qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
+import { useDispatch, useSelector } from 'react-redux';
+import api from '../services/api';
+import { logout } from '../redux/slices/authSlice';
+
+const initialUserForm = { firstName: '', lastName: '', email: '', password: '', role: 'student', department: '', faculty: '', program: '', matricNumber: '' };
+const initialCourseForm = { courseCode: '', courseName: '', description: '', semester: 'rain', academicYear: '', lecturerId: '' };
+const initialRegistryForm = { matricNumber: '', firstName: '', lastName: '', otherName: '', faculty: '', department: '', program: '', level: '', admissionYear: '' };
+const initialSessionForm = { courseId: '', date: '', startTime: '', durationMinutes: '120', venue: '', maxAttendanceTime: '15', geofenceLatitude: '', geofenceLongitude: '', geofenceRadiusMeters: '' };
+const initialQueryForm = { studentId: '', sessionId: '', title: '', message: '' };
+const initialAttendanceForm = { sessionCode: '', useLocation: true };
+
+const TABS_BY_ROLE = {
+  admin: ['overview', 'users', 'registry', 'courses'],
+  lecturer: ['overview', 'courses', 'sessions', 'queries'],
+  student: ['overview', 'courses', 'attendance', 'queries'],
+};
+
+const TAB_LABELS = {
+  overview: 'Overview',
+  users: 'Users',
+  registry: 'Registry',
+  courses: 'Courses',
+  sessions: 'Sessions',
+  attendance: 'Attendance',
+  queries: 'Queries',
+};
+
+const toneByRole = {
+  admin: 'from-slate-900 via-blue-800 to-sky-500',
+  lecturer: 'from-blue-900 via-blue-700 to-sky-400',
+  student: 'from-cyan-900 via-blue-700 to-sky-500',
+};
+
+const formatDate = (value) => (value ? new Date(value).toLocaleDateString() : 'Not set');
+const formatDateTime = (value) => (value ? new Date(value).toLocaleString() : 'Not available');
+const formatTime = (value) => (value ? String(value).slice(0, 5) : 'Not set');
+const fullName = (person) => [person?.firstName, person?.lastName].filter(Boolean).join(' ') || 'No name';
+const normalizeSearch = (value) => String(value || '').toLowerCase();
+const includesSearch = (value, search) => normalizeSearch(value).includes(normalizeSearch(search));
+
+const getCurrentLocation = () =>
+  new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+    );
+  });
+
+const extractSessionCode = (decodedText) => {
+  try {
+    const parsed = JSON.parse(decodedText);
+    return parsed.sessionCode || decodedText.trim();
+  } catch (error) {
+    return decodedText.trim();
+  }
+};
+
+const Panel = ({ title, eyebrow, action, children }) => (
+  <section className="rounded-[2rem] border border-white/70 bg-white/90 p-6 shadow-[0_20px_60px_rgba(148,163,184,0.14)] backdrop-blur-xl">
+    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        {eyebrow && <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-500">{eyebrow}</p>}
+        <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">{title}</h2>
+      </div>
+      {action}
+    </div>
+    {children}
+  </section>
+);
+
+const StatCard = ({ label, value, helper, icon: Icon, tone }) => (
+  <div className="rounded-[1.75rem] border border-white/70 bg-white/90 p-6 shadow-[0_20px_50px_rgba(148,163,184,0.14)]">
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <p className="text-sm font-medium text-slate-500">{label}</p>
+        <p className="mt-2 text-3xl font-bold text-slate-950">{value}</p>
+        <p className="mt-2 text-sm text-slate-500">{helper}</p>
+      </div>
+      <div className={`rounded-2xl p-3 ${tone}`}>
+        <Icon className="h-6 w-6 text-white" />
+      </div>
+    </div>
+  </div>
+);
+
+const EmptyState = ({ title, description }) => (
+  <div className="rounded-[1.5rem] border border-dashed border-blue-200 bg-blue-50/60 p-6 text-sm text-slate-600">
+    <p className="font-semibold text-slate-800">{title}</p>
+    <p className="mt-2 leading-6">{description}</p>
+  </div>
+);
+
+const Badge = ({ children, tone = 'blue' }) => {
+  const toneClasses = {
+    blue: 'border-blue-200 bg-blue-50 text-blue-700',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    amber: 'border-amber-200 bg-amber-50 text-amber-700',
+    slate: 'border-slate-200 bg-slate-50 text-slate-600',
+    rose: 'border-rose-200 bg-rose-50 text-rose-700',
+  };
+
+  return <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${toneClasses[tone]}`}>{children}</span>;
+};
+
+const SummaryTile = ({ label, value, helper }) => (
+  <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
+    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
+    <p className="mt-3 text-2xl font-bold text-slate-950">{value}</p>
+    <p className="mt-2 text-sm leading-6 text-slate-500">{helper}</p>
+  </div>
+);
+
+const ActionTile = ({ title, description }) => (
+  <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
+    <div className="flex items-start gap-3">
+      <LayoutDashboard className="mt-1 h-5 w-5 text-blue-600" />
+      <div>
+        <p className="font-semibold text-slate-900">{title}</p>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
+      </div>
+    </div>
+  </div>
+);
+
+const Input = ({ label, onChange, ...props }) => (
+  <div>
+    <label className="mb-2 block text-sm font-semibold text-slate-700">{label}</label>
+    <input onChange={(event) => onChange(event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" {...props} />
+  </div>
+);
+
+const Select = ({ label, value, onChange, options }) => (
+  <div>
+    <label className="mb-2 block text-sm font-semibold text-slate-700">{label}</label>
+    <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100">
+      {options.map((option) => (
+        <option key={`${option.value}-${option.label}`} value={option.value}>{option.label}</option>
+      ))}
+    </select>
+  </div>
+);
+
+const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
+  const [scannerError, setScannerError] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) {
+      setScannerError('');
+      return undefined;
+    }
+
+    let cancelled = false;
+    const scanner = new Html5Qrcode('attendance-qr-reader');
+
+    scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: 220 },
+      async (decodedText) => {
+        if (cancelled) {
+          return;
+        }
+
+        const code = extractSessionCode(decodedText);
+
+        try {
+          await onDetected(code);
+        } finally {
+          cancelled = true;
+          if (scanner.isScanning) {
+            await scanner.stop();
+          }
+          await scanner.clear();
+          onClose();
+        }
+      },
+      () => {}
+    ).catch(() => {
+      setScannerError('Camera scanner could not start. You can still enter the session code manually.');
+    });
+
+    return () => {
+      cancelled = true;
+      if (scanner.isScanning) {
+        scanner.stop().catch(() => null).finally(() => scanner.clear().catch(() => null));
+      } else {
+        scanner.clear().catch(() => null);
+      }
+    };
+  }, [isOpen, onClose, onDetected]);
+
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-[2rem] border border-white/20 bg-white p-6 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-500">QR scanner</p>
+            <h3 className="mt-2 text-xl font-bold text-slate-950">Scan attendance code</h3>
+          </div>
+          <button onClick={onClose} className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600">Close</button>
+        </div>
+        <div id="attendance-qr-reader" className="overflow-hidden rounded-[1.5rem] border border-blue-100" />
+        {scannerError && <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{scannerError}</p>}
+      </div>
+    </div>
+  );
+};
+
+const Dashboard = () => {
+  const dispatch = useDispatch();
+  const { user } = useSelector((state) => state.auth);
+  const role = user?.role || 'student';
+  const tabs = TABS_BY_ROLE[role] || TABS_BY_ROLE.student;
+
+  const [activeTab, setActiveTab] = useState(tabs[0]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [busyAction, setBusyAction] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [search, setSearch] = useState('');
+
+  const [summary, setSummary] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [lecturers, setLecturers] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [registry, setRegistry] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [queries, setQueries] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [sessionDetail, setSessionDetail] = useState(null);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [bulkRegistry, setBulkRegistry] = useState('');
+  const [registryFileName, setRegistryFileName] = useState('');
+  const [responseDrafts, setResponseDrafts] = useState({});
+
+  const [userForm, setUserForm] = useState(initialUserForm);
+  const [courseForm, setCourseForm] = useState(initialCourseForm);
+  const [registryForm, setRegistryForm] = useState(initialRegistryForm);
+  const [sessionForm, setSessionForm] = useState(initialSessionForm);
+  const [queryForm, setQueryForm] = useState(initialQueryForm);
+  const [attendanceForm, setAttendanceForm] = useState(initialAttendanceForm);
+
+  const activeSession = useMemo(() => sessions.find((session) => session.status === 'active') || null, [sessions]);
+
+  useEffect(() => {
+    setActiveTab(tabs[0]);
+  }, [tabs]);
+
+  const setMessage = (nextSuccess = '', nextError = '') => {
+    setSuccess(nextSuccess);
+    setError(nextError);
+  };
+
+  const loadSessionDetail = useCallback(async (sessionId) => {
+    if (!sessionId) {
+      setSessionDetail(null);
+      setQrDataUrl('');
+      return;
+    }
+
+    const response = await api.get(`/attendance/sessions/${sessionId}`);
+    const detail = response.data.data;
+    setSessionDetail(detail);
+
+    if (detail?.sessionCode) {
+      const dataUrl = await QRCode.toDataURL(JSON.stringify({ sessionCode: detail.sessionCode }), {
+        width: 320,
+        margin: 2,
+        color: { dark: '#0f172a', light: '#ffffff' },
+      });
+      setQrDataUrl(dataUrl);
+    }
+  }, []);
+
+  const loadData = useCallback(async (spin = false) => {
+    try {
+      setError('');
+      if (spin) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      if (role === 'admin') {
+        const [summaryResponse, usersResponse, lecturersResponse, studentsResponse, coursesResponse, registryResponse] = await Promise.all([
+          api.get('/users/summary'),
+          api.get('/users'),
+          api.get('/users/lecturers'),
+          api.get('/users/students'),
+          api.get('/courses'),
+          api.get('/registry'),
+        ]);
+
+        setSummary(summaryResponse.data.data);
+        setUsers(usersResponse.data.data || []);
+        setLecturers(lecturersResponse.data.data || []);
+        setStudents(studentsResponse.data.data || []);
+        setCourses(coursesResponse.data.data || []);
+        setRegistry(registryResponse.data.data || []);
+        setSessions([]);
+        setQueries([]);
+        setHistory([]);
+        setSessionDetail(null);
+        setQrDataUrl('');
+      }
+
+      if (role === 'lecturer') {
+        const [myCoursesResponse, studentsResponse, sessionsResponse, queriesResponse] = await Promise.all([
+          api.get('/courses/mine'),
+          api.get('/users/students'),
+          api.get('/attendance/sessions'),
+          api.get('/queries'),
+        ]);
+
+        const lecturerSessions = sessionsResponse.data.data || [];
+        setCourses(myCoursesResponse.data.data || []);
+        setStudents(studentsResponse.data.data || []);
+        setSessions(lecturerSessions);
+        setQueries(queriesResponse.data.data || []);
+        setSummary({
+          totalCourses: (myCoursesResponse.data.data || []).length,
+          activeSessions: lecturerSessions.filter((session) => session.status === 'active').length,
+          pendingQueries: (queriesResponse.data.data || []).filter((query) => query.status === 'pending').length,
+          totalStudents: studentsResponse.data.data?.length || 0,
+        });
+
+        const preferredSessionId = sessionDetail?.id || lecturerSessions[0]?.id;
+        if (preferredSessionId) {
+          await loadSessionDetail(preferredSessionId);
+        } else {
+          setSessionDetail(null);
+          setQrDataUrl('');
+        }
+      }
+
+      if (role === 'student') {
+        const [myCoursesResponse, historyResponse, queriesResponse] = await Promise.all([
+          api.get('/courses/mine'),
+          api.get('/attendance/history'),
+          api.get('/queries'),
+        ]);
+
+        const myHistory = historyResponse.data.data || [];
+        const myQueries = queriesResponse.data.data || [];
+        setCourses(myCoursesResponse.data.data || []);
+        setHistory(myHistory);
+        setQueries(myQueries);
+        setSessions([]);
+        setSessionDetail(null);
+        setQrDataUrl('');
+        setSummary({
+          totalCourses: (myCoursesResponse.data.data || []).length,
+          totalAttendanceMarks: myHistory.length,
+          pendingQueries: myQueries.filter((query) => query.status === 'pending').length,
+          lateMarks: myHistory.filter((item) => item.status === 'late').length,
+        });
+      }
+    } catch (loadError) {
+      setError(loadError.response?.data?.message || 'Dashboard data could not be loaded.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [loadSessionDetail, role, sessionDetail?.id]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleCreateUser = async (event) => {
+    event.preventDefault();
+    try {
+      setBusyAction('create-user');
+      setMessage();
+      await api.post('/auth/register', userForm);
+      setUserForm(initialUserForm);
+      setMessage('User account created successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'User account could not be created.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleCreateCourse = async (event) => {
+    event.preventDefault();
+    try {
+      setBusyAction('create-course');
+      setMessage();
+      await api.post('/courses', courseForm);
+      setCourseForm(initialCourseForm);
+      setMessage('Course created successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Course could not be created.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleArchiveCourse = async (courseId) => {
+    try {
+      setBusyAction(`archive-course-${courseId}`);
+      setMessage();
+      await api.delete(`/courses/${courseId}`);
+      setMessage('Course archived successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Course could not be archived.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleCreateRegistryRecord = async (event) => {
+    event.preventDefault();
+    try {
+      setBusyAction('create-registry');
+      setMessage();
+      await api.post('/registry', registryForm);
+      setRegistryForm(initialRegistryForm);
+      setMessage('Student registry record saved successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Registry record could not be saved.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleBulkRegistryImport = async () => {
+    try {
+      setBusyAction('bulk-registry');
+      setMessage();
+      const records = JSON.parse(bulkRegistry);
+      await api.post('/registry/bulk', { records });
+      setBulkRegistry('');
+      setMessage('Registry records imported successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      const message = actionError instanceof SyntaxError ? 'Bulk registry import must be valid JSON.' : actionError.response?.data?.message || 'Bulk registry import failed.';
+      setMessage('', message);
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const normalizeHeader = (value) => String(value || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+
+  const parseCsvRow = (row) => {
+    const values = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let index = 0; index < row.length; index += 1) {
+      const char = row[index];
+      if (char === '"') {
+        if (inQuotes && row[index + 1] === '"') {
+          current += '"';
+          index += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        values.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+
+    values.push(current.trim());
+    return values.map((value) => value.replace(/^"|"$/g, ''));
+  };
+
+  const splitName = (name) => {
+    const pieces = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (pieces.length === 0) {
+      return { firstName: '', lastName: '' };
+    }
+    if (pieces.length === 1) {
+      return { firstName: pieces[0], lastName: pieces[0] };
+    }
+    return { firstName: pieces[0], lastName: pieces[pieces.length - 1] };
+  };
+
+  const handleRegistryCsvUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      setBusyAction('bulk-registry-csv');
+      setMessage();
+      setRegistryFileName(file.name);
+
+      const content = await file.text();
+      const lines = content
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      if (lines.length < 2) {
+        throw new Error('CSV file must include a header row and at least one student row');
+      }
+
+      const headers = parseCsvRow(lines[0]).map(normalizeHeader);
+      const records = lines.slice(1).map((line) => {
+        const values = parseCsvRow(line);
+        const row = {};
+        headers.forEach((header, index) => {
+          row[header] = values[index] || '';
+        });
+
+        const fullName = row.fullname || row.studentname || row.name || '';
+        const derivedName = splitName(fullName);
+        const firstName = row.firstname || derivedName.firstName;
+        const lastName = row.lastname || row.surname || derivedName.lastName;
+
+        const matricNumber = row.matricnumber || row.matric || row.regnumber || row.registrationnumber || '';
+        if (!matricNumber || !firstName || !lastName) {
+          throw new Error('Each row must contain at least matric number and student name');
+        }
+
+        return {
+          matricNumber: matricNumber.toUpperCase(),
+          firstName,
+          lastName,
+          otherName: row.othername || '',
+          faculty: row.faculty || 'Not Assigned',
+          department: row.department || 'Not Assigned',
+          program: row.program || row.course || 'Not Assigned',
+          level: row.level || '',
+          admissionYear: row.admissionyear || row.year || '',
+        };
+      });
+
+      await api.post('/registry/bulk', { records });
+      setMessage(`Registry CSV imported successfully from ${file.name}.`);
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || actionError.message || 'CSV import failed.');
+    } finally {
+      setBusyAction('');
+      event.target.value = '';
+    }
+  };
+
+  const handleCreateSession = async (event) => {
+    event.preventDefault();
+    try {
+      setBusyAction('create-session');
+      setMessage();
+      const response = await api.post('/attendance/sessions', sessionForm);
+      setSessionForm(initialSessionForm);
+      setMessage(`Attendance session created. Session code: ${response.data.data.sessionCode}`);
+      await loadData(true);
+      await loadSessionDetail(response.data.data.session.id);
+      setActiveTab('sessions');
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Session could not be created.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleCloseSession = async (sessionId) => {
+    try {
+      setBusyAction(`close-session-${sessionId}`);
+      setMessage();
+      const response = await api.put(`/attendance/sessions/${sessionId}/close`);
+      setMessage(`${response.data.message}. ${response.data.data.absentCount} absent students were identified.`);
+      await loadData(true);
+      await loadSessionDetail(sessionId);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Session could not be closed.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleCreateQuery = async (event) => {
+    event.preventDefault();
+    try {
+      setBusyAction('create-query');
+      setMessage();
+      await api.post('/queries', queryForm);
+      setQueryForm(initialQueryForm);
+      setMessage('Absence query sent successfully.');
+      await loadData(true);
+      if (queryForm.sessionId) {
+        await loadSessionDetail(queryForm.sessionId);
+      }
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Absence query could not be sent.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleRespondToQuery = async (queryId) => {
+    try {
+      setBusyAction(`respond-query-${queryId}`);
+      setMessage();
+      await api.patch(`/queries/${queryId}/respond`, { response: responseDrafts[queryId] || '' });
+      setResponseDrafts((current) => ({ ...current, [queryId]: '' }));
+      setMessage('Response submitted successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Response could not be submitted.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleCloseQuery = async (queryId) => {
+    try {
+      setBusyAction(`close-query-${queryId}`);
+      setMessage();
+      await api.patch(`/queries/${queryId}/close`);
+      setMessage('Query closed successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Query could not be closed.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleMarkAttendance = async (overrideCode) => {
+    try {
+      setBusyAction('mark-attendance');
+      setMessage();
+      const location = attendanceForm.useLocation ? await getCurrentLocation() : null;
+      const sessionCode = overrideCode || attendanceForm.sessionCode;
+      await api.post('/attendance/mark', {
+        sessionCode,
+        latitude: location?.latitude,
+        longitude: location?.longitude,
+      });
+      setAttendanceForm(initialAttendanceForm);
+      setMessage('Attendance marked successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Attendance could not be marked.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleDeactivateUser = async (userId) => {
+    try {
+      setBusyAction(`deactivate-user-${userId}`);
+      setMessage();
+      await api.delete(`/users/${userId}`);
+      setMessage('User deactivated successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'User could not be deactivated.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const filteredUsers = useMemo(() => (!search ? users : users.filter((entry) => [entry.firstName, entry.lastName, entry.email, entry.role, entry.department, entry.matricNumber].some((value) => includesSearch(value, search)))), [search, users]);
+  const filteredCourses = useMemo(() => (!search ? courses : courses.filter((entry) => [entry.courseCode, entry.courseName, entry.academicYear, entry.semester, fullName(entry.lecturer)].some((value) => includesSearch(value, search)))), [courses, search]);
+  const filteredRegistry = useMemo(() => (!search ? registry : registry.filter((entry) => [entry.matricNumber, entry.firstName, entry.lastName, entry.program, entry.faculty, entry.department].some((value) => includesSearch(value, search)))), [registry, search]);
+  const filteredSessions = useMemo(() => (!search ? sessions : sessions.filter((entry) => [entry.sessionCode, entry.date, entry.status, entry.course?.courseCode, entry.course?.courseName, entry.venue].some((value) => includesSearch(value, search)))), [search, sessions]);
+  const filteredQueries = useMemo(() => (!search ? queries : queries.filter((entry) => [entry.title, entry.message, entry.status, fullName(entry.student), entry.student?.matricNumber, entry.session?.course?.courseCode].some((value) => includesSearch(value, search)))), [queries, search]);
+
+  const stats = useMemo(() => {
+    if (role === 'admin') {
+      return [
+        { label: 'Users', value: summary?.totalUsers || 0, helper: 'All registered roles', icon: Users, tone: 'bg-blue-600' },
+        { label: 'Courses', value: summary?.totalCourses || 0, helper: 'Active teaching records', icon: BookOpen, tone: 'bg-slate-900' },
+        { label: 'Registry', value: summary?.totalRegistryRecords || 0, helper: `${summary?.claimedRegistryRecords || 0} claimed by students`, icon: ShieldCheck, tone: 'bg-sky-500' },
+        { label: 'Queries', value: summary?.pendingQueries || 0, helper: 'Pending absence follow-ups', icon: Bell, tone: 'bg-amber-500' },
+      ];
+    }
+
+    if (role === 'lecturer') {
+      return [
+        { label: 'Courses', value: summary?.totalCourses || 0, helper: 'Courses assigned to you', icon: BookOpen, tone: 'bg-blue-600' },
+        { label: 'Active Sessions', value: summary?.activeSessions || 0, helper: 'Attendance windows open now', icon: Calendar, tone: 'bg-slate-900' },
+        { label: 'Pending Queries', value: summary?.pendingQueries || 0, helper: 'Students awaiting follow-up', icon: Bell, tone: 'bg-amber-500' },
+        { label: 'Students', value: summary?.totalStudents || 0, helper: 'Students available in system', icon: Users, tone: 'bg-sky-500' },
+      ];
+    }
+
+    return [
+      { label: 'Courses', value: summary?.totalCourses || 0, helper: 'Courses you are enrolled in', icon: BookOpen, tone: 'bg-blue-600' },
+      { label: 'Attendance Marks', value: summary?.totalAttendanceMarks || 0, helper: 'Total sessions marked', icon: CheckCircle2, tone: 'bg-slate-900' },
+      { label: 'Pending Queries', value: summary?.pendingQueries || 0, helper: 'Lecturer questions awaiting your reply', icon: Bell, tone: 'bg-amber-500' },
+      { label: 'Late Marks', value: summary?.lateMarks || 0, helper: 'Sessions marked after grace period', icon: Clock3, tone: 'bg-sky-500' },
+    ];
+  }, [role, summary]);
+
+  const handleLogout = () => {
+    dispatch(logout());
+  };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
+        <div className="rounded-[2rem] border border-white/10 bg-white/5 px-8 py-6 text-center backdrop-blur-xl">
+          <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-blue-300" />
+          <p className="mt-4 text-sm text-slate-200">Loading your workspace...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#eff6ff,_#dbeafe_30%,_#bfdbfe_58%,_#e0f2fe_100%)] pb-10 text-slate-900">
+      <QrScannerPanel isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={handleMarkAttendance} />
+      <div className={`relative overflow-hidden bg-gradient-to-r ${toneByRole[role]} px-4 pb-28 pt-8 text-white`}>
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.16),transparent_42%,rgba(15,23,42,0.22))]" />
+        <div className="relative mx-auto max-w-7xl">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-3 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold backdrop-blur-xl">
+                <GraduationCap className="h-4 w-4" />
+                Attendance System
+              </div>
+              <h1 className="mt-6 text-4xl font-black tracking-tight">{role.charAt(0).toUpperCase() + role.slice(1)} dashboard</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-blue-100">
+                {role === 'admin' && 'Manage users, school registry records, course allocations, and readiness for deployment from one control center.'}
+                {role === 'lecturer' && 'Create QR attendance sessions, review absentees, and let the system automatically follow up with students who miss class.'}
+                {role === 'student' && 'Mark attendance with QR, reply to lecturer queries, and track your semester activity in one place.'}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button onClick={() => loadData(true)} className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur-xl transition hover:bg-white/20">
+                <RefreshCcw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+              <button onClick={handleLogout} className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur-xl transition hover:bg-white/20">
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </button>
+            </div>
+          </div>
+          <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <p className="text-sm text-blue-100">Signed in as</p>
+              <p className="mt-2 text-2xl font-bold">{fullName(user)}</p>
+              <p className="mt-1 text-sm text-blue-100">{user?.email} {user?.matricNumber ? `| ${user.matricNumber}` : ''}</p>
+            </div>
+            <div className="rounded-[1.5rem] border border-white/20 bg-white/10 px-5 py-4 backdrop-blur-xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-100">Role access</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {tabs.map((tab) => (
+                  <button key={tab} onClick={() => setActiveTab(tab)} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${activeTab === tab ? 'bg-white text-blue-800' : 'bg-white/10 text-white hover:bg-white/20'}`}>{TAB_LABELS[tab]}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="relative z-10 mx-auto -mt-16 max-w-7xl px-4">
+        {error && <div className="mb-6 rounded-[1.5rem] border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>}
+        {success && <div className="mb-6 rounded-[1.5rem] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">{success}</div>}
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{stats.map((stat) => <StatCard key={stat.label} {...stat} />)}</div>
+        <div className="mt-8 grid gap-8">
+          <Panel title="Workspace search" eyebrow="Quick filter" action={<div className="relative w-full sm:w-80"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search users, courses, sessions, queries" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /></div>}>
+            <p className="text-sm leading-7 text-slate-600">Use one search bar to narrow the visible data in the current dashboard section.</p>
+          </Panel>
+
+          {activeTab === 'overview' && (
+            <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
+              <Panel title="Operational summary" eyebrow="Overview">
+                <div className="grid gap-4 md:grid-cols-2">
+                  {role === 'admin' && <><SummaryTile label="Registry coverage" value={`${summary?.claimedRegistryRecords || 0} / ${summary?.totalRegistryRecords || 0}`} helper="Students who can self-signup right now" /><SummaryTile label="Enrollments" value={summary?.totalEnrollments || 0} helper="Active semester course registrations" /><SummaryTile label="Attendance marks" value={summary?.attendanceMarks || 0} helper="All recorded attendance entries" /><SummaryTile label="Live sessions" value={summary?.activeSessions || 0} helper="Classes currently open for attendance" /></>}
+                  {role === 'lecturer' && <><SummaryTile label="Automatic follow-up" value="Enabled" helper="Absent students are queried when you close a session" /><SummaryTile label="Current session" value={activeSession?.sessionCode || 'None'} helper={activeSession ? `${activeSession.course?.courseCode} in progress` : 'Create a session to start attendance'} /><SummaryTile label="Session detail" value={sessionDetail?.attendanceStats?.presentCount || 0} helper="Students marked present in selected session" /><SummaryTile label="Absent list" value={sessionDetail?.attendanceStats?.absentCount || 0} helper="Students who missed the selected session" /></>}
+                  {role === 'student' && <><SummaryTile label="Attendance profile" value={`${history.filter((item) => item.status === 'present').length} present`} helper="Sessions marked inside the attendance window" /><SummaryTile label="Latest mark" value={history[0]?.session?.course?.courseCode || 'None'} helper={history[0] ? formatDateTime(history[0].markedAt) : 'No attendance marked yet'} /><SummaryTile label="Pending responses" value={queries.filter((query) => query.status === 'pending').length} helper="Queries waiting for your explanation" /><SummaryTile label="Location capture" value={attendanceForm.useLocation ? 'On' : 'Off'} helper="You can include location when marking attendance" /></>}
+                </div>
+              </Panel>
+              <Panel title="Priority actions" eyebrow="Next best steps">
+                <div className="space-y-4">
+                  {role === 'admin' && <><ActionTile title="Load school registry" description="Add matric records so students can self-signup without admin hand-holding." /><ActionTile title="Assign lecturers to courses" description="Courses only become usable for attendance when a lecturer is attached." /><ActionTile title="Prepare deployment" description="Use the Docker and env setup included below to move this app into production." /></>}
+                  {role === 'lecturer' && <><ActionTile title="Create a fresh session" description="Generate a QR-ready attendance window for the next class." /><ActionTile title="Close sessions after class" description="The system will list absentees and auto-send absence queries immediately." /><ActionTile title="Review student responses" description="Pending queries can be reviewed and closed from your dashboard." /></>}
+                  {role === 'student' && <><ActionTile title="Use QR whenever possible" description="Scanning the QR code is the fastest and most accurate attendance method." /><ActionTile title="Keep location enabled" description="This adds an extra verification signal when your institution wants stricter attendance proof." /><ActionTile title="Reply to lecturer queries" description="Prompt responses keep your attendance record cleaner and easier to audit." /></>}
+                </div>
+              </Panel>
+            </div>
+          )}
+
+          {activeTab === 'users' && role === 'admin' && (
+            <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr]">
+              <Panel title="Create a user account" eyebrow="Admin tools">
+                <form onSubmit={handleCreateUser} className="grid gap-4 md:grid-cols-2">
+                  <Input label="First name" value={userForm.firstName} onChange={(value) => setUserForm((current) => ({ ...current, firstName: value }))} />
+                  <Input label="Last name" value={userForm.lastName} onChange={(value) => setUserForm((current) => ({ ...current, lastName: value }))} />
+                  <Input label="Email" type="email" value={userForm.email} onChange={(value) => setUserForm((current) => ({ ...current, email: value }))} />
+                  <Input label="Password" type="password" value={userForm.password} onChange={(value) => setUserForm((current) => ({ ...current, password: value }))} />
+                  <Select label="Role" value={userForm.role} onChange={(value) => setUserForm((current) => ({ ...current, role: value }))} options={[{ value: 'student', label: 'Student' }, { value: 'lecturer', label: 'Lecturer' }, { value: 'admin', label: 'Admin' }]} />
+                  <Input label="Department" value={userForm.department} onChange={(value) => setUserForm((current) => ({ ...current, department: value }))} />
+                  <Input label="Faculty" value={userForm.faculty} onChange={(value) => setUserForm((current) => ({ ...current, faculty: value }))} />
+                  <Input label="Program" value={userForm.program} onChange={(value) => setUserForm((current) => ({ ...current, program: value }))} />
+                  {userForm.role === 'student' && <Input label="Matric number" value={userForm.matricNumber} onChange={(value) => setUserForm((current) => ({ ...current, matricNumber: value }))} />}
+                  <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-user'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-user' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}Create user</button></div>
+                </form>
+              </Panel>
+              <Panel title="Registered users" eyebrow="Directory">
+                <div className="space-y-4">
+                  {filteredUsers.length > 0 ? filteredUsers.map((entry) => (
+                    <div key={entry.id} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-lg font-bold text-slate-950">{fullName(entry)}</p><p className="mt-1 text-sm text-slate-500">{entry.email}</p><p className="mt-2 text-sm text-slate-500">{entry.department || 'No department'} {entry.matricNumber ? `| ${entry.matricNumber}` : ''}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2"><Badge tone={entry.role === 'admin' ? 'slate' : entry.role === 'lecturer' ? 'blue' : 'emerald'}>{entry.role}</Badge><Badge tone={entry.isActive ? 'emerald' : 'rose'}>{entry.isActive ? 'active' : 'inactive'}</Badge></div>
+                      </div>
+                      {entry.isActive && entry.id !== user.id && <button onClick={() => handleDeactivateUser(entry.id)} disabled={busyAction === `deactivate-user-${entry.id}`} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60">{busyAction === `deactivate-user-${entry.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}Deactivate</button>}
+                    </div>
+                  )) : <EmptyState title="No users match your search" description="Try another search term or create a new user account." />}
+                </div>
+              </Panel>
+            </div>
+          )}
+
+          {activeTab === 'registry' && role === 'admin' && (
+            <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr]">
+              <div className="grid gap-8">
+                <Panel title="Add a student registry record" eyebrow="School data">
+                  <form onSubmit={handleCreateRegistryRecord} className="grid gap-4 md:grid-cols-2">
+                    <Input label="Matric number" value={registryForm.matricNumber} onChange={(value) => setRegistryForm((current) => ({ ...current, matricNumber: value.toUpperCase() }))} />
+                    <Input label="First name" value={registryForm.firstName} onChange={(value) => setRegistryForm((current) => ({ ...current, firstName: value }))} />
+                    <Input label="Last name" value={registryForm.lastName} onChange={(value) => setRegistryForm((current) => ({ ...current, lastName: value }))} />
+                    <Input label="Other name" value={registryForm.otherName} onChange={(value) => setRegistryForm((current) => ({ ...current, otherName: value }))} />
+                    <Input label="Faculty" value={registryForm.faculty} onChange={(value) => setRegistryForm((current) => ({ ...current, faculty: value }))} />
+                    <Input label="Department" value={registryForm.department} onChange={(value) => setRegistryForm((current) => ({ ...current, department: value }))} />
+                    <Input label="Program" value={registryForm.program} onChange={(value) => setRegistryForm((current) => ({ ...current, program: value }))} />
+                    <Input label="Level" value={registryForm.level} onChange={(value) => setRegistryForm((current) => ({ ...current, level: value }))} />
+                    <Input label="Admission year" value={registryForm.admissionYear} onChange={(value) => setRegistryForm((current) => ({ ...current, admissionYear: value }))} />
+                    <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-registry'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-registry' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}Save registry record</button></div>
+                  </form>
+                </Panel>
+                <Panel title="Bulk import registry records" eyebrow="CSV or JSON import">
+                  <p className="text-sm leading-7 text-slate-600">Upload a CSV file from school records, or paste JSON if you prefer technical import.</p>
+                  <div className="mt-4 rounded-[1.5rem] border border-blue-100 bg-blue-50/60 p-4">
+                    <label className="block text-sm font-semibold text-slate-700">Upload CSV file</label>
+                    <p className="mt-1 text-xs text-slate-500">Supported headers: `matricNumber`/`matric`, `firstName`, `lastName`, or `name`.</p>
+                    <input type="file" accept=".csv,text/csv" onChange={handleRegistryCsvUpload} className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" />
+                    {registryFileName && <p className="mt-2 text-xs text-slate-500">Last selected file: {registryFileName}</p>}
+                  </div>
+                  <textarea value={bulkRegistry} onChange={(event) => setBulkRegistry(event.target.value)} rows={10} className="mt-4 w-full rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 font-mono text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" placeholder={`[\n  {\n    "matricNumber": "CSC/24/0001",\n    "firstName": "Amina",\n    "lastName": "Yusuf",\n    "faculty": "Computing",\n    "department": "Computer Science",\n    "program": "B.Sc Computer Science"\n  }\n]`} />
+                  <button onClick={handleBulkRegistryImport} disabled={busyAction === 'bulk-registry' || busyAction === 'bulk-registry-csv'} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-60">{busyAction === 'bulk-registry' || busyAction === 'bulk-registry-csv' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Import records</button>
+                </Panel>
+              </div>
+              <Panel title="Registry inventory" eyebrow="Student source data">
+                <div className="space-y-4">
+                  {filteredRegistry.length > 0 ? filteredRegistry.map((record) => (
+                    <div key={record.id} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div><p className="text-lg font-bold text-slate-950">{record.matricNumber}</p><p className="mt-1 text-sm text-slate-500">{[record.firstName, record.otherName, record.lastName].filter(Boolean).join(' ')}</p><p className="mt-2 text-sm text-slate-500">{record.program} | {record.department}</p></div>
+                        <div className="flex flex-wrap gap-2"><Badge tone={record.claimedByUserId ? 'emerald' : 'amber'}>{record.claimedByUserId ? 'claimed' : 'available'}</Badge><Badge tone={record.isActive ? 'blue' : 'rose'}>{record.isActive ? 'active' : 'inactive'}</Badge></div>
+                      </div>
+                    </div>
+                  )) : <EmptyState title="No registry records match your search" description="Add a single record or import many records in JSON format." />}
+                </div>
+              </Panel>
+            </div>
+          )}
+
+          {activeTab === 'courses' && (
+            <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr]">
+              {(role === 'admin' || role === 'lecturer') && (
+                <div className="grid gap-8">
+                  {role === 'admin' && (
+                    <Panel title="Create a course" eyebrow="Academic setup">
+                      <form onSubmit={handleCreateCourse} className="grid gap-4 md:grid-cols-2">
+                        <Input label="Course code" value={courseForm.courseCode} onChange={(value) => setCourseForm((current) => ({ ...current, courseCode: value.toUpperCase() }))} />
+                        <Input label="Course name" value={courseForm.courseName} onChange={(value) => setCourseForm((current) => ({ ...current, courseName: value }))} />
+                        <Select label="Semester" value={courseForm.semester} onChange={(value) => setCourseForm((current) => ({ ...current, semester: value }))} options={[{ value: 'rain', label: 'Rain' }, { value: 'harmattan', label: 'Harmattan' }]} />
+                        <Input label="Academic year" value={courseForm.academicYear} onChange={(value) => setCourseForm((current) => ({ ...current, academicYear: value }))} />
+                        <Select label="Assign lecturer" value={courseForm.lecturerId} onChange={(value) => setCourseForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Choose lecturer' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
+                        <div className="md:col-span-2"><label className="mb-2 block text-sm font-semibold text-slate-700">Description</label><textarea value={courseForm.description} onChange={(event) => setCourseForm((current) => ({ ...current, description: event.target.value }))} rows={4} className="w-full rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /></div>
+                        <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-course'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-course' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}Create course</button></div>
+                      </form>
+                    </Panel>
+                  )}
+                  {role === 'lecturer' && (
+                    <Panel title="Create an attendance session" eyebrow="Class operations">
+                      <form onSubmit={handleCreateSession} className="grid gap-4 md:grid-cols-2">
+                        <Select label="Course" value={sessionForm.courseId} onChange={(value) => setSessionForm((current) => ({ ...current, courseId: value }))} options={[{ value: '', label: 'Choose course' }, ...courses.map((course) => ({ value: course.id, label: `${course.courseCode} - ${course.courseName}` }))]} />
+                        <Input label="Date" type="date" value={sessionForm.date} onChange={(value) => setSessionForm((current) => ({ ...current, date: value }))} />
+                        <Input label="Start time" type="time" value={sessionForm.startTime} onChange={(value) => setSessionForm((current) => ({ ...current, startTime: value }))} />
+                        <Input label="Duration (minutes)" type="number" value={sessionForm.durationMinutes} onChange={(value) => setSessionForm((current) => ({ ...current, durationMinutes: value }))} />
+                        <Input label="Venue" value={sessionForm.venue} onChange={(value) => setSessionForm((current) => ({ ...current, venue: value }))} />
+                        <Input label="Grace period (minutes)" type="number" value={sessionForm.maxAttendanceTime} onChange={(value) => setSessionForm((current) => ({ ...current, maxAttendanceTime: value }))} />
+                        <Input label="Geofence latitude (optional)" value={sessionForm.geofenceLatitude} onChange={(value) => setSessionForm((current) => ({ ...current, geofenceLatitude: value }))} />
+                        <Input label="Geofence longitude (optional)" value={sessionForm.geofenceLongitude} onChange={(value) => setSessionForm((current) => ({ ...current, geofenceLongitude: value }))} />
+                        <Input label="Geofence radius meters (optional)" type="number" value={sessionForm.geofenceRadiusMeters} onChange={(value) => setSessionForm((current) => ({ ...current, geofenceRadiusMeters: value }))} />
+                        <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-session'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-session' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />}Create session</button></div>
+                      </form>
+                    </Panel>
+                  )}
+                </div>
+              )}
+              <Panel title={role === 'student' ? 'My semester courses' : 'Course directory'} eyebrow="Course list">
+                <div className="space-y-4">
+                  {filteredCourses.length > 0 ? filteredCourses.map((course) => (
+                    <div key={course.id} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">{course.courseCode}</p>
+                          <p className="mt-2 text-lg font-bold text-slate-950">{course.courseName}</p>
+                          <p className="mt-2 text-sm text-slate-500">{course.semester} semester | {course.academicYear}</p>
+                          <p className="mt-1 text-sm text-slate-500">Lecturer: {fullName(course.lecturer)}</p>
+                          {course.enrollment && <p className="mt-1 text-sm text-slate-500">Enrollment status: {course.enrollment.status}</p>}
+                        </div>
+                        <div className="flex flex-wrap gap-2"><Badge tone={course.isActive === false ? 'rose' : 'emerald'}>{course.isActive === false ? 'archived' : 'active'}</Badge>{course.enrollment && <Badge tone="blue">enrolled</Badge>}</div>
+                      </div>
+                      {role === 'admin' && course.isActive !== false && <button onClick={() => handleArchiveCourse(course.id)} disabled={busyAction === `archive-course-${course.id}`} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-50 disabled:opacity-60">{busyAction === `archive-course-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}Archive course</button>}
+                    </div>
+                  )) : <EmptyState title="No courses available" description={role === 'student' ? 'No active enrollments were found for your account yet.' : 'Create a course or update your search.'} />}
+                </div>
+              </Panel>
+            </div>
+          )}
+
+          {activeTab === 'sessions' && role === 'lecturer' && (
+            <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr]">
+              <Panel title="Attendance sessions" eyebrow="Lecturer control">
+                <div className="space-y-4">
+                  {filteredSessions.length > 0 ? filteredSessions.map((session) => (
+                    <button key={session.id} onClick={() => loadSessionDetail(session.id)} className={`w-full rounded-[1.5rem] border p-5 text-left transition ${sessionDetail?.id === session.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-slate-50/80 hover:border-blue-300'}`}>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">{session.course?.courseCode || 'Course'}</p><p className="mt-2 text-lg font-bold text-slate-950">{session.course?.courseName || 'Attendance session'}</p><p className="mt-2 text-sm text-slate-500">{formatDate(session.date)} at {formatTime(session.startTime)}</p><p className="mt-1 text-sm text-slate-500">Venue: {session.venue || 'Not set'}</p></div>
+                        <div className="flex flex-wrap gap-2"><Badge tone={session.status === 'active' ? 'emerald' : 'slate'}>{session.status}</Badge><Badge tone="blue">{session.sessionCode}</Badge></div>
+                      </div>
+                    </button>
+                  )) : <EmptyState title="No sessions found" description="Create a class session to generate a QR attendance code." />}
+                </div>
+              </Panel>
+              <div className="grid gap-8">
+                <Panel title="Selected session detail" eyebrow="Live attendance">
+                  {sessionDetail ? (
+                    <div className="space-y-6">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <SummaryTile label="Course" value={sessionDetail.course?.courseCode || 'Not set'} helper={sessionDetail.course?.courseName || 'No course linked'} />
+                        <SummaryTile label="Session code" value={sessionDetail.sessionCode} helper={`${formatDate(sessionDetail.date)} at ${formatTime(sessionDetail.startTime)}`} />
+                        <SummaryTile label="Expected students" value={sessionDetail.attendanceStats?.expectedCount || 0} helper="Active enrolled students" />
+                        <SummaryTile label="Absent students" value={sessionDetail.attendanceStats?.absentCount || 0} helper="Automatic absence list for this session" />
+                      </div>
+                      {(sessionDetail.geofenceLatitude && sessionDetail.geofenceLongitude && sessionDetail.geofenceRadiusMeters) && (
+                        <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4 text-sm text-blue-900">
+                          Geofence active: center {sessionDetail.geofenceLatitude}, {sessionDetail.geofenceLongitude} with {sessionDetail.geofenceRadiusMeters}m radius.
+                        </div>
+                      )}
+                      {qrDataUrl && <div className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-5"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Scannable QR</p><p className="mt-2 text-sm leading-7 text-slate-600">Students can scan this QR code to fill the session code automatically.</p></div><div className="rounded-[1.5rem] border border-white bg-white p-4 shadow-sm"><img src={qrDataUrl} alt="Session QR code" className="h-44 w-44" /></div></div></div>}
+                      <div className="flex flex-wrap gap-3">
+                        {sessionDetail.status === 'active' && <button onClick={() => handleCloseSession(sessionDetail.id)} disabled={busyAction === `close-session-${sessionDetail.id}`} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">{busyAction === `close-session-${sessionDetail.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Close session and auto-send queries</button>}
+                        <button onClick={() => { setQueryForm((current) => ({ ...current, sessionId: String(sessionDetail.id) })); setActiveTab('queries'); }} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100"><Bell className="h-4 w-4" />Open query composer</button>
+                      </div>
+                    </div>
+                  ) : <EmptyState title="No session selected" description="Choose a session from the left to view present and absent students, QR code, and attendance stats." />}
+                </Panel>
+                <Panel title="Attendance register" eyebrow="Present and absent lists">
+                  {sessionDetail ? (
+                    <div className="grid gap-6 lg:grid-cols-2">
+                      <div>
+                        <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Present or late</h3><Badge tone="emerald">{sessionDetail.attendances?.length || 0}</Badge></div>
+                        <div className="space-y-3">
+                          {sessionDetail.attendances?.length > 0 ? sessionDetail.attendances.map((entry) => (
+                            <div key={entry.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"><p className="font-semibold text-slate-900">{fullName(entry.student)}</p><p className="mt-1 text-sm text-slate-500">{entry.student?.matricNumber || entry.student?.email}</p><div className="mt-3 flex flex-wrap gap-2"><Badge tone={entry.status === 'late' ? 'amber' : 'emerald'}>{entry.status}</Badge><Badge tone="slate">{formatDateTime(entry.markedAt)}</Badge></div></div>
+                          )) : <EmptyState title="No attendance marks yet" description="Students who scan the QR or enter the code will appear here." />}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Absent students</h3><Badge tone="rose">{sessionDetail.absentStudents?.length || 0}</Badge></div>
+                        <div className="space-y-3">
+                          {sessionDetail.absentStudents?.length > 0 ? sessionDetail.absentStudents.map((student) => (
+                            <div key={student.id} className="rounded-2xl border border-rose-100 bg-rose-50/70 px-4 py-4"><p className="font-semibold text-slate-900">{fullName(student)}</p><p className="mt-1 text-sm text-slate-500">{student.matricNumber || student.email}</p><p className="mt-1 text-sm text-slate-500">{student.department || 'No department'}</p></div>
+                          )) : <EmptyState title="No absent students" description="Once this session closes, the system will show any missing students here and auto-send queries." />}
+                        </div>
+                      </div>
+                    </div>
+                  ) : <EmptyState title="No register loaded" description="Choose a session to see attendance and absent-student detail." />}
+                </Panel>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'attendance' && role === 'student' && (
+            <div className="grid gap-8 xl:grid-cols-[0.9fr_1.1fr]">
+              <div className="grid gap-8">
+                <Panel title="Mark attendance" eyebrow="Student check-in">
+                  <div className="space-y-5">
+                    <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-5"><p className="text-sm leading-7 text-slate-600">Use the QR scanner for the smoothest flow, or enter the session code manually if your camera is unavailable.</p></div>
+                    <div className="grid gap-4">
+                      <Input label="Session code" value={attendanceForm.sessionCode} onChange={(value) => setAttendanceForm((current) => ({ ...current, sessionCode: value.toUpperCase() }))} />
+                      <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700"><input type="checkbox" checked={attendanceForm.useLocation} onChange={(event) => setAttendanceForm((current) => ({ ...current, useLocation: event.target.checked }))} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />Include device location when available for stronger attendance verification.</label>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      <button onClick={() => handleMarkAttendance()} disabled={busyAction === 'mark-attendance'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'mark-attendance' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Mark with code</button>
+                      <button onClick={() => setScannerOpen(true)} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100"><Camera className="h-4 w-4" />Scan QR code</button>
+                    </div>
+                  </div>
+                </Panel>
+                <Panel title="Attendance tips" eyebrow="Verification">
+                  <div className="space-y-4"><ActionTile title="Arrive early" description="Marks made after the session grace period are recorded as late." /><ActionTile title="Keep your course list current" description="Absent-student checks rely on your registered semester courses." /><ActionTile title="Reply to absence queries" description="If you miss class, a lecturer can review your reason directly in the system." /></div>
+                </Panel>
+              </div>
+              <Panel title="Attendance history" eyebrow="Your records">
+                <div className="space-y-4">
+                  {history.length > 0 ? history.map((entry) => (
+                    <div key={entry.id} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">{entry.session?.course?.courseCode || 'Course'}</p><p className="mt-2 text-lg font-bold text-slate-950">{entry.session?.course?.courseName || 'Attendance record'}</p><p className="mt-2 text-sm text-slate-500">{formatDate(entry.session?.date)} at {formatTime(entry.session?.startTime)}</p><p className="mt-1 text-sm text-slate-500">Marked: {formatDateTime(entry.markedAt)}</p></div>
+                        <div className="flex flex-wrap gap-2"><Badge tone={entry.status === 'present' ? 'emerald' : entry.status === 'late' ? 'amber' : 'slate'}>{entry.status}</Badge><Badge tone="slate">{entry.verificationMethod}</Badge></div>
+                      </div>
+                    </div>
+                  )) : <EmptyState title="No attendance history yet" description="Mark your first session and your record will appear here." />}
+                </div>
+              </Panel>
+            </div>
+          )}
+
+          {activeTab === 'queries' && (
+            <div className="grid gap-8 xl:grid-cols-[0.9fr_1.1fr]">
+              {role === 'lecturer' && (
+                <Panel title="Send a manual absence query" eyebrow="Lecturer follow-up">
+                  <form onSubmit={handleCreateQuery} className="grid gap-4">
+                    <Select label="Student" value={queryForm.studentId} onChange={(value) => setQueryForm((current) => ({ ...current, studentId: value }))} options={[{ value: '', label: 'Choose student' }, ...students.map((student) => ({ value: student.id, label: `${fullName(student)}${student.matricNumber ? ` (${student.matricNumber})` : ''}` }))]} />
+                    <Select label="Session (optional)" value={queryForm.sessionId} onChange={(value) => setQueryForm((current) => ({ ...current, sessionId: value }))} options={[{ value: '', label: 'No linked session' }, ...sessions.map((session) => ({ value: session.id, label: `${session.course?.courseCode || 'Course'} - ${formatDate(session.date)} (${session.sessionCode})` }))]} />
+                    <Input label="Title" value={queryForm.title} onChange={(value) => setQueryForm((current) => ({ ...current, title: value }))} />
+                    <div><label className="mb-2 block text-sm font-semibold text-slate-700">Message</label><textarea value={queryForm.message} onChange={(event) => setQueryForm((current) => ({ ...current, message: event.target.value }))} rows={6} className="w-full rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /></div>
+                    <button type="submit" disabled={busyAction === 'create-query'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-query' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Send query</button>
+                  </form>
+                </Panel>
+              )}
+              <Panel title={role === 'student' ? 'Queries from lecturers' : 'Absence query inbox'} eyebrow="Follow-up workflow">
+                <div className="space-y-4">
+                  {filteredQueries.length > 0 ? filteredQueries.map((query) => (
+                    <div key={query.id} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-lg font-bold text-slate-950">{query.title}</p>
+                          <p className="mt-2 text-sm leading-7 text-slate-600">{query.message}</p>
+                          <p className="mt-3 text-sm text-slate-500">{role === 'student' ? `From ${fullName(query.lecturer)}` : `To ${fullName(query.student)}${query.student?.matricNumber ? ` (${query.student.matricNumber})` : ''}`}</p>
+                          {query.session && <p className="mt-1 text-sm text-slate-500">Linked session: {query.session.course?.courseCode} on {formatDate(query.session.date)}</p>}
+                          {query.studentResponse && <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-800"><span className="font-semibold">Student response:</span> {query.studentResponse}</div>}
+                        </div>
+                        <div className="flex flex-wrap gap-2"><Badge tone={query.status === 'pending' ? 'amber' : query.status === 'responded' ? 'blue' : 'emerald'}>{query.status}</Badge></div>
+                      </div>
+                      {role === 'student' && query.status === 'pending' && <div className="mt-4 space-y-3"><textarea value={responseDrafts[query.id] || ''} onChange={(event) => setResponseDrafts((current) => ({ ...current, [query.id]: event.target.value }))} rows={4} className="w-full rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" placeholder="Explain why you missed class" /><button onClick={() => handleRespondToQuery(query.id)} disabled={busyAction === `respond-query-${query.id}`} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === `respond-query-${query.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Submit response</button></div>}
+                      {role === 'lecturer' && query.status === 'responded' && <button onClick={() => handleCloseQuery(query.id)} disabled={busyAction === `close-query-${query.id}`} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60">{busyAction === `close-query-${query.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Close query</button>}
+                    </div>
+                  )) : <EmptyState title="No queries found" description={role === 'student' ? 'You have no outstanding lecturer queries right now.' : 'Auto-generated and manual absence queries will appear here.'} />}
+                </div>
+              </Panel>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard;
