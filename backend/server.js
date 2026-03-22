@@ -71,7 +71,7 @@ const startServer = async () => {
     await sequelize.sync({ alter: true });
     console.log('Database connected and synced successfully');
   } catch (error) {
-    console.error('Database startup failed:', error.message);
+    console.error('Database startup failed:', error);
     process.exit(1);
   }
 
