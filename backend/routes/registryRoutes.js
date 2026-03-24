@@ -10,5 +10,6 @@ router.use(roleMiddleware('admin'));
 router.get('/', registryController.getRegistry);
 router.post('/', registryController.createRegistryRecord);
 router.post('/bulk', registryController.bulkUpsertRegistry);
+router.patch('/:id/link', registryController.linkRegistryRecord);
 
 module.exports = router;

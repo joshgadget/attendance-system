@@ -354,6 +354,43 @@ const resetPassword = async (req, res) => {
   }
 };
 
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!newPassword) {
+      return res.status(400).json({ success: false, message: 'newPassword is required' });
+    }
+
+    if (String(newPassword).length < 8) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long' });
+    }
+
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (!user.mustResetPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({ success: false, message: 'currentPassword is required' });
+      }
+      const matches = await user.comparePassword(currentPassword);
+      if (!matches) {
+        return res.status(400).json({ success: false, message: 'Current password is incorrect' });
+      }
+    }
+
+    user.password = newPassword;
+    user.mustResetPassword = false;
+    await user.save();
+
+    return res.json({ success: true, message: 'Password updated successfully', data: user.toSafeObject() });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   register,
   studentLookup,
@@ -365,4 +402,5 @@ module.exports = {
   logout,
   forgotPassword,
   resetPassword,
+  changePassword,
 };

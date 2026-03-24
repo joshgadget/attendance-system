@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import StudentSignup from './pages/StudentSignup';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import ForceResetPassword from './pages/ForceResetPassword';
 import Dashboard from './pages/Dashboard';
 
 const AuthBootstrap = ({ children }) => {
@@ -39,12 +40,17 @@ const PrivateRoute = ({ children }) => {
 };
 
 const PublicRoute = ({ children }) => {
-  const { isAuthenticated } = useSelector((state) => state.auth);
+  const { isAuthenticated, user } = useSelector((state) => state.auth);
+  if (isAuthenticated && user?.mustResetPassword) {
+    return <Navigate to="/force-reset" replace />;
+  }
   return isAuthenticated ? <Navigate to="/dashboard" replace /> : children;
 };
 
 const AppRoutes = () => {
   const { isAuthenticated } = useSelector((state) => state.auth);
+  const { user } = useSelector((state) => state.auth);
+  const needsReset = isAuthenticated && user?.mustResetPassword;
 
   return (
     <Routes>
@@ -52,9 +58,10 @@ const AppRoutes = () => {
       <Route path="/signup" element={<PublicRoute><StudentSignup /></PublicRoute>} />
       <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
       <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />
-      <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-      <Route path="/" element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />} />
-      <Route path="*" element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />} />
+      <Route path="/force-reset" element={<PrivateRoute><ForceResetPassword /></PrivateRoute>} />
+      <Route path="/dashboard" element={needsReset ? <Navigate to="/force-reset" replace /> : <PrivateRoute><Dashboard /></PrivateRoute>} />
+      <Route path="/" element={<Navigate to={needsReset ? '/force-reset' : (isAuthenticated ? '/dashboard' : '/login')} replace />} />
+      <Route path="*" element={<Navigate to={needsReset ? '/force-reset' : (isAuthenticated ? '/dashboard' : '/login')} replace />} />
     </Routes>
   );
 };

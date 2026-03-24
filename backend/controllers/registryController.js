@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { StudentRegistry } = require('../models');
+const { StudentRegistry, User } = require('../models');
 
 exports.getRegistry = async (req, res) => {
   try {
@@ -134,6 +134,39 @@ exports.bulkUpsertRegistry = async (req, res) => {
     }
 
     res.json({ success: true, message: 'Student registry imported successfully', data: { count: records.length } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.linkRegistryRecord = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'userId is required' });
+    }
+
+    const record = await StudentRegistry.findByPk(req.params.id);
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Registry record not found' });
+    }
+
+    const user = await User.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    record.claimedByUserId = user.id;
+    await record.save();
+
+    await user.update({
+      matricNumber: record.matricNumber,
+      department: record.department,
+      faculty: record.faculty,
+      program: record.program,
+    });
+
+    res.json({ success: true, message: 'Registry record linked to user', data: record });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

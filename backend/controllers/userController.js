@@ -149,6 +149,29 @@ exports.deactivateUser = async (req, res) => {
   }
 };
 
+exports.reactivateUser = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const { tempPassword } = req.body;
+    if (!tempPassword || String(tempPassword).length < 8) {
+      return res.status(400).json({ success: false, message: 'tempPassword (min 8 chars) is required' });
+    }
+
+    user.password = tempPassword;
+    user.isActive = true;
+    user.mustResetPassword = true;
+    await user.save();
+
+    res.json({ success: true, message: 'User reactivated with temporary password', data: sanitizeUser(user) });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 exports.getLecturers = async (req, res) => {
   try {
     const lecturers = await User.findAll({

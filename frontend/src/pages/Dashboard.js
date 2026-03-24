@@ -273,6 +273,8 @@ const Dashboard = () => {
   const [studentEditForm, setStudentEditForm] = useState({ firstName: '', lastName: '', matricNumber: '', department: '', faculty: '', program: '' });
   const [enrollmentForm, setEnrollmentForm] = useState({ semester: 'rain', academicYear: new Date().getFullYear() + '/' + String(new Date().getFullYear() + 1).slice(-2), courseIds: [] });
   const [studentEnrollments, setStudentEnrollments] = useState([]);
+  const [reactivateDrafts, setReactivateDrafts] = useState({});
+  const [linkForm, setLinkForm] = useState({ registryId: '', userId: '' });
 
   const [userForm, setUserForm] = useState(initialUserForm);
   const [courseForm, setCourseForm] = useState(initialCourseForm);
@@ -812,6 +814,44 @@ const Dashboard = () => {
     }
   };
 
+  const handleReactivateUser = async (userId) => {
+    try {
+      const tempPassword = reactivateDrafts[userId] || '';
+      if (tempPassword.length < 8) {
+        setMessage('', 'Temporary password must be at least 8 characters.');
+        return;
+      }
+      setBusyAction(`reactivate-user-${userId}`);
+      setMessage();
+      await api.post(`/users/${userId}/reactivate`, { tempPassword });
+      setMessage('User reactivated with temporary password.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'User could not be reactivated.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleLinkRegistry = async () => {
+    try {
+      if (!linkForm.registryId || !linkForm.userId) {
+        setMessage('', 'Choose both a registry record and a user.');
+        return;
+      }
+      setBusyAction('link-registry');
+      setMessage();
+      await api.patch(`/registry/${linkForm.registryId}/link`, { userId: linkForm.userId });
+      setMessage('Registry record linked to user.');
+      setLinkForm({ registryId: '', userId: '' });
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Registry link failed.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   const filteredUsers = useMemo(() => (!search ? users : users.filter((entry) => [entry.firstName, entry.lastName, entry.email, entry.role, entry.department, entry.matricNumber].some((value) => includesSearch(value, search)))), [search, users]);
   const filteredCourses = useMemo(() => (!search ? courses : courses.filter((entry) => [entry.courseCode, entry.courseName, entry.academicYear, entry.semester, fullName(entry.lecturer)].some((value) => includesSearch(value, search)))), [courses, search]);
 
@@ -1031,6 +1071,18 @@ const Dashboard = () => {
                         <div className="flex flex-wrap gap-2"><Badge tone={entry.role === 'admin' ? 'slate' : entry.role === 'lecturer' ? 'blue' : 'emerald'}>{entry.role}</Badge><Badge tone={entry.isActive ? 'emerald' : 'rose'}>{entry.isActive ? 'active' : 'inactive'}</Badge></div>
                       </div>
                       {entry.isActive && entry.id !== user.id && <button onClick={() => handleDeactivateUser(entry.id)} disabled={busyAction === `deactivate-user-${entry.id}`} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60">{busyAction === `deactivate-user-${entry.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}Deactivate</button>}
+                      {!entry.isActive && (
+                        <div className="mt-4 grid gap-2">
+                          <input
+                            type="text"
+                            placeholder="Temporary password"
+                            value={reactivateDrafts[entry.id] || ''}
+                            onChange={(event) => setReactivateDrafts((current) => ({ ...current, [entry.id]: event.target.value }))}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+                          />
+                          <button onClick={() => handleReactivateUser(entry.id)} disabled={busyAction === `reactivate-user-${entry.id}`} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === `reactivate-user-${entry.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}Reactivate with temp password</button>
+                        </div>
+                      )}
                     </div>
                   )) : <EmptyState title="No users match your search" description="Try another search term or create a new user account." />}
                 </div>
@@ -1055,8 +1107,8 @@ const Dashboard = () => {
                     <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-registry'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-registry' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}Save registry record</button></div>
                   </form>
                 </Panel>
-                <Panel title="Bulk import registry records" eyebrow="CSV or JSON import">
-                  <p className="text-sm leading-7 text-slate-600">Upload a CSV file from school records, or paste JSON if you prefer technical import.</p>
+                  <Panel title="Bulk import registry records" eyebrow="CSV or JSON import">
+                    <p className="text-sm leading-7 text-slate-600">Upload a CSV file from school records, or paste JSON if you prefer technical import.</p>
                   <div className="mt-4 rounded-[1.5rem] border border-blue-100 bg-blue-50/60 p-4">
                     <label className="block text-sm font-semibold text-slate-700">Upload CSV file</label>
                     <p className="mt-1 text-xs text-slate-500">Supported headers: `matricNumber`/`matric`, `firstName`, `lastName`, or `name`.</p>
@@ -1064,9 +1116,17 @@ const Dashboard = () => {
                     {registryFileName && <p className="mt-2 text-xs text-slate-500">Last selected file: {registryFileName}</p>}
                   </div>
                   <textarea value={bulkRegistry} onChange={(event) => setBulkRegistry(event.target.value)} rows={10} className="mt-4 w-full rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 font-mono text-sm text-slate-800 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" placeholder={`[\n  {\n    "matricNumber": "CSC/24/0001",\n    "firstName": "Amina",\n    "lastName": "Yusuf",\n    "faculty": "Computing",\n    "department": "Computer Science",\n    "program": "B.Sc Computer Science"\n  }\n]`} />
-                  <button onClick={handleBulkRegistryImport} disabled={busyAction === 'bulk-registry' || busyAction === 'bulk-registry-csv'} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-60">{busyAction === 'bulk-registry' || busyAction === 'bulk-registry-csv' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Import records</button>
-                </Panel>
-              </div>
+                    <button onClick={handleBulkRegistryImport} disabled={busyAction === 'bulk-registry' || busyAction === 'bulk-registry-csv'} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-60">{busyAction === 'bulk-registry' || busyAction === 'bulk-registry-csv' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Import records</button>
+                  </Panel>
+
+                  <Panel title="Link registry record to user" eyebrow="Admin mapping">
+                    <div className="grid gap-4">
+                      <Select label="Registry record" value={linkForm.registryId} onChange={(value) => setLinkForm((current) => ({ ...current, registryId: value }))} options={[{ value: '', label: 'Choose registry record' }, ...registry.map((record) => ({ value: record.id, label: `${record.matricNumber} - ${[record.firstName, record.lastName].filter(Boolean).join(' ')}` }))]} />
+                      <Select label="User account" value={linkForm.userId} onChange={(value) => setLinkForm((current) => ({ ...current, userId: value }))} options={[{ value: '', label: 'Choose user' }, ...users.map((entry) => ({ value: entry.id, label: `${fullName(entry)} (${entry.email})` }))]} />
+                      <button onClick={handleLinkRegistry} disabled={busyAction === 'link-registry'} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">{busyAction === 'link-registry' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}Link record</button>
+                    </div>
+                  </Panel>
+                </div>
                 <Panel title="Registry inventory" eyebrow="Student source data">
                   <div className="space-y-4">
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">

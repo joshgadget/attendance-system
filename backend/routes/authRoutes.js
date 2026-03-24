@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { register, studentLookup, getPublicCourses, studentSignup, login, refreshToken, getMe, logout, forgotPassword, resetPassword } = require('../controllers/authController');
+const { register, studentLookup, getPublicCourses, studentSignup, login, refreshToken, getMe, logout, forgotPassword, resetPassword, changePassword } = require('../controllers/authController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { roleMiddleware } = require('../middleware/roleMiddleware');
 const { authRateLimiter } = require('../middleware/securityMiddleware');
@@ -12,6 +12,7 @@ router.get('/public-courses', getPublicCourses);
 router.post('/student-signup', authRateLimiter, studentSignup);
 router.post('/forgot-password', authRateLimiter, forgotPassword);
 router.post('/reset-password', authRateLimiter, resetPassword);
+router.post('/change-password', authMiddleware, changePassword);
 
 router.post('/register', authMiddleware, roleMiddleware('admin'), register);
 router.get('/me', authMiddleware, getMe);

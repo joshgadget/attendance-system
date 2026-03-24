@@ -14,6 +14,7 @@ router.get('/:id', roleMiddleware('admin', 'lecturer'), userController.getUser);
 router.get('/:id/enrollments', roleMiddleware('admin'), userController.getStudentEnrollments);
 router.put('/:id', roleMiddleware('admin'), userController.updateUser);
 router.put('/:id/enrollments', roleMiddleware('admin'), userController.updateStudentEnrollments);
+router.post('/:id/reactivate', roleMiddleware('admin'), userController.reactivateUser);
 router.delete('/:id', roleMiddleware('admin'), userController.deactivateUser);
 
 module.exports = router;

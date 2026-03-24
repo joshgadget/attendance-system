@@ -72,6 +72,11 @@ const User = sequelize.define('User', {
     type: DataTypes.DATE,
     allowNull: true,
     field: 'reset_password_expires'
+  },
+  mustResetPassword: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    field: 'must_reset_password'
   }
 }, {
   tableName: 'users',
@@ -100,8 +105,8 @@ User.prototype.comparePassword = async function(candidatePassword) {
 
 // Method to return user data without password
 User.prototype.toSafeObject = function() {
-  const { id, firstName, lastName, email, role, matricNumber, department, faculty, program, isActive, lastLogin, createdAt, updatedAt } = this.toJSON();
-  return { id, firstName, lastName, email, role, matricNumber, department, faculty, program, isActive, lastLogin, createdAt, updatedAt };
+  const { id, firstName, lastName, email, role, matricNumber, department, faculty, program, isActive, lastLogin, mustResetPassword, createdAt, updatedAt } = this.toJSON();
+  return { id, firstName, lastName, email, role, matricNumber, department, faculty, program, isActive, lastLogin, mustResetPassword, createdAt, updatedAt };
 };
 
 module.exports = User;
