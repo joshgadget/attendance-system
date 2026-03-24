@@ -3,7 +3,7 @@ const { StudentRegistry } = require('../models');
 
 exports.getRegistry = async (req, res) => {
   try {
-    const { search } = req.query;
+    const { search, faculty, department, program, level, claimed } = req.query;
     const where = {};
 
     if (search) {
@@ -15,6 +15,30 @@ exports.getRegistry = async (req, res) => {
         { faculty: { [Op.like]: `%${search}%` } },
         { program: { [Op.like]: `%${search}%` } },
       ];
+    }
+
+    if (faculty) {
+      where.faculty = faculty;
+    }
+
+    if (department) {
+      where.department = department;
+    }
+
+    if (program) {
+      where.program = program;
+    }
+
+    if (level) {
+      where.level = level;
+    }
+
+    if (claimed === 'true') {
+      where.claimedByUserId = { [Op.ne]: null };
+    }
+
+    if (claimed === 'false') {
+      where.claimedByUserId = null;
     }
 
     const records = await StudentRegistry.findAll({

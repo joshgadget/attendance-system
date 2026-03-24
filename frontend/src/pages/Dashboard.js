@@ -27,7 +27,7 @@ import api from '../services/api';
 import { logout } from '../redux/slices/authSlice';
 
 const initialUserForm = { firstName: '', lastName: '', email: '', password: '', role: 'student', department: '', faculty: '', program: '', matricNumber: '' };
-const initialCourseForm = { courseCode: '', courseName: '', description: '', semester: 'rain', academicYear: '', lecturerId: '' };
+const initialCourseForm = { courseCode: '', courseName: '', description: '', semester: 'rain', academicYear: '', lecturerId: '', faculty: '', department: '', program: '', level: '' };
 const initialRegistryForm = { matricNumber: '', firstName: '', lastName: '', otherName: '', faculty: '', department: '', program: '', level: '', admissionYear: '' };
 const initialSessionForm = { courseId: '', date: '', startTime: '', durationMinutes: '120', venue: '', maxAttendanceTime: '15', geofenceLatitude: '', geofenceLongitude: '', geofenceRadiusMeters: '' };
 const initialQueryForm = { studentId: '', sessionId: '', title: '', message: '' };
@@ -268,6 +268,11 @@ const Dashboard = () => {
   const [bulkRegistry, setBulkRegistry] = useState('');
   const [registryFileName, setRegistryFileName] = useState('');
   const [responseDrafts, setResponseDrafts] = useState({});
+  const [registryFilters, setRegistryFilters] = useState({ faculty: '', department: '', program: '', level: '', claimed: '' });
+  const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [studentEditForm, setStudentEditForm] = useState({ firstName: '', lastName: '', matricNumber: '', department: '', faculty: '', program: '' });
+  const [enrollmentForm, setEnrollmentForm] = useState({ semester: 'rain', academicYear: new Date().getFullYear() + '/' + String(new Date().getFullYear() + 1).slice(-2), courseIds: [] });
+  const [studentEnrollments, setStudentEnrollments] = useState([]);
 
   const [userForm, setUserForm] = useState(initialUserForm);
   const [courseForm, setCourseForm] = useState(initialCourseForm);
@@ -726,9 +731,114 @@ const Dashboard = () => {
     }
   };
 
+  const handleSelectStudent = async (studentId) => {
+    setSelectedStudentId(studentId);
+    const student = students.find((entry) => String(entry.id) === String(studentId));
+    if (student) {
+      setStudentEditForm({
+        firstName: student.firstName || '',
+        lastName: student.lastName || '',
+        matricNumber: student.matricNumber || '',
+        department: student.department || '',
+        faculty: student.faculty || '',
+        program: student.program || '',
+      });
+    }
+
+    try {
+      const response = await api.get(`/users/${studentId}/enrollments`);
+      const enrollments = response.data.data || [];
+      setStudentEnrollments(enrollments);
+      if (enrollments.length > 0) {
+        const primary = enrollments[0];
+        const semester = primary.semester || enrollmentForm.semester;
+        const academicYear = primary.academicYear || enrollmentForm.academicYear;
+        const courseIds = enrollments
+          .filter((entry) => entry.semester === semester && entry.academicYear === academicYear)
+          .map((entry) => entry.courseId);
+        setEnrollmentForm({ semester, academicYear, courseIds });
+      }
+    } catch (loadError) {
+      setStudentEnrollments([]);
+    }
+  };
+
+  const toggleEnrollmentCourse = (courseId) => {
+    setEnrollmentForm((current) => ({
+      ...current,
+      courseIds: current.courseIds.includes(courseId)
+        ? current.courseIds.filter((id) => id !== courseId)
+        : [...current.courseIds, courseId],
+    }));
+  };
+
+  const handleUpdateStudentProfile = async (event) => {
+    event.preventDefault();
+    if (!selectedStudentId) {
+      setMessage('', 'Select a student first.');
+      return;
+    }
+
+    try {
+      setBusyAction('update-student-profile');
+      setMessage();
+      await api.put(`/users/${selectedStudentId}`, studentEditForm);
+      setMessage('Student profile updated successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Student profile update failed.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleUpdateStudentEnrollments = async (event) => {
+    event.preventDefault();
+    if (!selectedStudentId) {
+      setMessage('', 'Select a student first.');
+      return;
+    }
+
+    try {
+      setBusyAction('update-student-enrollments');
+      setMessage();
+      await api.put(`/users/${selectedStudentId}/enrollments`, enrollmentForm);
+      setMessage('Student courses updated successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Student course update failed.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   const filteredUsers = useMemo(() => (!search ? users : users.filter((entry) => [entry.firstName, entry.lastName, entry.email, entry.role, entry.department, entry.matricNumber].some((value) => includesSearch(value, search)))), [search, users]);
   const filteredCourses = useMemo(() => (!search ? courses : courses.filter((entry) => [entry.courseCode, entry.courseName, entry.academicYear, entry.semester, fullName(entry.lecturer)].some((value) => includesSearch(value, search)))), [courses, search]);
-  const filteredRegistry = useMemo(() => (!search ? registry : registry.filter((entry) => [entry.matricNumber, entry.firstName, entry.lastName, entry.program, entry.faculty, entry.department].some((value) => includesSearch(value, search)))), [registry, search]);
+
+  const registryFilterOptions = useMemo(() => {
+    const unique = (values) => [...new Set(values.filter(Boolean))].sort();
+    return {
+      faculty: unique(registry.map((entry) => entry.faculty)),
+      department: unique(registry.map((entry) => entry.department)),
+      program: unique(registry.map((entry) => entry.program)),
+      level: unique(registry.map((entry) => entry.level)),
+    };
+  }, [registry]);
+
+  const filteredRegistry = useMemo(() => {
+    return registry.filter((entry) => {
+      if (search && ![entry.matricNumber, entry.firstName, entry.lastName, entry.program, entry.faculty, entry.department].some((value) => includesSearch(value, search))) {
+        return false;
+      }
+      if (registryFilters.faculty && entry.faculty !== registryFilters.faculty) return false;
+      if (registryFilters.department && entry.department !== registryFilters.department) return false;
+      if (registryFilters.program && entry.program !== registryFilters.program) return false;
+      if (registryFilters.level && entry.level !== registryFilters.level) return false;
+      if (registryFilters.claimed === 'true' && !entry.claimedByUserId) return false;
+      if (registryFilters.claimed === 'false' && entry.claimedByUserId) return false;
+      return true;
+    });
+  }, [registry, registryFilters, search]);
   const filteredSessions = useMemo(() => (!search ? sessions : sessions.filter((entry) => [entry.sessionCode, entry.date, entry.status, entry.course?.courseCode, entry.course?.courseName, entry.venue].some((value) => includesSearch(value, search)))), [search, sessions]);
   const filteredQueries = useMemo(() => (!search ? queries : queries.filter((entry) => [entry.title, entry.message, entry.status, fullName(entry.student), entry.student?.matricNumber, entry.session?.course?.courseCode].some((value) => includesSearch(value, search)))), [queries, search]);
 
@@ -852,20 +962,64 @@ const Dashboard = () => {
 
           {activeTab === 'users' && role === 'admin' && (
             <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr]">
-              <Panel title="Create a user account" eyebrow="Admin tools">
-                <form onSubmit={handleCreateUser} className="grid gap-4 md:grid-cols-2">
-                  <Input label="First name" value={userForm.firstName} onChange={(value) => setUserForm((current) => ({ ...current, firstName: value }))} />
-                  <Input label="Last name" value={userForm.lastName} onChange={(value) => setUserForm((current) => ({ ...current, lastName: value }))} />
-                  <Input label="Email" type="email" value={userForm.email} onChange={(value) => setUserForm((current) => ({ ...current, email: value }))} />
-                  <Input label="Password" type="password" value={userForm.password} onChange={(value) => setUserForm((current) => ({ ...current, password: value }))} />
-                  <Select label="Role" value={userForm.role} onChange={(value) => setUserForm((current) => ({ ...current, role: value }))} options={[{ value: 'student', label: 'Student' }, { value: 'lecturer', label: 'Lecturer' }, { value: 'admin', label: 'Admin' }]} />
-                  <Input label="Department" value={userForm.department} onChange={(value) => setUserForm((current) => ({ ...current, department: value }))} />
-                  <Input label="Faculty" value={userForm.faculty} onChange={(value) => setUserForm((current) => ({ ...current, faculty: value }))} />
-                  <Input label="Program" value={userForm.program} onChange={(value) => setUserForm((current) => ({ ...current, program: value }))} />
-                  {userForm.role === 'student' && <Input label="Matric number" value={userForm.matricNumber} onChange={(value) => setUserForm((current) => ({ ...current, matricNumber: value }))} />}
-                  <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-user'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-user' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}Create user</button></div>
-                </form>
-              </Panel>
+              <div className="grid gap-8">
+                <Panel title="Create a user account" eyebrow="Admin tools">
+                  <form onSubmit={handleCreateUser} className="grid gap-4 md:grid-cols-2">
+                    <Input label="First name" value={userForm.firstName} onChange={(value) => setUserForm((current) => ({ ...current, firstName: value }))} />
+                    <Input label="Last name" value={userForm.lastName} onChange={(value) => setUserForm((current) => ({ ...current, lastName: value }))} />
+                    <Input label="Email" type="email" value={userForm.email} onChange={(value) => setUserForm((current) => ({ ...current, email: value }))} />
+                    <Input label="Password" type="password" value={userForm.password} onChange={(value) => setUserForm((current) => ({ ...current, password: value }))} />
+                    <Select label="Role" value={userForm.role} onChange={(value) => setUserForm((current) => ({ ...current, role: value }))} options={[{ value: 'student', label: 'Student' }, { value: 'lecturer', label: 'Lecturer' }, { value: 'admin', label: 'Admin' }]} />
+                    <Input label="Department" value={userForm.department} onChange={(value) => setUserForm((current) => ({ ...current, department: value }))} />
+                    <Input label="Faculty" value={userForm.faculty} onChange={(value) => setUserForm((current) => ({ ...current, faculty: value }))} />
+                    <Input label="Program" value={userForm.program} onChange={(value) => setUserForm((current) => ({ ...current, program: value }))} />
+                    {userForm.role === 'student' && <Input label="Matric number" value={userForm.matricNumber} onChange={(value) => setUserForm((current) => ({ ...current, matricNumber: value }))} />}
+                    <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-user'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-user' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}Create user</button></div>
+                  </form>
+                </Panel>
+
+                <Panel title="Edit student profile & courses" eyebrow="Admin control">
+                  <div className="space-y-5">
+                    <Select
+                      label="Select student"
+                      value={selectedStudentId}
+                      onChange={(value) => handleSelectStudent(value)}
+                      options={[{ value: '', label: 'Choose student' }, ...students.map((student) => ({ value: student.id, label: `${fullName(student)}${student.matricNumber ? ` (${student.matricNumber})` : ''}` }))]}
+                    />
+                    <form onSubmit={handleUpdateStudentProfile} className="grid gap-4 md:grid-cols-2">
+                      <Input label="First name" value={studentEditForm.firstName} onChange={(value) => setStudentEditForm((current) => ({ ...current, firstName: value }))} />
+                      <Input label="Last name" value={studentEditForm.lastName} onChange={(value) => setStudentEditForm((current) => ({ ...current, lastName: value }))} />
+                      <Input label="Matric number" value={studentEditForm.matricNumber} onChange={(value) => setStudentEditForm((current) => ({ ...current, matricNumber: value }))} />
+                      <Input label="Department" value={studentEditForm.department} onChange={(value) => setStudentEditForm((current) => ({ ...current, department: value }))} />
+                      <Input label="Faculty" value={studentEditForm.faculty} onChange={(value) => setStudentEditForm((current) => ({ ...current, faculty: value }))} />
+                      <Input label="Program" value={studentEditForm.program} onChange={(value) => setStudentEditForm((current) => ({ ...current, program: value }))} />
+                      <div className="md:col-span-2">
+                        <button type="submit" disabled={busyAction === 'update-student-profile'} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">{busyAction === 'update-student-profile' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}Update profile</button>
+                      </div>
+                    </form>
+
+                    <form onSubmit={handleUpdateStudentEnrollments} className="grid gap-4">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <Select label="Semester" value={enrollmentForm.semester} onChange={(value) => setEnrollmentForm((current) => ({ ...current, semester: value }))} options={[{ value: 'rain', label: 'Rain' }, { value: 'harmattan', label: 'Harmattan' }]} />
+                        <Input label="Academic year" value={enrollmentForm.academicYear} onChange={(value) => setEnrollmentForm((current) => ({ ...current, academicYear: value }))} />
+                      </div>
+                      <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-4">
+                        <p className="text-sm font-semibold text-slate-700">Assign courses (admin override)</p>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          {courses.filter((course) => course.isActive !== false).map((course) => (
+                            <label key={course.id} className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                              <input type="checkbox" checked={enrollmentForm.courseIds.includes(course.id)} onChange={() => toggleEnrollmentCourse(course.id)} className="h-4 w-4 rounded border-slate-300 text-blue-600" />
+                              {course.courseCode} - {course.courseName}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <button type="submit" disabled={busyAction === 'update-student-enrollments'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'update-student-enrollments' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}Update courses</button>
+                    </form>
+                  </div>
+                </Panel>
+              </div>
+
               <Panel title="Registered users" eyebrow="Directory">
                 <div className="space-y-4">
                   {filteredUsers.length > 0 ? filteredUsers.map((entry) => (
@@ -913,15 +1067,27 @@ const Dashboard = () => {
                   <button onClick={handleBulkRegistryImport} disabled={busyAction === 'bulk-registry' || busyAction === 'bulk-registry-csv'} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-60">{busyAction === 'bulk-registry' || busyAction === 'bulk-registry-csv' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Import records</button>
                 </Panel>
               </div>
-              <Panel title="Registry inventory" eyebrow="Student source data">
-                <div className="space-y-4">
-                  {filteredRegistry.length > 0 ? filteredRegistry.map((record) => (
-                    <div key={record.id} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div><p className="text-lg font-bold text-slate-950">{record.matricNumber}</p><p className="mt-1 text-sm text-slate-500">{[record.firstName, record.otherName, record.lastName].filter(Boolean).join(' ')}</p><p className="mt-2 text-sm text-slate-500">{record.program} | {record.department}</p></div>
-                        <div className="flex flex-wrap gap-2"><Badge tone={record.claimedByUserId ? 'emerald' : 'amber'}>{record.claimedByUserId ? 'claimed' : 'available'}</Badge><Badge tone={record.isActive ? 'blue' : 'rose'}>{record.isActive ? 'active' : 'inactive'}</Badge></div>
-                      </div>
+                <Panel title="Registry inventory" eyebrow="Student source data">
+                  <div className="space-y-4">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      <Select label="Faculty" value={registryFilters.faculty} onChange={(value) => setRegistryFilters((current) => ({ ...current, faculty: value }))} options={[{ value: '', label: 'All faculties' }, ...registryFilterOptions.faculty.map((value) => ({ value, label: value }))]} />
+                      <Select label="Department" value={registryFilters.department} onChange={(value) => setRegistryFilters((current) => ({ ...current, department: value }))} options={[{ value: '', label: 'All departments' }, ...registryFilterOptions.department.map((value) => ({ value, label: value }))]} />
+                      <Select label="Program" value={registryFilters.program} onChange={(value) => setRegistryFilters((current) => ({ ...current, program: value }))} options={[{ value: '', label: 'All programs' }, ...registryFilterOptions.program.map((value) => ({ value, label: value }))]} />
+                      <Select label="Level" value={registryFilters.level} onChange={(value) => setRegistryFilters((current) => ({ ...current, level: value }))} options={[{ value: '', label: 'All levels' }, ...registryFilterOptions.level.map((value) => ({ value, label: value }))]} />
+                      <Select label="Claimed" value={registryFilters.claimed} onChange={(value) => setRegistryFilters((current) => ({ ...current, claimed: value }))} options={[{ value: '', label: 'All records' }, { value: 'true', label: 'Claimed' }, { value: 'false', label: 'Available' }]} />
                     </div>
+                    {filteredRegistry.length > 0 ? filteredRegistry.map((record) => (
+                      <div key={record.id} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <p className="text-lg font-bold text-slate-950">{record.matricNumber}</p>
+                            <p className="mt-1 text-sm text-slate-500">{[record.firstName, record.otherName, record.lastName].filter(Boolean).join(' ')}</p>
+                            <p className="mt-2 text-sm text-slate-500">{record.program} | {record.department}</p>
+                            <p className="mt-1 text-sm text-slate-500">Level: {record.level || 'Not set'} | Faculty: {record.faculty}</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2"><Badge tone={record.claimedByUserId ? 'emerald' : 'amber'}>{record.claimedByUserId ? 'claimed' : 'available'}</Badge><Badge tone={record.isActive ? 'blue' : 'rose'}>{record.isActive ? 'active' : 'inactive'}</Badge></div>
+                        </div>
+                      </div>
                   )) : <EmptyState title="No registry records match your search" description="Add a single record or import many records in JSON format." />}
                 </div>
               </Panel>
@@ -933,13 +1099,17 @@ const Dashboard = () => {
               {(role === 'admin' || role === 'lecturer') && (
                 <div className="grid gap-8">
                   {role === 'admin' && (
-                    <Panel title="Create a course" eyebrow="Academic setup">
-                      <form onSubmit={handleCreateCourse} className="grid gap-4 md:grid-cols-2">
-                        <Input label="Course code" value={courseForm.courseCode} onChange={(value) => setCourseForm((current) => ({ ...current, courseCode: value.toUpperCase() }))} />
-                        <Input label="Course name" value={courseForm.courseName} onChange={(value) => setCourseForm((current) => ({ ...current, courseName: value }))} />
-                        <Select label="Semester" value={courseForm.semester} onChange={(value) => setCourseForm((current) => ({ ...current, semester: value }))} options={[{ value: 'rain', label: 'Rain' }, { value: 'harmattan', label: 'Harmattan' }]} />
-                        <Input label="Academic year" value={courseForm.academicYear} onChange={(value) => setCourseForm((current) => ({ ...current, academicYear: value }))} />
-                        <Select label="Assign lecturer" value={courseForm.lecturerId} onChange={(value) => setCourseForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Choose lecturer' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
+                      <Panel title="Create a course" eyebrow="Academic setup">
+                        <form onSubmit={handleCreateCourse} className="grid gap-4 md:grid-cols-2">
+                          <Input label="Course code" value={courseForm.courseCode} onChange={(value) => setCourseForm((current) => ({ ...current, courseCode: value.toUpperCase() }))} />
+                          <Input label="Course name" value={courseForm.courseName} onChange={(value) => setCourseForm((current) => ({ ...current, courseName: value }))} />
+                          <Select label="Semester" value={courseForm.semester} onChange={(value) => setCourseForm((current) => ({ ...current, semester: value }))} options={[{ value: 'rain', label: 'Rain' }, { value: 'harmattan', label: 'Harmattan' }]} />
+                          <Input label="Academic year" value={courseForm.academicYear} onChange={(value) => setCourseForm((current) => ({ ...current, academicYear: value }))} />
+                          <Input label="Faculty" value={courseForm.faculty} onChange={(value) => setCourseForm((current) => ({ ...current, faculty: value }))} />
+                          <Input label="Department" value={courseForm.department} onChange={(value) => setCourseForm((current) => ({ ...current, department: value }))} />
+                          <Input label="Program" value={courseForm.program} onChange={(value) => setCourseForm((current) => ({ ...current, program: value }))} />
+                          <Input label="Level" value={courseForm.level} onChange={(value) => setCourseForm((current) => ({ ...current, level: value }))} />
+                          <Select label="Assign lecturer" value={courseForm.lecturerId} onChange={(value) => setCourseForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Choose lecturer' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
                         <div className="md:col-span-2"><label className="mb-2 block text-sm font-semibold text-slate-700">Description</label><textarea value={courseForm.description} onChange={(event) => setCourseForm((current) => ({ ...current, description: event.target.value }))} rows={4} className="w-full rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /></div>
                         <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-course'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-course' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}Create course</button></div>
                       </form>

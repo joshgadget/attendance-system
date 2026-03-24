@@ -118,7 +118,7 @@ const studentLookup = async (req, res) => {
 
 const getPublicCourses = async (req, res) => {
   try {
-    const { semester, academicYear } = req.query;
+    const { semester, academicYear, faculty, department, program, level } = req.query;
     const where = { isActive: true };
 
     if (semester) {
@@ -127,6 +127,22 @@ const getPublicCourses = async (req, res) => {
 
     if (academicYear) {
       where.academicYear = academicYear;
+    }
+
+    if (faculty) {
+      where.faculty = faculty;
+    }
+
+    if (department) {
+      where.department = department;
+    }
+
+    if (program) {
+      where.program = program;
+    }
+
+    if (level) {
+      where.level = level;
     }
 
     const courses = await Course.findAll({

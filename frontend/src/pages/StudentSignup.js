@@ -29,16 +29,26 @@ const StudentSignup = () => {
 
   const canLookup = useMemo(() => form.matricNumber.trim().length >= 3, [form.matricNumber]);
 
-  const loadCourses = async (semester, academicYear) => {
-    const response = await api.get('/auth/public-courses', { params: { semester, academicYear } });
+  const loadCourses = async (semester, academicYear, registry) => {
+    const params = {
+      semester,
+      academicYear,
+    };
+
+    if (registry?.faculty) params.faculty = registry.faculty;
+    if (registry?.department) params.department = registry.department;
+    if (registry?.program) params.program = registry.program;
+    if (registry?.level) params.level = registry.level;
+
+    const response = await api.get('/auth/public-courses', { params });
     setCourses(response.data.data || []);
   };
 
   useEffect(() => {
-    loadCourses(form.semester, form.academicYear).catch(() => {
+    loadCourses(form.semester, form.academicYear, registryRecord).catch(() => {
       setCourses([]);
     });
-  }, [form.semester, form.academicYear]);
+  }, [form.semester, form.academicYear, registryRecord]);
 
   const handleLookup = async () => {
     if (!canLookup) {
@@ -51,7 +61,9 @@ const StudentSignup = () => {
       setError('');
       setSuccess('');
       const response = await api.get(`/auth/student-lookup/${encodeURIComponent(form.matricNumber.trim())}`);
-      setRegistryRecord(response.data.data);
+      const record = response.data.data;
+      setRegistryRecord(record);
+      await loadCourses(form.semester, form.academicYear, record);
       setSuccess('Student record found. Complete your account setup below.');
     } catch (lookupError) {
       setRegistryRecord(null);

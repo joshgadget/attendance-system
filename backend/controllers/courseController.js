@@ -3,7 +3,7 @@ const { Course, Enrollment, User } = require('../models');
 
 exports.createCourse = async (req, res) => {
   try {
-    const { courseCode, courseName, description, semester, academicYear, lecturerId } = req.body;
+    const { courseCode, courseName, description, semester, academicYear, lecturerId, faculty, department, program, level } = req.body;
 
     if (!courseCode || !courseName || !semester || !academicYear || !lecturerId) {
       return res.status(400).json({
@@ -29,6 +29,10 @@ exports.createCourse = async (req, res) => {
       semester,
       academicYear,
       lecturerId,
+      faculty: faculty || null,
+      department: department || null,
+      program: program || null,
+      level: level || null,
       isActive: true,
     });
 

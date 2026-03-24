@@ -28,6 +28,22 @@ const Course = sequelize.define('Course', {
     type: DataTypes.STRING(20),
     allowNull: false
   },
+  faculty: {
+    type: DataTypes.STRING(120),
+    allowNull: true
+  },
+  department: {
+    type: DataTypes.STRING(120),
+    allowNull: true
+  },
+  program: {
+    type: DataTypes.STRING(120),
+    allowNull: true
+  },
+  level: {
+    type: DataTypes.STRING(20),
+    allowNull: true
+  },
   lecturerId: {
     type: DataTypes.INTEGER,
     allowNull: false,
