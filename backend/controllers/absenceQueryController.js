@@ -1,4 +1,5 @@
 const { AbsenceQuery, User, Session, Course } = require('../models');
+const { sendEmail } = require('../utils/mailer');
 
 exports.createQuery = async (req, res) => {
   try {
@@ -37,6 +38,21 @@ exports.createQuery = async (req, res) => {
       title,
       message
     });
+
+    try {
+      if (student.email) {
+        const lecturerName = [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') || 'Your lecturer';
+        const sessionLabel = sessionId ? ` for ${query.sessionId}` : '';
+        await sendEmail({
+          to: student.email,
+          subject: `Attendance System: New absence query${sessionLabel}`,
+          text: `${lecturerName} sent you an absence query.\n\nTitle: ${title}\n\nMessage: ${message}`,
+          html: `<p>${lecturerName} sent you an absence query.</p><p><strong>Title:</strong> ${title}</p><p>${message}</p>`,
+        });
+      }
+    } catch (emailError) {
+      console.warn('Absence query email failed:', emailError.message);
+    }
 
     res.status(201).json({ success: true, message: 'Absence query sent', data: query });
   } catch (error) {
@@ -96,6 +112,22 @@ exports.respondToQuery = async (req, res) => {
     query.status = 'responded';
     query.respondedAt = new Date();
     await query.save();
+
+    try {
+      const lecturer = await User.findByPk(query.lecturerId);
+      if (lecturer?.email) {
+        const student = await User.findByPk(query.studentId);
+        const studentName = [student?.firstName, student?.lastName].filter(Boolean).join(' ') || 'A student';
+        await sendEmail({
+          to: lecturer.email,
+          subject: 'Attendance System: Student responded to absence query',
+          text: `${studentName} responded to the absence query.\n\nTitle: ${query.title}\n\nResponse: ${response}`,
+          html: `<p>${studentName} responded to the absence query.</p><p><strong>Title:</strong> ${query.title}</p><p><strong>Response:</strong> ${response}</p>`,
+        });
+      }
+    } catch (emailError) {
+      console.warn('Absence response email failed:', emailError.message);
+    }
 
     res.json({ success: true, message: 'Response submitted', data: query });
   } catch (error) {

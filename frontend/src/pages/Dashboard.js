@@ -7,6 +7,7 @@ import {
   Camera,
   CheckCircle2,
   Clock3,
+  Download,
   GraduationCap,
   LayoutDashboard,
   LoaderCircle,
@@ -443,6 +444,32 @@ const Dashboard = () => {
       await loadData(true);
     } catch (actionError) {
       setMessage('', actionError.response?.data?.message || 'Course could not be archived.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleDownloadReport = async (courseId, format) => {
+    try {
+      setBusyAction(`download-${format}-${courseId}`);
+      setMessage();
+      const response = await api.get(`/reports/export/${courseId}?format=${format}`, {
+        responseType: 'blob',
+      });
+      const blob = new Blob([response.data], {
+        type: format === 'pdf' ? 'application/pdf' : 'text/csv',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `attendance_${courseId}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setMessage('Report downloaded successfully.');
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Report download failed.');
     } finally {
       setBusyAction('');
     }
@@ -951,6 +978,12 @@ const Dashboard = () => {
                         <div className="flex flex-wrap gap-2"><Badge tone={course.isActive === false ? 'rose' : 'emerald'}>{course.isActive === false ? 'archived' : 'active'}</Badge>{course.enrollment && <Badge tone="blue">enrolled</Badge>}</div>
                       </div>
                       {role === 'admin' && course.isActive !== false && <button onClick={() => handleArchiveCourse(course.id)} disabled={busyAction === `archive-course-${course.id}`} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-50 disabled:opacity-60">{busyAction === `archive-course-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}Archive course</button>}
+                      {role === 'lecturer' && (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button onClick={() => handleDownloadReport(course.id, 'csv')} disabled={busyAction === `download-csv-${course.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{busyAction === `download-csv-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download CSV</button>
+                          <button onClick={() => handleDownloadReport(course.id, 'pdf')} disabled={busyAction === `download-pdf-${course.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">{busyAction === `download-pdf-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download PDF</button>
+                        </div>
+                      )}
                     </div>
                   )) : <EmptyState title="No courses available" description={role === 'student' ? 'No active enrollments were found for your account yet.' : 'Create a course or update your search.'} />}
                 </div>
