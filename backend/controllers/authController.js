@@ -310,7 +310,7 @@ const forgotPassword = async (req, res) => {
       to: user.email,
       subject: 'Attendance System Password Reset',
       text: `You requested a password reset. Use this link within 1 hour: ${resetLink}`,
-      html: `<p>You requested a password reset for <strong>Attendance System</strong>.</p><p>Use this link within 1 hour:</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you did not request this, you can ignore this email.</p>`,
+      html: `<p>You requested a password reset for <strong>Attendance System</strong>.</p><p>Use this link within 1 hour:</p><p style="word-break: break-all; font-family: monospace;">${resetLink}</p><p>If clicking the link does not work, copy and paste it into your browser.</p><p>If you did not request this, you can ignore this email.</p>`,
     });
 
     console.log(`Password reset email sent successfully to ${user.email}`);

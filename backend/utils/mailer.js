@@ -56,6 +56,9 @@ const sendEmail = async ({ to, subject, html, text }) => {
         sender,
         to: [{ email: to }],
         subject,
+        headers: {
+          'X-Mailin-track': '0',
+        },
         ...(html ? { htmlContent: html } : { textContent: text }),
       }),
     });
