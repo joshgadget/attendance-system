@@ -13,6 +13,31 @@ const generateTokens = (user) => {
 
 const normalizeEmail = (email = '') => email.trim().toLowerCase();
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+const buildDisplayName = (user) => [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'there';
+
+const sendWelcomeEmail = async (user, context = {}) => {
+  if (!user?.email) {
+    return;
+  }
+
+  const name = buildDisplayName(user);
+  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  const loginUrl = normalizedBaseUrl.includes('/#') ? normalizedBaseUrl : `${normalizedBaseUrl}/#/login`;
+  const summaryLines = [
+    context.matricNumber ? `Matric number: ${context.matricNumber}` : null,
+    context.department ? `Department: ${context.department}` : null,
+    context.faculty ? `Faculty: ${context.faculty}` : null,
+    context.program ? `Program: ${context.program}` : null,
+  ].filter(Boolean);
+
+  await sendEmail({
+    to: user.email,
+    subject: 'Welcome to Attendance System',
+    text: `Hello ${name},\n\nWelcome to Attendance System. Your account has been created successfully.\n${summaryLines.length ? `\n${summaryLines.join('\n')}\n` : '\n'}\nYou can sign in here: ${loginUrl}\n\nIf you did not create this account, please contact your administrator immediately.`,
+    html: `<p>Hello ${name},</p><p>Welcome to <strong>Attendance System</strong>. Your account has been created successfully.</p>${summaryLines.length ? `<p>${summaryLines.map((line) => line.replace(': ', ':</strong> ').replace(/^([^:]+):/, '<strong>$1:')).join('<br />')}</p>` : ''}<p>You can sign in here:</p><p style="word-break: break-all;"><a href="${loginUrl}">${loginUrl}</a></p><p>If you did not create this account, please contact your administrator immediately.</p>`,
+  });
+};
 
 const createStudentEnrollments = async (userId, courseIds, semester, academicYear) => {
   if (!Array.isArray(courseIds) || courseIds.length === 0) {
@@ -73,6 +98,17 @@ const register = async (req, res) => {
       program: program || null,
       matricNumber: matricNumber || null,
     });
+
+    try {
+      await sendWelcomeEmail(user, {
+        matricNumber,
+        department,
+        faculty,
+        program,
+      });
+    } catch (emailError) {
+      console.warn(`Welcome email failed for ${user.email}:`, emailError.message);
+    }
 
     res.status(201).json({
       success: true,
@@ -198,6 +234,17 @@ const studentSignup = async (req, res) => {
 
     registryRecord.claimedByUserId = user.id;
     await registryRecord.save();
+
+    try {
+      await sendWelcomeEmail(user, {
+        matricNumber: registryRecord.matricNumber,
+        department: registryRecord.department,
+        faculty: registryRecord.faculty,
+        program: registryRecord.program,
+      });
+    } catch (emailError) {
+      console.warn(`Welcome email failed for ${user.email}:`, emailError.message);
+    }
 
     res.status(201).json({
       success: true,
