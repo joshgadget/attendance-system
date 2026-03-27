@@ -301,7 +301,10 @@ const forgotPassword = async (req, res) => {
     await user.save();
 
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const resetLink = `${baseUrl}/reset-password?token=${encodeURIComponent(rawToken)}`;
+    const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const resetLink = `${normalizedBaseUrl}/#/reset-password?token=${encodeURIComponent(rawToken)}`;
+
+    console.log(`Preparing password reset email for ${user.email}`);
 
     await sendEmail({
       to: user.email,
@@ -309,6 +312,8 @@ const forgotPassword = async (req, res) => {
       text: `You requested a password reset. Use this link within 1 hour: ${resetLink}`,
       html: `<p>You requested a password reset for <strong>Attendance System</strong>.</p><p>Use this link within 1 hour:</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you did not request this, you can ignore this email.</p>`,
     });
+
+    console.log(`Password reset email sent successfully to ${user.email}`);
 
     return res.json({
       success: true,

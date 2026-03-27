@@ -12,6 +12,9 @@ const createTransporter = () => {
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT),
     secure: Number(process.env.SMTP_PORT) === 465,
+    connectionTimeout: 15000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
@@ -29,7 +32,9 @@ const sendEmail = async ({ to, subject, html, text }) => {
     return { delivered: false, preview: true };
   }
 
+  console.log(`Attempting email delivery to ${to} with subject "${subject}"`);
   const info = await transporter.sendMail({ from, to, subject, text, html });
+  console.log(`Email delivered to ${to} with messageId ${info.messageId}`);
   return { delivered: true, messageId: info.messageId };
 };
 
