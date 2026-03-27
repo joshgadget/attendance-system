@@ -410,6 +410,18 @@ const Dashboard = () => {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (role !== 'lecturer' || !queryForm.sessionId) {
+      return;
+    }
+
+    if (String(sessionDetail?.id) === String(queryForm.sessionId)) {
+      return;
+    }
+
+    loadSessionDetail(queryForm.sessionId).catch(() => null);
+  }, [loadSessionDetail, queryForm.sessionId, role, sessionDetail?.id]);
+
   const handleCreateUser = async (event) => {
     event.preventDefault();
     try {
@@ -881,6 +893,32 @@ const Dashboard = () => {
   }, [registry, registryFilters, search]);
   const filteredSessions = useMemo(() => (!search ? sessions : sessions.filter((entry) => [entry.sessionCode, entry.date, entry.status, entry.course?.courseCode, entry.course?.courseName, entry.venue].some((value) => includesSearch(value, search)))), [search, sessions]);
   const filteredQueries = useMemo(() => (!search ? queries : queries.filter((entry) => [entry.title, entry.message, entry.status, fullName(entry.student), entry.student?.matricNumber, entry.session?.course?.courseCode].some((value) => includesSearch(value, search)))), [queries, search]);
+  const selectedQuerySession = useMemo(() => {
+    if (!queryForm.sessionId) {
+      return null;
+    }
+
+    return sessions.find((session) => String(session.id) === String(queryForm.sessionId)) || null;
+  }, [queryForm.sessionId, sessions]);
+  const queryEligibleStudents = useMemo(() => {
+    if (role !== 'lecturer') {
+      return students;
+    }
+
+    if (sessionDetail && String(sessionDetail.id) === String(queryForm.sessionId)) {
+      const absentStudents = sessionDetail.absentStudents || [];
+      if (absentStudents.length > 0) {
+        return absentStudents;
+      }
+
+      const enrolledStudents = sessionDetail.enrolledStudents || [];
+      if (enrolledStudents.length > 0) {
+        return enrolledStudents;
+      }
+    }
+
+    return students;
+  }, [queryForm.sessionId, role, sessionDetail, students]);
 
   const stats = useMemo(() => {
     if (role === 'admin') {
@@ -986,7 +1024,7 @@ const Dashboard = () => {
               <Panel title="Operational summary" eyebrow="Overview">
                 <div className="grid gap-4 md:grid-cols-2">
                   {role === 'admin' && <><SummaryTile label="Registry coverage" value={`${summary?.claimedRegistryRecords || 0} / ${summary?.totalRegistryRecords || 0}`} helper="Students who can self-signup right now" /><SummaryTile label="Enrollments" value={summary?.totalEnrollments || 0} helper="Active semester course registrations" /><SummaryTile label="Attendance marks" value={summary?.attendanceMarks || 0} helper="All recorded attendance entries" /><SummaryTile label="Live sessions" value={summary?.activeSessions || 0} helper="Classes currently open for attendance" /></>}
-                  {role === 'lecturer' && <><SummaryTile label="Automatic follow-up" value="Enabled" helper="Absent students are queried when you close a session" /><SummaryTile label="Current session" value={activeSession?.sessionCode || 'None'} helper={activeSession ? `${activeSession.course?.courseCode} in progress` : 'Create a session to start attendance'} /><SummaryTile label="Session detail" value={sessionDetail?.attendanceStats?.presentCount || 0} helper="Students marked present in selected session" /><SummaryTile label="Absent list" value={sessionDetail?.attendanceStats?.absentCount || 0} helper="Students who missed the selected session" /></>}
+                  {role === 'lecturer' && <><SummaryTile label="Automatic follow-up" value="Enabled" helper="Absent students are queried and emailed when you close a session" /><SummaryTile label="Current session" value={activeSession?.sessionCode || 'None'} helper={activeSession ? `${activeSession.course?.courseCode} in progress` : 'Create a session to start attendance'} /><SummaryTile label="Marked attendance" value={sessionDetail?.attendanceStats?.markedCount || 0} helper="Students who have checked in for the selected session" /><SummaryTile label="Absent list" value={sessionDetail?.attendanceStats?.absentCount || 0} helper="Students who missed the selected session" /></>}
                   {role === 'student' && <><SummaryTile label="Attendance profile" value={`${history.filter((item) => item.status === 'present').length} present`} helper="Sessions marked inside the attendance window" /><SummaryTile label="Latest mark" value={history[0]?.session?.course?.courseCode || 'None'} helper={history[0] ? formatDateTime(history[0].markedAt) : 'No attendance marked yet'} /><SummaryTile label="Pending responses" value={queries.filter((query) => query.status === 'pending').length} helper="Queries waiting for your explanation" /><SummaryTile label="Location capture" value={attendanceForm.useLocation ? 'On' : 'Off'} helper="You can include location when marking attendance" /></>}
                 </div>
               </Panel>
@@ -1242,8 +1280,10 @@ const Dashboard = () => {
                       <div className="grid gap-4 md:grid-cols-2">
                         <SummaryTile label="Course" value={sessionDetail.course?.courseCode || 'Not set'} helper={sessionDetail.course?.courseName || 'No course linked'} />
                         <SummaryTile label="Session code" value={sessionDetail.sessionCode} helper={`${formatDate(sessionDetail.date)} at ${formatTime(sessionDetail.startTime)}`} />
-                        <SummaryTile label="Expected students" value={sessionDetail.attendanceStats?.expectedCount || 0} helper="Active enrolled students" />
-                        <SummaryTile label="Absent students" value={sessionDetail.attendanceStats?.absentCount || 0} helper="Automatic absence list for this session" />
+                        <SummaryTile label="Expected students" value={sessionDetail.attendanceStats?.expectedCount || 0} helper="Active enrolled students for this course" />
+                        <SummaryTile label="Marked attendance" value={sessionDetail.attendanceStats?.markedCount || 0} helper="Students already present or late" />
+                        <SummaryTile label="Present on time" value={sessionDetail.attendanceStats?.presentCount || 0} helper="Students marked within the attendance window" />
+                        <SummaryTile label="Absent students" value={sessionDetail.attendanceStats?.absentCount || 0} helper="Students who will receive automatic absence follow-up" />
                       </div>
                       {(sessionDetail.geofenceLatitude && sessionDetail.geofenceLongitude && sessionDetail.geofenceRadiusMeters) && (
                         <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4 text-sm text-blue-900">
@@ -1324,8 +1364,15 @@ const Dashboard = () => {
               {role === 'lecturer' && (
                 <Panel title="Send a manual absence query" eyebrow="Lecturer follow-up">
                   <form onSubmit={handleCreateQuery} className="grid gap-4">
-                    <Select label="Student" value={queryForm.studentId} onChange={(value) => setQueryForm((current) => ({ ...current, studentId: value }))} options={[{ value: '', label: 'Choose student' }, ...students.map((student) => ({ value: student.id, label: `${fullName(student)}${student.matricNumber ? ` (${student.matricNumber})` : ''}` }))]} />
-                    <Select label="Session (optional)" value={queryForm.sessionId} onChange={(value) => setQueryForm((current) => ({ ...current, sessionId: value }))} options={[{ value: '', label: 'No linked session' }, ...sessions.map((session) => ({ value: session.id, label: `${session.course?.courseCode || 'Course'} - ${formatDate(session.date)} (${session.sessionCode})` }))]} />
+                    <Select label="Session (optional)" value={queryForm.sessionId} onChange={(value) => setQueryForm((current) => ({ ...current, sessionId: value, studentId: '' }))} options={[{ value: '', label: 'No linked session' }, ...sessions.map((session) => ({ value: session.id, label: `${session.course?.courseCode || 'Course'} - ${formatDate(session.date)} (${session.sessionCode})` }))]} />
+                    {queryForm.sessionId && (
+                      <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 px-4 py-4 text-sm text-slate-700">
+                        <p className="font-semibold text-slate-900">{selectedQuerySession?.course?.courseCode || 'Selected session'}</p>
+                        <p className="mt-1">Eligible students for this query: {queryEligibleStudents.length}</p>
+                        <p className="mt-1 text-slate-500">When a session is selected, the list below prefers absent students first, then enrolled students for that class.</p>
+                      </div>
+                    )}
+                    <Select label="Student" value={queryForm.studentId} onChange={(value) => setQueryForm((current) => ({ ...current, studentId: value }))} options={[{ value: '', label: queryEligibleStudents.length > 0 ? 'Choose eligible student' : 'No eligible students found' }, ...queryEligibleStudents.map((student) => ({ value: student.id, label: `${fullName(student)}${student.matricNumber ? ` (${student.matricNumber})` : ''}` }))]} />
                     <Input label="Title" value={queryForm.title} onChange={(value) => setQueryForm((current) => ({ ...current, title: value }))} />
                     <div><label className="mb-2 block text-sm font-semibold text-slate-700">Message</label><textarea value={queryForm.message} onChange={(event) => setQueryForm((current) => ({ ...current, message: event.target.value }))} rows={6} className="w-full rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /></div>
                     <button type="submit" disabled={busyAction === 'create-query'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-query' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Send query</button>

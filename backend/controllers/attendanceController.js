@@ -1,5 +1,7 @@
-const { AbsenceQuery, Enrollment, Session, Attendance, Course, User } = require('../models');
+const { AbsenceQuery, Session, Attendance, Course, User } = require('../models');
 const crypto = require('crypto');
+const { sendEmail } = require('../utils/mailer');
+const { findEnrollmentsForCourse } = require('../utils/enrollmentLookup');
 
 const generateSessionCode = () => crypto.randomBytes(5).toString('hex').toUpperCase();
 
@@ -169,30 +171,25 @@ exports.getSession = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    const enrollments = await Enrollment.findAll({
-      where: {
-        courseId: session.courseId,
-        semester: session.course?.semester,
-        academicYear: session.course?.academicYear,
-        status: 'active',
-      },
-      include: [{ model: User, as: 'student', attributes: ['id', 'firstName', 'lastName', 'matricNumber', 'email', 'department', 'faculty', 'program'] }],
-    });
+    const enrollments = await findEnrollmentsForCourse(session.course, { includeStudent: true });
 
     const presentStudentIds = new Set(session.attendances.map((attendance) => attendance.studentId));
     const absentStudents = enrollments
       .filter((entry) => !presentStudentIds.has(entry.userId))
       .map((entry) => entry.student);
+    const markedStudents = session.attendances.length;
 
     const payload = {
       ...session.toJSON(),
       attendanceStats: {
         expectedCount: enrollments.length,
+        markedCount: markedStudents,
         presentCount: session.attendances.filter((entry) => entry.status === 'present').length,
         lateCount: session.attendances.filter((entry) => entry.status === 'late').length,
         absentCount: absentStudents.length,
         queryCount: session.queries.length,
       },
+      enrolledStudents: enrollments.map((entry) => entry.student),
       absentStudents,
     };
 
@@ -296,14 +293,7 @@ exports.closeSession = async (req, res) => {
     session.status = 'closed';
     await session.save();
 
-    const enrollments = await Enrollment.findAll({
-      where: {
-        courseId: session.courseId,
-        semester: session.course?.semester,
-        academicYear: session.course?.academicYear,
-        status: 'active',
-      },
-    });
+    const enrollments = await findEnrollmentsForCourse(session.course, { includeStudent: true });
 
     const attendances = await Attendance.findAll({
       where: { sessionId: session.id },
@@ -319,7 +309,7 @@ exports.closeSession = async (req, res) => {
       });
 
       if (!existingQuery) {
-        await AbsenceQuery.create({
+        const query = await AbsenceQuery.create({
           lecturerId: session.lecturerId,
           studentId: enrollment.userId,
           sessionId: session.id,
@@ -327,6 +317,20 @@ exports.closeSession = async (req, res) => {
           message: `You were not marked present for the ${session.course?.courseName || 'class session'} held on ${session.date}. Please explain why you were absent.`,
           status: 'pending',
         });
+
+        try {
+          if (enrollment.student?.email) {
+            const lecturerName = [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') || 'Your lecturer';
+            await sendEmail({
+              to: enrollment.student.email,
+              subject: `Attendance System: Absence noted for ${session.course?.courseCode || 'your class'}`,
+              text: `${lecturerName} has closed attendance for ${session.course?.courseCode || 'your class'} on ${session.date}. You were marked absent and an absence query was created.\n\nTitle: ${query.title}\n\nMessage: ${query.message}`,
+              html: `<p>${lecturerName} has closed attendance for <strong>${session.course?.courseCode || 'your class'}</strong> on ${session.date}.</p><p>You were marked absent and an absence query was created for you.</p><p><strong>Title:</strong> ${query.title}</p><p>${query.message}</p>`,
+            });
+          }
+        } catch (emailError) {
+          console.warn(`Automatic absence email failed for student ${enrollment.userId}:`, emailError.message);
+        }
       }
     }
 

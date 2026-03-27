@@ -1,5 +1,6 @@
 const { AbsenceQuery, User, Session, Course } = require('../models');
 const { sendEmail } = require('../utils/mailer');
+const { findEnrollmentsForCourse } = require('../utils/enrollmentLookup');
 
 exports.createQuery = async (req, res) => {
   try {
@@ -28,6 +29,15 @@ exports.createQuery = async (req, res) => {
 
       if (req.user.role === 'lecturer' && session.course?.lecturerId !== req.user.id) {
         return res.status(403).json({ success: false, message: 'Not authorized to query this session' });
+      }
+
+      const enrollments = await findEnrollmentsForCourse(session.course);
+      const isEnrolled = enrollments.some((entry) => entry.userId === student.id);
+      if (!isEnrolled) {
+        return res.status(400).json({
+          success: false,
+          message: 'Selected student is not enrolled for the linked session course',
+        });
       }
     }
 
