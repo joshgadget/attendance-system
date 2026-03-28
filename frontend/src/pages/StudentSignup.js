@@ -16,6 +16,16 @@ const initialSignupForm = {
   courseIds: [],
 };
 
+const normalizeAcademicYear = (value = '') => {
+  const digits = String(value).replace(/\D/g, '').slice(0, 4);
+
+  if (digits.length <= 2) {
+    return digits;
+  }
+
+  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+};
+
 const StudentSignup = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -230,7 +240,7 @@ const StudentSignup = () => {
                     <option value="rain">Rain semester</option>
                     <option value="harmattan">Harmattan semester</option>
                   </select>
-                  <input value={form.academicYear} onChange={(event) => setForm((current) => ({ ...current, academicYear: event.target.value }))} placeholder="Academic year" className="rounded-2xl border border-blue-100 bg-white px-4 py-4 text-slate-900 shadow-[0_10px_30px_rgba(148,163,184,0.12)] outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" required />
+                  <input value={form.academicYear} onChange={(event) => setForm((current) => ({ ...current, academicYear: normalizeAcademicYear(event.target.value) }))} placeholder="Academic year" className="rounded-2xl border border-blue-100 bg-white px-4 py-4 text-slate-900 shadow-[0_10px_30px_rgba(148,163,184,0.12)] outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" required />
                 </div>
               </div>
             </div>
