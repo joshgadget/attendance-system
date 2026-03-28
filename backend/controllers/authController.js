@@ -204,6 +204,13 @@ const studentSignup = async (req, res) => {
       });
     }
 
+    if (!Array.isArray(courseIds) || courseIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Complete your course registration before signing up. Select at least one course.',
+      });
+    }
+
     const registryRecord = await StudentRegistry.findOne({ where: { matricNumber, isActive: true } });
     if (!registryRecord) {
       return res.status(404).json({ success: false, message: 'Matric number not found in school registry' });
