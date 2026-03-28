@@ -12,7 +12,7 @@ const initialSignupForm = {
   password: '',
   confirmPassword: '',
   semester: 'rain',
-  academicYear: new Date().getFullYear() + '/' + String(new Date().getFullYear() + 1).slice(-2),
+  academicYear: `${String(new Date().getFullYear()).slice(-2)}/${String(new Date().getFullYear() + 1).slice(-2)}`,
   courseIds: [],
 };
 
