@@ -25,18 +25,6 @@ const clearSession = () => {
   localStorage.removeItem('user');
 };
 
-const resolveRequestError = (error, fallback) => {
-  if (error?.response?.data?.message) {
-    return error.response.data.message;
-  }
-
-  if (error?.code === 'ERR_NETWORK' || !error?.response) {
-    return 'Request blocked by browser/network. Disable privacy blockers for this site and try again.';
-  }
-
-  return fallback;
-};
-
 export const login = createAsyncThunk(
   'auth/login',
   async (credentials, { rejectWithValue }) => {
@@ -46,7 +34,7 @@ export const login = createAsyncThunk(
       persistSession(payload.user, payload.tokens);
       return payload;
     } catch (error) {
-      return rejectWithValue(resolveRequestError(error, 'Login failed'));
+      return rejectWithValue(error.response?.data?.message || 'Login failed');
     }
   }
 );
@@ -61,7 +49,7 @@ export const fetchCurrentUser = createAsyncThunk(
       return user;
     } catch (error) {
       clearSession();
-      return rejectWithValue(resolveRequestError(error, 'Session expired'));
+      return rejectWithValue(error.response?.data?.message || 'Session expired');
     }
   }
 );
