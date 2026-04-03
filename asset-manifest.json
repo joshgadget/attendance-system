@@ -1,11 +1,11 @@
 {
   "files": {
-    "main.css": "/attendance-system/static/css/main.acc6d982.css",
-    "main.js": "/attendance-system/static/js/main.b7cc6cc2.js",
+    "main.css": "/attendance-system/static/css/main.357ec2c5.css",
+    "main.js": "/attendance-system/static/js/main.226bed14.js",
     "index.html": "/attendance-system/index.html"
   },
   "entrypoints": [
-    "static/css/main.acc6d982.css",
-    "static/js/main.b7cc6cc2.js"
+    "static/css/main.357ec2c5.css",
+    "static/js/main.226bed14.js"
   ]
 }
