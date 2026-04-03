@@ -26,7 +26,7 @@ const Login = () => {
       className={`min-h-screen flex items-center justify-center relative overflow-hidden ${
         isDark
           ? 'bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-950'
-          : 'bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500'
+          : 'bg-gradient-to-br from-slate-100 via-blue-100 to-cyan-100'
       }`}
     >
       <button
@@ -35,7 +35,7 @@ const Login = () => {
         className={`absolute right-6 top-6 z-20 inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition ${
           isDark
             ? 'border-white/30 bg-white/10 text-white hover:bg-white/20'
-            : 'border-white/40 bg-white/20 text-white hover:bg-white/30'
+            : 'border-blue-200 bg-white/90 text-blue-700 hover:bg-blue-50'
         }`}
       >
         {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -51,14 +51,14 @@ const Login = () => {
       <motion.div
         animate={{ rotate: -360 }}
         transition={{ duration: 25, repeat: Infinity, ease: 'linear' }}
-        className={`absolute bottom-20 right-20 w-96 h-96 rounded-full blur-3xl ${isDark ? 'bg-cyan-300/10' : 'bg-white/10'}`}
+        className={`absolute bottom-20 right-20 w-96 h-96 rounded-full blur-3xl ${isDark ? 'bg-cyan-300/10' : 'bg-blue-300/20'}`}
       />
 
       {/* Floating Particles */}
       {[...Array(6)].map((_, i) => (
         <motion.div
           key={i}
-          className={`absolute w-2 h-2 rounded-full ${isDark ? 'bg-cyan-200/20' : 'bg-white/30'}`}
+          className={`absolute w-2 h-2 rounded-full ${isDark ? 'bg-cyan-200/20' : 'bg-blue-500/25'}`}
           animate={{
             y: [0, -100, 0],
             x: [0, Math.random() * 50 - 25, 0],
@@ -85,7 +85,7 @@ const Login = () => {
       >
         <div
           className={`backdrop-blur-xl border rounded-3xl shadow-2xl p-8 ${
-            isDark ? 'bg-white/5 border-white/15' : 'bg-white/10 border-white/20'
+            isDark ? 'bg-white/5 border-white/15' : 'bg-white/85 border-blue-200'
           }`}
         >
           {/* Logo Section */}
@@ -104,7 +104,7 @@ const Login = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
-            className={`text-3xl font-bold text-center mb-2 ${isDark ? 'text-slate-100' : 'text-white'}`}
+            className={`text-3xl font-bold text-center mb-2 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}
           >
             Attendance System
           </motion.h1>
@@ -113,7 +113,7 @@ const Login = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4 }}
-            className={`text-center mb-8 ${isDark ? 'text-slate-300' : 'text-white/70'}`}
+            className={`text-center mb-8 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}
           >
             Smart attendance tracking for modern education
           </motion.p>
@@ -137,7 +137,7 @@ const Login = () => {
               transition={{ delay: 0.5 }}
               className="relative"
             >
-              <Mail className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${isDark ? 'text-slate-400' : 'text-white/50'}`} />
+              <Mail className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${isDark ? 'text-slate-400' : 'text-blue-500/70'}`} />
               <input
                 type="email"
                 value={email}
@@ -146,7 +146,7 @@ const Login = () => {
                 className={`w-full pl-12 pr-4 py-4 rounded-xl transition-all focus:outline-none ${
                   isDark
                     ? 'bg-slate-900/40 border border-slate-600/40 text-slate-100 placeholder-slate-400 focus:border-cyan-300/40 focus:bg-slate-900/60'
-                    : 'bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-white/30 focus:bg-white/10'
+                    : 'bg-white border border-blue-100 text-slate-900 placeholder-slate-400 focus:border-blue-400 focus:bg-white'
                 }`}
                 required
               />
@@ -159,7 +159,7 @@ const Login = () => {
               transition={{ delay: 0.6 }}
               className="relative"
             >
-              <Lock className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${isDark ? 'text-slate-400' : 'text-white/50'}`} />
+              <Lock className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${isDark ? 'text-slate-400' : 'text-blue-500/70'}`} />
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
@@ -168,7 +168,7 @@ const Login = () => {
                 className={`w-full pl-12 pr-12 py-4 rounded-xl transition-all focus:outline-none ${
                   isDark
                     ? 'bg-slate-900/40 border border-slate-600/40 text-slate-100 placeholder-slate-400 focus:border-cyan-300/40 focus:bg-slate-900/60'
-                    : 'bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-white/30 focus:bg-white/10'
+                    : 'bg-white border border-blue-100 text-slate-900 placeholder-slate-400 focus:border-blue-400 focus:bg-white'
                 }`}
                 required
               />
@@ -176,7 +176,7 @@ const Login = () => {
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className={`absolute right-4 top-1/2 transform -translate-y-1/2 transition-colors ${
-                  isDark ? 'text-slate-400 hover:text-slate-100' : 'text-white/50 hover:text-white'
+                  isDark ? 'text-slate-400 hover:text-slate-100' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -193,7 +193,7 @@ const Login = () => {
               type="submit"
               disabled={loading}
               className={`w-full py-4 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all ${
-                isDark ? 'bg-gradient-to-r from-cyan-500 to-blue-600' : 'bg-gradient-to-r from-yellow-400 to-orange-500'
+                isDark ? 'bg-gradient-to-r from-cyan-500 to-blue-600' : 'bg-gradient-to-r from-blue-600 to-cyan-500'
               }`}
             >
               {loading ? (
@@ -215,9 +215,9 @@ const Login = () => {
             transition={{ delay: 0.8 }}
             className="mt-8 text-center"
           >
-            <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-white/50'}`}>
+            <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
               Don't have an account?{' '}
-              <button className={`font-medium transition-colors ${isDark ? 'text-cyan-300 hover:text-cyan-200' : 'text-yellow-400 hover:text-yellow-300'}`}>
+              <button className={`font-medium transition-colors ${isDark ? 'text-cyan-300 hover:text-cyan-200' : 'text-blue-700 hover:text-blue-800'}`}>
                 Contact Admin
               </button>
             </p>
