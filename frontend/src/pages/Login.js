@@ -1,90 +1,226 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Mail, Lock, Eye, EyeOff, GraduationCap, ArrowRight } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, GraduationCap, Moon, Sun } from 'lucide-react';
 import { login } from '../redux/slices/authSlice';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isDark, setIsDark] = useState(() => localStorage.getItem('theme') !== 'light');
   const dispatch = useDispatch();
   const { loading, error } = useSelector((state) => state.auth);
 
-  const handleSubmit = (event) => {
-    event.preventDefault();
+  useEffect(() => {
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  }, [isDark]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
     dispatch(login({ email, password }));
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_top,_#dbeafe,_#93c5fd_35%,_#2563eb_75%,_#1e3a8a_100%)] px-4 py-10">
-      <motion.div animate={{ rotate: 360 }} transition={{ duration: 20, repeat: Infinity, ease: 'linear' }} className="absolute left-[-4rem] top-12 h-72 w-72 rounded-full bg-white/35 blur-3xl" />
-      <motion.div animate={{ rotate: -360 }} transition={{ duration: 25, repeat: Infinity, ease: 'linear' }} className="absolute bottom-[-5rem] right-[-2rem] h-96 w-96 rounded-full bg-sky-200/30 blur-3xl" />
-      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.32),transparent_45%,rgba(30,64,175,0.18))]" />
+    <div
+      className={`min-h-screen flex items-center justify-center relative overflow-hidden ${
+        isDark
+          ? 'bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-950'
+          : 'bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => setIsDark((current) => !current)}
+        className={`absolute right-6 top-6 z-20 inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition ${
+          isDark
+            ? 'border-white/30 bg-white/10 text-white hover:bg-white/20'
+            : 'border-white/40 bg-white/20 text-white hover:bg-white/30'
+        }`}
+      >
+        {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        {isDark ? 'Light mode' : 'Dark mode'}
+      </button>
 
-      {[...Array(6)].map((_, index) => (
+      {/* Animated Background Shapes */}
+      <motion.div
+        animate={{ rotate: 360 }}
+        transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
+        className={`absolute top-20 left-20 w-72 h-72 rounded-full blur-3xl ${isDark ? 'bg-indigo-400/10' : 'bg-white/10'}`}
+      />
+      <motion.div
+        animate={{ rotate: -360 }}
+        transition={{ duration: 25, repeat: Infinity, ease: 'linear' }}
+        className={`absolute bottom-20 right-20 w-96 h-96 rounded-full blur-3xl ${isDark ? 'bg-cyan-300/10' : 'bg-white/10'}`}
+      />
+
+      {/* Floating Particles */}
+      {[...Array(6)].map((_, i) => (
         <motion.div
-          key={index}
-          className="absolute h-2 w-2 rounded-full bg-white/70"
-          animate={{ y: [0, -100, 0], x: [0, Math.random() * 50 - 25, 0], opacity: [0.25, 1, 0.25] }}
-          transition={{ duration: 3 + Math.random() * 2, repeat: Infinity, delay: index * 0.5 }}
-          style={{ left: `${10 + index * 15}%`, top: `${20 + (index % 3) * 25}%` }}
+          key={i}
+          className={`absolute w-2 h-2 rounded-full ${isDark ? 'bg-cyan-200/20' : 'bg-white/30'}`}
+          animate={{
+            y: [0, -100, 0],
+            x: [0, Math.random() * 50 - 25, 0],
+            opacity: [0.2, 1, 0.2],
+          }}
+          transition={{
+            duration: 3 + Math.random() * 2,
+            repeat: Infinity,
+            delay: i * 0.5,
+          }}
+          style={{
+            left: `${10 + i * 15}%`,
+            top: `${20 + (i % 3) * 25}%`,
+          }}
         />
       ))}
 
-      <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="relative z-10 w-full max-w-md">
-        <div className="rounded-[2rem] border border-white/70 bg-white/85 p-8 shadow-[0_30px_80px_rgba(30,64,175,0.28)] backdrop-blur-xl">
-          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.2, type: 'spring' }} className="mb-6 flex justify-center">
-            <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-600 via-sky-500 to-cyan-300 shadow-[0_20px_45px_rgba(37,99,235,0.35)]">
-              <GraduationCap className="h-10 w-10 text-white" />
+      {/* Main Card */}
+      <motion.div
+        initial={{ opacity: 0, y: 50 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="relative z-10 w-full max-w-md mx-4"
+      >
+        <div
+          className={`backdrop-blur-xl border rounded-3xl shadow-2xl p-8 ${
+            isDark ? 'bg-white/5 border-white/15' : 'bg-white/10 border-white/20'
+          }`}
+        >
+          {/* Logo Section */}
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.2, type: 'spring' }}
+            className="flex justify-center mb-6"
+          >
+            <div className="w-20 h-20 bg-gradient-to-tr from-yellow-400 to-orange-500 rounded-2xl flex items-center justify-center shadow-lg">
+              <GraduationCap className="w-10 h-10 text-white" />
             </div>
           </motion.div>
 
-          <motion.h1 initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="mb-2 text-center text-3xl font-bold tracking-tight text-slate-900">
+          <motion.h1
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className={`text-3xl font-bold text-center mb-2 ${isDark ? 'text-slate-100' : 'text-white'}`}
+          >
             Attendance System
           </motion.h1>
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className="mb-8 text-center text-slate-600">
+
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            className={`text-center mb-8 ${isDark ? 'text-slate-300' : 'text-white/70'}`}
+          >
             Smart attendance tracking for modern education
           </motion.p>
 
+          {/* Error Message */}
           {error && (
-            <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-center text-sm text-red-600">
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-xl text-red-200 text-sm text-center"
+            >
               {error}
             </motion.div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.5 }} className="relative">
-              <Mail className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-blue-500" />
-              <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email address" className="w-full rounded-2xl border border-blue-100 bg-white px-4 py-4 pl-12 text-slate-900 shadow-[0_10px_30px_rgba(148,163,184,0.12)] placeholder:text-slate-400 transition-all focus:border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-100" required />
+            {/* Email Field */}
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.5 }}
+              className="relative"
+            >
+              <Mail className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${isDark ? 'text-slate-400' : 'text-white/50'}`} />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email address"
+                className={`w-full pl-12 pr-4 py-4 rounded-xl transition-all focus:outline-none ${
+                  isDark
+                    ? 'bg-slate-900/40 border border-slate-600/40 text-slate-100 placeholder-slate-400 focus:border-cyan-300/40 focus:bg-slate-900/60'
+                    : 'bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-white/30 focus:bg-white/10'
+                }`}
+                required
+              />
             </motion.div>
 
-            <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.6 }} className="relative">
-              <Lock className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-blue-500" />
-              <input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" className="w-full rounded-2xl border border-blue-100 bg-white px-4 py-4 pl-12 pr-12 text-slate-900 shadow-[0_10px_30px_rgba(148,163,184,0.12)] placeholder:text-slate-400 transition-all focus:border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-100" required />
-              <button type="button" onClick={() => setShowPassword((current) => !current)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-blue-600">
-                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+            {/* Password Field */}
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.6 }}
+              className="relative"
+            >
+              <Lock className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 ${isDark ? 'text-slate-400' : 'text-white/50'}`} />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                className={`w-full pl-12 pr-12 py-4 rounded-xl transition-all focus:outline-none ${
+                  isDark
+                    ? 'bg-slate-900/40 border border-slate-600/40 text-slate-100 placeholder-slate-400 focus:border-cyan-300/40 focus:bg-slate-900/60'
+                    : 'bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-white/30 focus:bg-white/10'
+                }`}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className={`absolute right-4 top-1/2 transform -translate-y-1/2 transition-colors ${
+                  isDark ? 'text-slate-400 hover:text-slate-100' : 'text-white/50 hover:text-white'
+                }`}
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </motion.div>
 
-            <motion.button initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="submit" disabled={loading} className="w-full rounded-2xl bg-gradient-to-r from-blue-700 via-blue-600 to-sky-500 py-4 font-semibold text-white shadow-[0_18px_40px_rgba(37,99,235,0.35)] transition-all hover:shadow-[0_22px_50px_rgba(37,99,235,0.45)] disabled:cursor-not-allowed disabled:opacity-50">
-              {loading ? <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="mx-auto h-6 w-6 rounded-full border-2 border-white/30 border-t-white" /> : 'Sign In'}
+            {/* Sign In Button */}
+            <motion.button
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.7 }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              type="submit"
+              disabled={loading}
+              className={`w-full py-4 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all ${
+                isDark ? 'bg-gradient-to-r from-cyan-500 to-blue-600' : 'bg-gradient-to-r from-yellow-400 to-orange-500'
+              }`}
+            >
+              {loading ? (
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                  className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full mx-auto"
+                />
+              ) : (
+                'Sign In'
+              )}
             </motion.button>
           </form>
 
-          <div className="mt-4 text-center">
-            <Link to="/forgot-password" className="text-sm font-medium text-blue-700 transition hover:text-blue-800">
-              Forgot password?
-            </Link>
-          </div>
-
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }} className="mt-8 rounded-[1.5rem] border border-blue-100 bg-blue-50/80 p-5 text-center">
-            <p className="text-sm text-slate-600">Students can create their own account using a verified matric number.</p>
-            <Link to="/signup" className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100">
-              Open student signup
-              <ArrowRight className="h-4 w-4" />
-            </Link>
+          {/* Footer */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.8 }}
+            className="mt-8 text-center"
+          >
+            <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-white/50'}`}>
+              Don't have an account?{' '}
+              <button className={`font-medium transition-colors ${isDark ? 'text-cyan-300 hover:text-cyan-200' : 'text-yellow-400 hover:text-yellow-300'}`}>
+                Contact Admin
+              </button>
+            </p>
           </motion.div>
         </div>
       </motion.div>
