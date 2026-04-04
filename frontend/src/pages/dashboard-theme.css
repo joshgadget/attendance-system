@@ -1,0 +1,62 @@
+.dashboard-shell.dark .text-slate-950,
+.dashboard-shell.dark .text-slate-900,
+.dashboard-shell.dark .text-slate-800 {
+  color: #e2e8f0 !important;
+}
+
+.dashboard-shell.dark .text-slate-700,
+.dashboard-shell.dark .text-slate-600,
+.dashboard-shell.dark .text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+.dashboard-shell.dark .border-slate-200,
+.dashboard-shell.dark .border-white\/70,
+.dashboard-shell.dark .border-white,
+.dashboard-shell.dark .border-blue-100,
+.dashboard-shell.dark .border-blue-200,
+.dashboard-shell.dark .border-rose-100,
+.dashboard-shell.dark .border-emerald-200,
+.dashboard-shell.dark .border-amber-200 {
+  border-color: #334155 !important;
+}
+
+.dashboard-shell.dark .bg-white,
+.dashboard-shell.dark .bg-white\/90,
+.dashboard-shell.dark .bg-white\/80,
+.dashboard-shell.dark .bg-slate-50,
+.dashboard-shell.dark .bg-slate-50\/80 {
+  background-color: #0f172a !important;
+}
+
+.dashboard-shell.dark .bg-blue-50,
+.dashboard-shell.dark .bg-blue-50\/60,
+.dashboard-shell.dark .bg-blue-50\/70 {
+  background-color: #0b2545 !important;
+}
+
+.dashboard-shell.dark .bg-rose-50\/70 {
+  background-color: #3f1d25 !important;
+}
+
+.dashboard-shell.dark .bg-emerald-50 {
+  background-color: #052e2b !important;
+}
+
+.dashboard-shell.dark .bg-red-50 {
+  background-color: #3f1d25 !important;
+}
+
+.dashboard-shell.dark .bg-amber-50 {
+  background-color: #3f2f13 !important;
+}
+
+.dashboard-shell.dark textarea,
+.dashboard-shell.dark input,
+.dashboard-shell.dark select {
+  color: #e2e8f0;
+}
+
+.dashboard-shell.dark ::placeholder {
+  color: #94a3b8;
+}

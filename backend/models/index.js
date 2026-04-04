@@ -8,6 +8,7 @@ const Attendance = require('./attendance');
 const AbsenceQuery = require('./AbsenceQuery');
 const StudentRegistry = require('./StudentRegistry');
 const Enrollment = require('./Enrollment');
+const Building = require('./Building');
 
 // Setup associations function
 const setupAssociations = () => {
@@ -80,6 +81,7 @@ module.exports = {
   AbsenceQuery,
   StudentRegistry,
   Enrollment,
+  Building,
   setupAssociations,
   syncDatabase
 };

@@ -1,4 +1,4 @@
-const { AbsenceQuery, Session, Attendance, Course, User } = require('../models');
+const { AbsenceQuery, Session, Attendance, Course, User, Building } = require('../models');
 const crypto = require('crypto');
 const { sendEmail } = require('../utils/mailer');
 const { findEnrollmentsForCourse } = require('../utils/enrollmentLookup');
@@ -47,14 +47,12 @@ exports.createSession = async (req, res) => {
       geofenceLatitude,
       geofenceLongitude,
       geofenceRadiusMeters,
+      buildingId,
+      building_id,
     } = req.body;
     const resolvedCourseId = courseId || course_id;
     const resolvedStartTime = startTime || start_time;
     const resolvedDuration = Number(durationMinutes || duration_minutes || 120);
-    const hasAnyGeofenceInput =
-      (geofenceLatitude !== undefined && geofenceLatitude !== '') ||
-      (geofenceLongitude !== undefined && geofenceLongitude !== '') ||
-      (geofenceRadiusMeters !== undefined && geofenceRadiusMeters !== '');
 
     if (!resolvedCourseId || !date || !resolvedStartTime) {
       return res.status(400).json({
@@ -63,28 +61,18 @@ exports.createSession = async (req, res) => {
       });
     }
 
-    if (hasAnyGeofenceInput) {
-      if (
-        geofenceLatitude === undefined ||
-        geofenceLatitude === '' ||
-        geofenceLongitude === undefined ||
-        geofenceLongitude === '' ||
-        geofenceRadiusMeters === undefined ||
-        geofenceRadiusMeters === ''
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: 'geofenceLatitude, geofenceLongitude and geofenceRadiusMeters must be provided together',
-        });
-      }
+    const resolvedBuildingId = buildingId || building_id;
 
-      const parsedRadius = Number(geofenceRadiusMeters);
-      if (Number.isNaN(parsedRadius) || parsedRadius < 5 || parsedRadius > 5000) {
-        return res.status(400).json({
-          success: false,
-          message: 'geofenceRadiusMeters must be between 5 and 5000',
-        });
-      }
+    if (!resolvedBuildingId) {
+      return res.status(400).json({
+        success: false,
+        message: 'buildingId is required. Select a geofenced building.',
+      });
+    }
+
+    const building = await Building.findOne({ where: { id: resolvedBuildingId, isActive: true } });
+    if (!building) {
+      return res.status(404).json({ success: false, message: 'Selected building geofence was not found or is inactive.' });
     }
 
     const course = await Course.findByPk(resolvedCourseId);
@@ -114,12 +102,12 @@ exports.createSession = async (req, res) => {
       startTime: resolvedStartTime.length === 5 ? `${resolvedStartTime}:00` : resolvedStartTime,
       endTime: buildEndTime(resolvedStartTime, resolvedDuration),
       sessionCode,
-      venue: venue || null,
+      venue: venue || building.name,
       status: 'active',
       maxAttendanceTime: Number(maxAttendanceTime || 15),
-      geofenceLatitude: hasAnyGeofenceInput ? Number(geofenceLatitude) : null,
-      geofenceLongitude: hasAnyGeofenceInput ? Number(geofenceLongitude) : null,
-      geofenceRadiusMeters: hasAnyGeofenceInput ? Number(geofenceRadiusMeters) : null,
+      geofenceLatitude: Number(building.latitude),
+      geofenceLongitude: Number(building.longitude),
+      geofenceRadiusMeters: Number(building.radiusMeters),
     });
 
     res.status(201).json({

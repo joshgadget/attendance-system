@@ -12,12 +12,12 @@ import {
   LayoutDashboard,
   LoaderCircle,
   LogOut,
-  RefreshCcw,
   Search,
   Send,
   ShieldCheck,
   UserPlus,
   Users,
+  MapPin,
   XCircle,
 } from 'lucide-react';
 import QRCode from 'qrcode';
@@ -25,11 +25,14 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { useDispatch, useSelector } from 'react-redux';
 import api from '../services/api';
 import { logout } from '../redux/slices/authSlice';
+import { useTheme } from '../theme/ThemeContext';
+import './dashboard-theme.css';
 
 const initialUserForm = { firstName: '', lastName: '', email: '', password: '', role: 'student', department: '', faculty: '', program: '', matricNumber: '' };
 const initialCourseForm = { courseCode: '', courseName: '', description: '', semester: 'rain', academicYear: '', lecturerId: '', faculty: '', department: '', program: '', level: '' };
 const initialRegistryForm = { matricNumber: '', firstName: '', lastName: '', otherName: '', faculty: '', department: '', program: '', level: '', admissionYear: '' };
-const initialSessionForm = { courseId: '', date: '', startTime: '', durationMinutes: '120', venue: '', maxAttendanceTime: '15', geofenceLatitude: '', geofenceLongitude: '', geofenceRadiusMeters: '' };
+const initialSessionForm = { courseId: '', date: '', startTime: '', durationMinutes: '120', venue: '', maxAttendanceTime: '15', buildingId: '' };
+const initialBuildingForm = { name: '', tag: '', latitude: '', longitude: '', radiusMeters: '80' };
 const initialQueryForm = { studentId: '', sessionId: '', title: '', message: '' };
 const initialAttendanceForm = { sessionCode: '', useLocation: true };
 
@@ -85,92 +88,122 @@ const extractSessionCode = (decodedText) => {
   }
 };
 
-const Panel = ({ title, eyebrow, action, children }) => (
-  <section className="rounded-[2rem] border border-white/70 bg-white/90 p-6 shadow-[0_20px_60px_rgba(148,163,184,0.14)] backdrop-blur-xl">
+const Panel = ({ title, eyebrow, action, children }) => {
+  const { isDark } = useTheme();
+
+  return (
+  <section className={`rounded-[2rem] border p-6 backdrop-blur-xl ${isDark ? 'border-slate-700 bg-slate-900/80 shadow-[0_20px_60px_rgba(2,6,23,0.6)]' : 'border-white/70 bg-white/90 shadow-[0_20px_60px_rgba(148,163,184,0.14)]'}`}>
     <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div>
         {eyebrow && <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-500">{eyebrow}</p>}
-        <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">{title}</h2>
+        <h2 className={`mt-2 text-xl font-bold tracking-tight ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>{title}</h2>
       </div>
       {action}
     </div>
     {children}
   </section>
-);
+  );
+};
 
-const StatCard = ({ label, value, helper, icon: Icon, tone }) => (
-  <div className="rounded-[1.75rem] border border-white/70 bg-white/90 p-6 shadow-[0_20px_50px_rgba(148,163,184,0.14)]">
+const StatCard = ({ label, value, helper, icon: Icon, tone }) => {
+  const { isDark } = useTheme();
+
+  return (
+  <div className={`rounded-[1.75rem] border p-6 ${isDark ? 'border-slate-700 bg-slate-900/80 shadow-[0_20px_50px_rgba(2,6,23,0.6)]' : 'border-white/70 bg-white/90 shadow-[0_20px_50px_rgba(148,163,184,0.14)]'}`}>
     <div className="flex items-start justify-between gap-4">
       <div>
-        <p className="text-sm font-medium text-slate-500">{label}</p>
-        <p className="mt-2 text-3xl font-bold text-slate-950">{value}</p>
-        <p className="mt-2 text-sm text-slate-500">{helper}</p>
+        <p className={`text-sm font-medium ${isDark ? 'text-slate-300' : 'text-slate-500'}`}>{label}</p>
+        <p className={`mt-2 text-3xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>{value}</p>
+        <p className={`mt-2 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{helper}</p>
       </div>
       <div className={`rounded-2xl p-3 ${tone}`}>
         <Icon className="h-6 w-6 text-white" />
       </div>
     </div>
   </div>
-);
+  );
+};
 
-const EmptyState = ({ title, description }) => (
-  <div className="rounded-[1.5rem] border border-dashed border-blue-200 bg-blue-50/60 p-6 text-sm text-slate-600">
-    <p className="font-semibold text-slate-800">{title}</p>
+const EmptyState = ({ title, description }) => {
+  const { isDark } = useTheme();
+
+  return (
+  <div className={`rounded-[1.5rem] border border-dashed p-6 text-sm ${isDark ? 'border-slate-600 bg-slate-900/70 text-slate-300' : 'border-blue-200 bg-blue-50/60 text-slate-600'}`}>
+    <p className={`font-semibold ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>{title}</p>
     <p className="mt-2 leading-6">{description}</p>
   </div>
-);
+  );
+};
 
 const Badge = ({ children, tone = 'blue' }) => {
+  const { isDark } = useTheme();
   const toneClasses = {
-    blue: 'border-blue-200 bg-blue-50 text-blue-700',
-    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    amber: 'border-amber-200 bg-amber-50 text-amber-700',
-    slate: 'border-slate-200 bg-slate-50 text-slate-600',
-    rose: 'border-rose-200 bg-rose-50 text-rose-700',
+    blue: isDark ? 'border-blue-900/70 bg-blue-950/50 text-blue-300' : 'border-blue-200 bg-blue-50 text-blue-700',
+    emerald: isDark ? 'border-emerald-900/70 bg-emerald-950/40 text-emerald-300' : 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    amber: isDark ? 'border-amber-900/70 bg-amber-950/40 text-amber-300' : 'border-amber-200 bg-amber-50 text-amber-700',
+    slate: isDark ? 'border-slate-700 bg-slate-900 text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-600',
+    rose: isDark ? 'border-rose-900/70 bg-rose-950/40 text-rose-300' : 'border-rose-200 bg-rose-50 text-rose-700',
   };
 
   return <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${toneClasses[tone]}`}>{children}</span>;
 };
 
-const SummaryTile = ({ label, value, helper }) => (
-  <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
-    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-    <p className="mt-3 text-2xl font-bold text-slate-950">{value}</p>
-    <p className="mt-2 text-sm leading-6 text-slate-500">{helper}</p>
-  </div>
-);
+const SummaryTile = ({ label, value, helper }) => {
+  const { isDark } = useTheme();
 
-const ActionTile = ({ title, description }) => (
-  <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
+  return (
+  <div className={`rounded-[1.5rem] border p-5 ${isDark ? 'border-slate-700 bg-slate-900/70' : 'border-slate-200 bg-slate-50/80'}`}>
+    <p className={`text-sm font-semibold uppercase tracking-[0.18em] ${isDark ? 'text-slate-300' : 'text-slate-500'}`}>{label}</p>
+    <p className={`mt-3 text-2xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>{value}</p>
+    <p className={`mt-2 text-sm leading-6 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{helper}</p>
+  </div>
+  );
+};
+
+const ActionTile = ({ title, description }) => {
+  const { isDark } = useTheme();
+
+  return (
+  <div className={`rounded-[1.5rem] border p-5 ${isDark ? 'border-slate-700 bg-slate-900/70' : 'border-slate-200 bg-slate-50/80'}`}>
     <div className="flex items-start gap-3">
       <LayoutDashboard className="mt-1 h-5 w-5 text-blue-600" />
       <div>
-        <p className="font-semibold text-slate-900">{title}</p>
-        <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
+        <p className={`font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{title}</p>
+        <p className={`mt-2 text-sm leading-6 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{description}</p>
       </div>
     </div>
   </div>
-);
+  );
+};
 
-const Input = ({ label, onChange, ...props }) => (
-  <div>
-    <label className="mb-2 block text-sm font-semibold text-slate-700">{label}</label>
-    <input onChange={(event) => onChange(event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" {...props} />
-  </div>
-);
+const Input = ({ label, onChange, ...props }) => {
+  const { isDark } = useTheme();
 
-const Select = ({ label, value, onChange, options }) => (
-  <div>
-    <label className="mb-2 block text-sm font-semibold text-slate-700">{label}</label>
-    <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100">
-      {options.map((option) => (
-        <option key={`${option.value}-${option.label}`} value={option.value}>{option.label}</option>
-      ))}
-    </select>
-  </div>
-);
+  return (
+    <div>
+      <label className={`mb-2 block text-sm font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{label}</label>
+      <input onChange={(event) => onChange(event.target.value)} className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 ${isDark ? 'border-slate-700 bg-slate-800 text-slate-100 placeholder:text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-900'}`} {...props} />
+    </div>
+  );
+};
+
+const Select = ({ label, value, onChange, options }) => {
+  const { isDark } = useTheme();
+
+  return (
+    <div>
+      <label className={`mb-2 block text-sm font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{label}</label>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 ${isDark ? 'border-slate-700 bg-slate-800 text-slate-100' : 'border-slate-200 bg-slate-50 text-slate-900'}`}>
+        {options.map((option) => (
+          <option key={`${option.value}-${option.label}`} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+};
 
 const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
+  const { isDark } = useTheme();
   const [scannerError, setScannerError] = useState('');
 
   useEffect(() => {
@@ -224,13 +257,13 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-[2rem] border border-white/20 bg-white p-6 shadow-2xl">
+      <div className={`w-full max-w-lg rounded-[2rem] border p-6 shadow-2xl ${isDark ? 'border-slate-700 bg-slate-900' : 'border-white/20 bg-white'}`}>
         <div className="mb-4 flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-500">QR scanner</p>
-            <h3 className="mt-2 text-xl font-bold text-slate-950">Scan attendance code</h3>
+            <h3 className={`mt-2 text-xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>Scan attendance code</h3>
           </div>
-          <button onClick={onClose} className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600">Close</button>
+          <button onClick={onClose} className={`rounded-2xl border px-4 py-2 text-sm font-semibold ${isDark ? 'border-slate-700 text-slate-300' : 'border-slate-200 text-slate-600'}`}>Close</button>
         </div>
         <div id="attendance-qr-reader" className="overflow-hidden rounded-[1.5rem] border border-blue-100" />
         {scannerError && <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{scannerError}</p>}
@@ -240,6 +273,7 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
 };
 
 const Dashboard = () => {
+  const { isDark } = useTheme();
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
   const role = user?.role || 'student';
@@ -247,7 +281,7 @@ const Dashboard = () => {
 
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [, setRefreshing] = useState(false);
   const [busyAction, setBusyAction] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -258,6 +292,7 @@ const Dashboard = () => {
   const [lecturers, setLecturers] = useState([]);
   const [students, setStudents] = useState([]);
   const [registry, setRegistry] = useState([]);
+  const [buildings, setBuildings] = useState([]);
   const [courses, setCourses] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [queries, setQueries] = useState([]);
@@ -280,6 +315,7 @@ const Dashboard = () => {
   const [courseForm, setCourseForm] = useState(initialCourseForm);
   const [registryForm, setRegistryForm] = useState(initialRegistryForm);
   const [sessionForm, setSessionForm] = useState(initialSessionForm);
+  const [buildingForm, setBuildingForm] = useState(initialBuildingForm);
   const [queryForm, setQueryForm] = useState(initialQueryForm);
   const [attendanceForm, setAttendanceForm] = useState(initialAttendanceForm);
 
@@ -325,13 +361,14 @@ const Dashboard = () => {
       }
 
       if (role === 'admin') {
-        const [summaryResponse, usersResponse, lecturersResponse, studentsResponse, coursesResponse, registryResponse] = await Promise.all([
+        const [summaryResponse, usersResponse, lecturersResponse, studentsResponse, coursesResponse, registryResponse, buildingsResponse] = await Promise.all([
           api.get('/users/summary'),
           api.get('/users'),
           api.get('/users/lecturers'),
           api.get('/users/students'),
           api.get('/courses'),
           api.get('/registry'),
+          api.get('/buildings'),
         ]);
 
         setSummary(summaryResponse.data.data);
@@ -340,6 +377,7 @@ const Dashboard = () => {
         setStudents(studentsResponse.data.data || []);
         setCourses(coursesResponse.data.data || []);
         setRegistry(registryResponse.data.data || []);
+        setBuildings(buildingsResponse.data.data || []);
         setSessions([]);
         setQueries([]);
         setHistory([]);
@@ -348,15 +386,17 @@ const Dashboard = () => {
       }
 
       if (role === 'lecturer') {
-        const [myCoursesResponse, studentsResponse, sessionsResponse, queriesResponse] = await Promise.all([
+        const [myCoursesResponse, studentsResponse, sessionsResponse, queriesResponse, buildingsResponse] = await Promise.all([
           api.get('/courses/mine'),
           api.get('/users/students'),
           api.get('/attendance/sessions'),
           api.get('/queries'),
+          api.get('/buildings?activeOnly=true'),
         ]);
 
         const lecturerSessions = sessionsResponse.data.data || [];
         setCourses(myCoursesResponse.data.data || []);
+        setBuildings(buildingsResponse.data.data || []);
         setStudents(studentsResponse.data.data || []);
         setSessions(lecturerSessions);
         setQueries(queriesResponse.data.data || []);
@@ -389,6 +429,7 @@ const Dashboard = () => {
         setHistory(myHistory);
         setQueries(myQueries);
         setSessions([]);
+        setBuildings([]);
         setSessionDetail(null);
         setQrDataUrl('');
         setSummary({
@@ -449,6 +490,42 @@ const Dashboard = () => {
       await loadData(true);
     } catch (actionError) {
       setMessage('', actionError.response?.data?.message || 'Course could not be created.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleCreateBuilding = async (event) => {
+    event.preventDefault();
+    try {
+      setBusyAction('create-building');
+      setMessage();
+      await api.post('/buildings', {
+        name: buildingForm.name,
+        tag: buildingForm.tag,
+        latitude: buildingForm.latitude,
+        longitude: buildingForm.longitude,
+        radiusMeters: buildingForm.radiusMeters,
+      });
+      setBuildingForm(initialBuildingForm);
+      setMessage('Building geofence created successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Building geofence could not be created.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleDeactivateBuilding = async (buildingId) => {
+    try {
+      setBusyAction(`deactivate-building-${buildingId}`);
+      setMessage();
+      await api.delete(`/buildings/${buildingId}`);
+      setMessage('Building geofence deactivated successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Building geofence could not be deactivated.');
     } finally {
       setBusyAction('');
     }
@@ -866,6 +943,13 @@ const Dashboard = () => {
 
   const filteredUsers = useMemo(() => (!search ? users : users.filter((entry) => [entry.firstName, entry.lastName, entry.email, entry.role, entry.department, entry.matricNumber].some((value) => includesSearch(value, search)))), [search, users]);
   const filteredCourses = useMemo(() => (!search ? courses : courses.filter((entry) => [entry.courseCode, entry.courseName, entry.academicYear, entry.semester, fullName(entry.lecturer)].some((value) => includesSearch(value, search)))), [courses, search]);
+  const filteredBuildings = useMemo(
+    () =>
+      !search
+        ? buildings
+        : buildings.filter((entry) => [entry.name, entry.tag].some((value) => includesSearch(value, search))),
+    [buildings, search]
+  );
 
   const registryFilterOptions = useMemo(() => {
     const unique = (values) => [...new Set(values.filter(Boolean))].sort();
@@ -953,19 +1037,19 @@ const Dashboard = () => {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
-        <div className="rounded-[2rem] border border-white/10 bg-white/5 px-8 py-6 text-center backdrop-blur-xl">
+      <div className={`flex min-h-screen items-center justify-center ${isDark ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-900'}`}>
+        <div className={`rounded-[2rem] border px-8 py-6 text-center backdrop-blur-xl ${isDark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-white/90'}`}>
           <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-blue-300" />
-          <p className="mt-4 text-sm text-slate-200">Loading your workspace...</p>
+          <p className={`mt-4 text-sm ${isDark ? 'text-slate-200' : 'text-slate-600'}`}>Loading your workspace...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#eff6ff,_#dbeafe_30%,_#bfdbfe_58%,_#e0f2fe_100%)] pb-10 text-slate-900">
+    <div className={`dashboard-shell min-h-screen pb-10 ${isDark ? 'dark bg-[radial-gradient(circle_at_top,_#0f172a,_#020617_30%,_#111827_58%,_#0b1120_100%)] text-slate-100' : 'bg-[radial-gradient(circle_at_top,_#eff6ff,_#dbeafe_30%,_#bfdbfe_58%,_#e0f2fe_100%)] text-slate-900'}`}>
       <QrScannerPanel isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={handleMarkAttendance} />
-      <div className={`relative overflow-hidden bg-gradient-to-r ${toneByRole[role]} px-4 pb-28 pt-8 text-white`}>
+      <div className={`dashboard-top relative overflow-hidden bg-gradient-to-r ${toneByRole[role]} px-4 pb-28 pt-8 text-white`}>
         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.16),transparent_42%,rgba(15,23,42,0.22))]" />
         <div className="relative mx-auto max-w-7xl">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
@@ -982,10 +1066,6 @@ const Dashboard = () => {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <button onClick={() => loadData(true)} className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur-xl transition hover:bg-white/20">
-                <RefreshCcw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
               <button onClick={handleLogout} className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur-xl transition hover:bg-white/20">
                 <LogOut className="h-4 w-4" />
                 Sign out
@@ -1213,6 +1293,48 @@ const Dashboard = () => {
                       </form>
                     </Panel>
                   )}
+                  {role === 'admin' && (
+                    <Panel title="Building geofences" eyebrow="Location setup">
+                      <form onSubmit={handleCreateBuilding} className="grid gap-4 md:grid-cols-2">
+                        <Input label="Building name" value={buildingForm.name} onChange={(value) => setBuildingForm((current) => ({ ...current, name: value }))} />
+                        <Input label="Tag (optional)" value={buildingForm.tag} onChange={(value) => setBuildingForm((current) => ({ ...current, tag: value }))} />
+                        <Input label="Latitude" value={buildingForm.latitude} onChange={(value) => setBuildingForm((current) => ({ ...current, latitude: value }))} />
+                        <Input label="Longitude" value={buildingForm.longitude} onChange={(value) => setBuildingForm((current) => ({ ...current, longitude: value }))} />
+                        <Input label="Radius (meters)" type="number" value={buildingForm.radiusMeters} onChange={(value) => setBuildingForm((current) => ({ ...current, radiusMeters: value }))} />
+                        <div className="md:col-span-2">
+                          <button type="submit" disabled={busyAction === 'create-building'} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
+                            {busyAction === 'create-building' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
+                            Save building geofence
+                          </button>
+                        </div>
+                      </form>
+
+                      <div className="mt-6 space-y-3">
+                        {filteredBuildings.length > 0 ? filteredBuildings.map((building) => (
+                          <div key={building.id} className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <p className="font-semibold text-slate-900">{building.name} {building.tag ? `(${building.tag})` : ''}</p>
+                                <p className="mt-1 text-sm text-slate-500">Center: {building.latitude}, {building.longitude}</p>
+                                <p className="mt-1 text-sm text-slate-500">Radius: {building.radiusMeters}m</p>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <Badge tone={building.isActive ? 'emerald' : 'rose'}>{building.isActive ? 'active' : 'inactive'}</Badge>
+                                {building.isActive && (
+                                  <button onClick={() => handleDeactivateBuilding(building.id)} disabled={busyAction === `deactivate-building-${building.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60">
+                                    {busyAction === `deactivate-building-${building.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                                    Deactivate
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )) : (
+                          <EmptyState title="No building geofences yet" description="Add lecture halls/buildings so lecturers can select them when creating sessions." />
+                        )}
+                      </div>
+                    </Panel>
+                  )}
                   {role === 'lecturer' && (
                     <Panel title="Create an attendance session" eyebrow="Class operations">
                       <form onSubmit={handleCreateSession} className="grid gap-4 md:grid-cols-2">
@@ -1220,11 +1342,25 @@ const Dashboard = () => {
                         <Input label="Date" type="date" value={sessionForm.date} onChange={(value) => setSessionForm((current) => ({ ...current, date: value }))} />
                         <Input label="Start time" type="time" value={sessionForm.startTime} onChange={(value) => setSessionForm((current) => ({ ...current, startTime: value }))} />
                         <Input label="Duration (minutes)" type="number" value={sessionForm.durationMinutes} onChange={(value) => setSessionForm((current) => ({ ...current, durationMinutes: value }))} />
+                        <Select
+                          label="Lecture building geofence"
+                          value={sessionForm.buildingId}
+                          onChange={(value) => setSessionForm((current) => ({ ...current, buildingId: value }))}
+                          options={[
+                            { value: '', label: 'Choose building' },
+                            ...buildings
+                              .filter((building) => building.isActive !== false)
+                              .map((building) => ({
+                                value: building.id,
+                                label: `${building.name}${building.tag ? ` (${building.tag})` : ''} - ${building.radiusMeters}m`,
+                              })),
+                          ]}
+                        />
                         <Input label="Venue" value={sessionForm.venue} onChange={(value) => setSessionForm((current) => ({ ...current, venue: value }))} />
                         <Input label="Grace period (minutes)" type="number" value={sessionForm.maxAttendanceTime} onChange={(value) => setSessionForm((current) => ({ ...current, maxAttendanceTime: value }))} />
-                        <Input label="Geofence latitude (optional)" value={sessionForm.geofenceLatitude} onChange={(value) => setSessionForm((current) => ({ ...current, geofenceLatitude: value }))} />
-                        <Input label="Geofence longitude (optional)" value={sessionForm.geofenceLongitude} onChange={(value) => setSessionForm((current) => ({ ...current, geofenceLongitude: value }))} />
-                        <Input label="Geofence radius meters (optional)" type="number" value={sessionForm.geofenceRadiusMeters} onChange={(value) => setSessionForm((current) => ({ ...current, geofenceRadiusMeters: value }))} />
+                        <div className="md:col-span-2 rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-slate-700">
+                          Geofence is auto-applied from the selected building. Students outside that building radius cannot mark attendance.
+                        </div>
                         <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-session'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-session' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />}Create session</button></div>
                       </form>
                     </Panel>

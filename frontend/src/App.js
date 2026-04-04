@@ -9,6 +9,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import ForceResetPassword from './pages/ForceResetPassword';
 import Dashboard from './pages/Dashboard';
+import { ThemeProvider } from './theme/ThemeContext';
 
 const AuthBootstrap = ({ children }) => {
   const dispatch = useDispatch();
@@ -69,11 +70,13 @@ const AppRoutes = () => {
 function App() {
   return (
     <Provider store={store}>
-      <Router>
-        <AuthBootstrap>
-          <AppRoutes />
-        </AuthBootstrap>
-      </Router>
+      <ThemeProvider>
+        <Router>
+          <AuthBootstrap>
+            <AppRoutes />
+          </AuthBootstrap>
+        </Router>
+      </ThemeProvider>
     </Provider>
   );
 }

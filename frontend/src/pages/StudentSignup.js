@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import api from '../services/api';
 import { hydrateSession } from '../redux/slices/authSlice';
+import { useTheme } from '../theme/ThemeContext';
 
 const initialSignupForm = {
   matricNumber: '',
@@ -27,6 +28,7 @@ const normalizeAcademicYear = (value = '') => {
 };
 
 const StudentSignup = () => {
+  const { isDark } = useTheme();
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const [form, setForm] = useState(initialSignupForm);
@@ -138,15 +140,15 @@ const StudentSignup = () => {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,_#dbeafe,_#93c5fd_35%,_#2563eb_72%,_#172554_100%)] px-4 py-10 text-slate-900">
-      <div className="absolute inset-0 bg-[linear-gradient(140deg,rgba(255,255,255,0.32),transparent_45%,rgba(15,23,42,0.18))]" />
-      <motion.div animate={{ rotate: 360 }} transition={{ duration: 32, repeat: Infinity, ease: 'linear' }} className="absolute left-[-4rem] top-8 h-80 w-80 rounded-full bg-white/30 blur-3xl" />
-      <motion.div animate={{ rotate: -360 }} transition={{ duration: 36, repeat: Infinity, ease: 'linear' }} className="absolute bottom-[-6rem] right-[-4rem] h-[26rem] w-[26rem] rounded-full bg-sky-200/25 blur-3xl" />
+    <div className={`relative min-h-screen overflow-hidden px-4 py-10 ${isDark ? 'bg-[radial-gradient(circle_at_top,_#1e293b,_#111827_35%,_#020617_80%)] text-slate-100' : 'bg-[radial-gradient(circle_at_top,_#dbeafe,_#93c5fd_35%,_#2563eb_72%,_#172554_100%)] text-slate-900'}`}>
+      <div className={`absolute inset-0 ${isDark ? 'bg-[linear-gradient(140deg,rgba(15,23,42,0.5),transparent_45%,rgba(15,23,42,0.45))]' : 'bg-[linear-gradient(140deg,rgba(255,255,255,0.32),transparent_45%,rgba(15,23,42,0.18))]'}`} />
+      <motion.div animate={{ rotate: 360 }} transition={{ duration: 32, repeat: Infinity, ease: 'linear' }} className={`absolute left-[-4rem] top-8 h-80 w-80 rounded-full blur-3xl ${isDark ? 'bg-slate-500/20' : 'bg-white/30'}`} />
+      <motion.div animate={{ rotate: -360 }} transition={{ duration: 36, repeat: Infinity, ease: 'linear' }} className={`absolute bottom-[-6rem] right-[-4rem] h-[26rem] w-[26rem] rounded-full blur-3xl ${isDark ? 'bg-blue-900/20' : 'bg-sky-200/25'}`} />
 
       <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-8 lg:flex-row">
         <div className="lg:w-[28rem]">
-          <div className="rounded-[2rem] border border-white/60 bg-white/85 p-8 shadow-[0_30px_80px_rgba(30,64,175,0.24)] backdrop-blur-xl">
-            <Link to="/login" className="inline-flex items-center gap-2 rounded-2xl border border-blue-100 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:border-blue-200 hover:bg-blue-50">
+          <div className={`rounded-[2rem] border p-8 backdrop-blur-xl ${isDark ? 'border-slate-700/80 bg-slate-900/75 shadow-[0_30px_80px_rgba(2,6,23,0.7)]' : 'border-white/60 bg-white/85 shadow-[0_30px_80px_rgba(30,64,175,0.24)]'}`}>
+            <Link to="/login" className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition ${isDark ? 'border-slate-700 text-blue-300 hover:border-slate-600 hover:bg-slate-800' : 'border-blue-100 text-blue-700 hover:border-blue-200 hover:bg-blue-50'}`}>
               <ArrowLeft className="h-4 w-4" />
               Back to login
             </Link>
@@ -155,35 +157,35 @@ const StudentSignup = () => {
               <GraduationCap className="h-10 w-10 text-white" />
             </div>
 
-            <h1 className="mt-8 text-4xl font-black tracking-tight text-slate-950">Join Attendance System</h1>
-            <p className="mt-4 text-base leading-7 text-slate-600">
+            <h1 className={`mt-8 text-4xl font-black tracking-tight ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>Join Attendance System</h1>
+            <p className={`mt-4 text-base leading-7 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
               Students sign up with a school-issued matric number. Once we verify your record, your profile details appear automatically and you can choose the courses you are offering this semester.
             </p>
 
-            <div className="mt-8 space-y-4 rounded-[1.75rem] border border-blue-100 bg-blue-50/80 p-5">
+            <div className={`mt-8 space-y-4 rounded-[1.75rem] border p-5 ${isDark ? 'border-slate-700 bg-slate-800/70' : 'border-blue-100 bg-blue-50/80'}`}>
               <div className="flex items-start gap-3">
                 <BadgeCheck className="mt-0.5 h-5 w-5 text-blue-600" />
-                <p className="text-sm text-slate-700">School-provided student details stay controlled by the admin registry.</p>
+                <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>School-provided student details stay controlled by the admin registry.</p>
               </div>
               <div className="flex items-start gap-3">
                 <BookOpen className="mt-0.5 h-5 w-5 text-blue-600" />
-                <p className="text-sm text-slate-700">You can choose the semester courses you are offering during signup.</p>
+                <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>You can choose the semester courses you are offering during signup.</p>
               </div>
               <div className="flex items-start gap-3">
                 <IdCard className="mt-0.5 h-5 w-5 text-blue-600" />
-                <p className="text-sm text-slate-700">If your matric number is missing, the school admin needs to add it to the registry first.</p>
+                <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>If your matric number is missing, the school admin needs to add it to the registry first.</p>
               </div>
             </div>
           </div>
         </div>
 
         <div className="flex-1">
-          <form onSubmit={handleSubmit} className="rounded-[2rem] border border-white/60 bg-white/88 p-8 shadow-[0_30px_80px_rgba(30,64,175,0.24)] backdrop-blur-xl">
+          <form onSubmit={handleSubmit} className={`rounded-[2rem] border p-8 backdrop-blur-xl ${isDark ? 'border-slate-700/80 bg-slate-900/80 shadow-[0_30px_80px_rgba(2,6,23,0.7)]' : 'border-white/60 bg-white/88 shadow-[0_30px_80px_rgba(30,64,175,0.24)]'}`}>
             <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
               <div className="space-y-6">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-600">Step 1</p>
-                  <h2 className="mt-2 text-2xl font-bold text-slate-950">Verify matric number</h2>
+                  <h2 className={`mt-2 text-2xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>Verify matric number</h2>
                 </div>
 
                 <div className="flex flex-col gap-3 sm:flex-row">
@@ -191,7 +193,7 @@ const StudentSignup = () => {
                     value={form.matricNumber}
                     onChange={(event) => setForm((current) => ({ ...current, matricNumber: event.target.value.toUpperCase() }))}
                     placeholder="Matric number"
-                    className="flex-1 rounded-2xl border border-blue-100 bg-white px-4 py-4 text-slate-900 shadow-[0_10px_30px_rgba(148,163,184,0.12)] outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+                    className={`flex-1 rounded-2xl border px-4 py-4 shadow-[0_10px_30px_rgba(148,163,184,0.12)] outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 ${isDark ? 'border-slate-700 bg-slate-800 text-slate-100 placeholder:text-slate-400' : 'border-blue-100 bg-white text-slate-900'}`}
                     required
                   />
                   <button
@@ -208,8 +210,8 @@ const StudentSignup = () => {
                 {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>}
                 {success && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div>}
 
-                <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
-                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Verified student record</p>
+                <div className={`rounded-[1.75rem] border p-5 ${isDark ? 'border-slate-700 bg-slate-800/70' : 'border-slate-200 bg-slate-50'}`}>
+                  <p className={`text-sm font-semibold uppercase tracking-[0.18em] ${isDark ? 'text-slate-300' : 'text-slate-500'}`}>Verified student record</p>
                   {registryRecord ? (
                     <div className="mt-4 grid gap-4 sm:grid-cols-2">
                       <InfoTile label="Matric Number" value={registryRecord.matricNumber} />
@@ -220,7 +222,7 @@ const StudentSignup = () => {
                       <InfoTile label="Level" value={registryRecord.level || 'Not set'} />
                     </div>
                   ) : (
-                    <p className="mt-4 text-sm text-slate-500">No student record loaded yet.</p>
+                    <p className={`mt-4 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>No student record loaded yet.</p>
                   )}
                 </div>
               </div>
@@ -228,30 +230,30 @@ const StudentSignup = () => {
               <div className="space-y-6">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-600">Step 2</p>
-                  <h2 className="mt-2 text-2xl font-bold text-slate-950">Create your account</h2>
+                  <h2 className={`mt-2 text-2xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>Create your account</h2>
                 </div>
 
-                <LabelledInput icon={Mail} placeholder="Email address" type="email" value={form.email} onChange={(value) => setForm((current) => ({ ...current, email: value }))} required />
-                <LabelledInput icon={Lock} placeholder="Password" type="password" value={form.password} onChange={(value) => setForm((current) => ({ ...current, password: value }))} required />
-                <LabelledInput icon={Lock} placeholder="Confirm password" type="password" value={form.confirmPassword} onChange={(value) => setForm((current) => ({ ...current, confirmPassword: value }))} required />
+                <LabelledInput isDark={isDark} icon={Mail} placeholder="Email address" type="email" value={form.email} onChange={(value) => setForm((current) => ({ ...current, email: value }))} required />
+                <LabelledInput isDark={isDark} icon={Lock} placeholder="Password" type="password" value={form.password} onChange={(value) => setForm((current) => ({ ...current, password: value }))} required />
+                <LabelledInput isDark={isDark} icon={Lock} placeholder="Confirm password" type="password" value={form.confirmPassword} onChange={(value) => setForm((current) => ({ ...current, confirmPassword: value }))} required />
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <select value={form.semester} onChange={(event) => setForm((current) => ({ ...current, semester: event.target.value }))} className="rounded-2xl border border-blue-100 bg-white px-4 py-4 text-slate-900 shadow-[0_10px_30px_rgba(148,163,184,0.12)] outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100">
+                  <select value={form.semester} onChange={(event) => setForm((current) => ({ ...current, semester: event.target.value }))} className={`rounded-2xl border px-4 py-4 shadow-[0_10px_30px_rgba(148,163,184,0.12)] outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 ${isDark ? 'border-slate-700 bg-slate-800 text-slate-100' : 'border-blue-100 bg-white text-slate-900'}`}>
                     <option value="rain">Rain semester</option>
                     <option value="harmattan">Harmattan semester</option>
                   </select>
-                  <input value={form.academicYear} onChange={(event) => setForm((current) => ({ ...current, academicYear: normalizeAcademicYear(event.target.value) }))} placeholder="Academic year" className="rounded-2xl border border-blue-100 bg-white px-4 py-4 text-slate-900 shadow-[0_10px_30px_rgba(148,163,184,0.12)] outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" required />
+                  <input value={form.academicYear} onChange={(event) => setForm((current) => ({ ...current, academicYear: normalizeAcademicYear(event.target.value) }))} placeholder="Academic year" className={`rounded-2xl border px-4 py-4 shadow-[0_10px_30px_rgba(148,163,184,0.12)] outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 ${isDark ? 'border-slate-700 bg-slate-800 text-slate-100 placeholder:text-slate-400' : 'border-blue-100 bg-white text-slate-900'}`} required />
                 </div>
               </div>
             </div>
 
-            <div className="mt-10 rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-6">
+            <div className={`mt-10 rounded-[1.75rem] border p-6 ${isDark ? 'border-slate-700 bg-slate-800/65' : 'border-blue-100 bg-blue-50/70'}`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-600">Step 3</p>
-                  <h2 className="mt-2 text-2xl font-bold text-slate-950">Choose semester courses</h2>
+                  <h2 className={`mt-2 text-2xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>Choose semester courses</h2>
                 </div>
-                <p className="text-sm text-slate-600">Showing active courses for {form.semester} semester, {form.academicYear}.</p>
+                <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>Showing active courses for {form.semester} semester, {form.academicYear}.</p>
               </div>
               <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 Course registration is required. You must choose at least one course before your student account can be created.
@@ -266,17 +268,17 @@ const StudentSignup = () => {
                         type="button"
                         key={course.id}
                         onClick={() => toggleCourse(course.id)}
-                        className={`rounded-[1.5rem] border p-5 text-left transition ${selected ? 'border-blue-600 bg-white shadow-[0_18px_45px_rgba(37,99,235,0.18)]' : 'border-blue-100 bg-white/90 hover:border-blue-300'}`}
+                        className={`rounded-[1.5rem] border p-5 text-left transition ${selected ? (isDark ? 'border-blue-500 bg-slate-900 shadow-[0_18px_45px_rgba(15,23,42,0.5)]' : 'border-blue-600 bg-white shadow-[0_18px_45px_rgba(37,99,235,0.18)]') : (isDark ? 'border-slate-700 bg-slate-900/80 hover:border-slate-500' : 'border-blue-100 bg-white/90 hover:border-blue-300')}`}
                       >
                         <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">{course.courseCode}</p>
-                        <h3 className="mt-2 text-lg font-bold text-slate-950">{course.courseName}</h3>
-                        <p className="mt-3 text-sm text-slate-500">{course.semester} semester</p>
-                        <p className="mt-1 text-sm text-slate-500">{course.academicYear}</p>
+                        <h3 className={`mt-2 text-lg font-bold ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>{course.courseName}</h3>
+                        <p className={`mt-3 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{course.semester} semester</p>
+                        <p className={`mt-1 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{course.academicYear}</p>
                       </button>
                     );
                   })
                 ) : (
-                  <div className="rounded-[1.5rem] border border-dashed border-blue-200 bg-white/80 p-5 text-sm text-slate-500 md:col-span-2 xl:col-span-3">
+                  <div className={`rounded-[1.5rem] border border-dashed p-5 text-sm md:col-span-2 xl:col-span-3 ${isDark ? 'border-slate-600 bg-slate-900/70 text-slate-300' : 'border-blue-200 bg-white/80 text-slate-500'}`}>
                     No active courses are available for this semester yet. An admin can add them from the dashboard.
                   </div>
                 )}
@@ -284,7 +286,7 @@ const StudentSignup = () => {
             </div>
 
             <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-slate-500">Selected courses: <span className="font-semibold text-slate-700">{form.courseIds.length}</span></p>
+              <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-500'}`}>Selected courses: <span className={`font-semibold ${isDark ? 'text-slate-100' : 'text-slate-700'}`}>{form.courseIds.length}</span></p>
               <button type="submit" disabled={submitting || form.courseIds.length === 0} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-700 via-blue-600 to-sky-500 px-6 py-4 font-semibold text-white shadow-[0_18px_40px_rgba(37,99,235,0.32)] transition hover:shadow-[0_22px_50px_rgba(37,99,235,0.42)] disabled:cursor-not-allowed disabled:opacity-60">
                 {submitting ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <BadgeCheck className="h-5 w-5" />}
                 Create student account
@@ -297,23 +299,27 @@ const StudentSignup = () => {
   );
 };
 
-const LabelledInput = ({ icon: Icon, value, onChange, ...props }) => (
+const LabelledInput = ({ icon: Icon, value, onChange, isDark, ...props }) => (
   <div className="relative">
     <Icon className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-blue-500" />
     <input
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="w-full rounded-2xl border border-blue-100 bg-white px-4 py-4 pl-12 text-slate-900 shadow-[0_10px_30px_rgba(148,163,184,0.12)] outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+      className={`w-full rounded-2xl border px-4 py-4 pl-12 shadow-[0_10px_30px_rgba(148,163,184,0.12)] outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 ${isDark ? 'border-slate-700 bg-slate-800 text-slate-100 placeholder:text-slate-400' : 'border-blue-100 bg-white text-slate-900'}`}
       {...props}
     />
   </div>
 );
 
-const InfoTile = ({ label, value }) => (
-  <div className="rounded-2xl border border-white bg-white px-4 py-4 shadow-sm">
-    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</p>
-    <p className="mt-2 text-sm font-semibold text-slate-800">{value}</p>
-  </div>
-);
+const InfoTile = ({ label, value }) => {
+  const { isDark } = useTheme();
+
+  return (
+    <div className={`rounded-2xl border px-4 py-4 shadow-sm ${isDark ? 'border-slate-700 bg-slate-900' : 'border-white bg-white'}`}>
+      <p className={`text-xs font-semibold uppercase tracking-[0.18em] ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>{label}</p>
+      <p className={`mt-2 text-sm font-semibold ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>{value}</p>
+    </div>
+  );
+};
 
 export default StudentSignup;

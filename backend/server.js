@@ -46,6 +46,7 @@ app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/registry', require('./routes/registryRoutes'));
 app.use('/api/courses', require('./routes/courseRoutes'));
+app.use('/api/buildings', require('./routes/buildingRoutes'));
 app.use('/api/attendance', require('./routes/attendanceRoutes'));
 app.use('/api/queries', require('./routes/absenceQueryRoutes'));
 app.use('/api/reports', require('./routes/reportRoutes'));
