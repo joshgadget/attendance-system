@@ -87,7 +87,3 @@ Services:
 3. User opens reset link and sets a new password
 4. Token expires automatically after one hour
 
-## Default Demo Accounts
-
-- Lecturer: `lecturer.demo@attendance.local` / `Lecturer123!`
-- Student: `student.demo@attendance.local` / `Student123!`
