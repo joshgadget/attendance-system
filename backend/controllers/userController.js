@@ -3,6 +3,48 @@ const { User, Course, Enrollment, StudentRegistry, Session, AbsenceQuery, Attend
 
 const sanitizeUser = (user) => (typeof user.toSafeObject === 'function' ? user.toSafeObject() : user);
 
+exports.getMyProfile = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id, {
+      attributes: { exclude: ['password'] },
+      include: [
+        { model: StudentRegistry, as: 'registryRecord', required: false },
+        { model: Enrollment, as: 'enrollments', required: false, include: [{ model: Course, as: 'course', required: false }] },
+      ],
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    res.json({ success: true, data: user });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.updateMyProfile = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const allowedFields = ['firstName', 'lastName', 'department', 'faculty', 'program'];
+    const payload = {};
+    allowedFields.forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+        payload[field] = req.body[field] || null;
+      }
+    });
+
+    await user.update(payload);
+    res.json({ success: true, message: 'Profile updated successfully', data: sanitizeUser(user) });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 exports.getUsers = async (req, res) => {
   try {
     const { role, search } = req.query;

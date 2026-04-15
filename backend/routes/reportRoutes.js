@@ -22,5 +22,9 @@ router.use(authMiddleware);
 // Routes
 router.get('/course/:courseId', requireRole('lecturer'), reportController.getCourseReport);
 router.get('/export/:courseId', requireRole('lecturer'), reportController.exportReport);
+router.get('/system', requireRole('admin'), reportController.getSystemReport);
+router.get('/system/export', requireRole('admin'), reportController.exportSystemReport);
+router.get('/me', requireRole('student'), reportController.getMyAttendanceReport);
+router.get('/me/export', requireRole('student'), reportController.exportMyAttendanceReport);
 
 module.exports = router;

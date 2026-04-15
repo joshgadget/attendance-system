@@ -7,14 +7,18 @@ import {
   Camera,
   CheckCircle2,
   Clock3,
+  CircleHelp,
   Download,
   GraduationCap,
+  KeyRound,
   LayoutDashboard,
   LoaderCircle,
   LogOut,
+  Mail,
   Search,
   Send,
   ShieldCheck,
+  UserCog,
   UserPlus,
   Users,
   MapPin,
@@ -37,19 +41,24 @@ const initialQueryForm = { studentId: '', sessionId: '', title: '', message: '' 
 const initialAttendanceForm = { sessionCode: '', useLocation: true };
 
 const TABS_BY_ROLE = {
-  admin: ['overview', 'users', 'registry', 'courses'],
-  lecturer: ['overview', 'courses', 'sessions', 'queries'],
-  student: ['overview', 'courses', 'attendance', 'queries'],
+  admin: ['overview', 'analytics', 'users', 'registry', 'courses', 'reports', 'notifications', 'profile', 'help'],
+  lecturer: ['overview', 'analytics', 'courses', 'sessions', 'queries', 'reports', 'notifications', 'profile', 'help'],
+  student: ['overview', 'analytics', 'courses', 'attendance', 'queries', 'reports', 'notifications', 'profile', 'help'],
 };
 
 const TAB_LABELS = {
   overview: 'Overview',
+  analytics: 'Analytics',
   users: 'Users',
   registry: 'Registry',
   courses: 'Courses',
   sessions: 'Sessions',
   attendance: 'Attendance',
   queries: 'Queries',
+  reports: 'Reports',
+  notifications: 'Notifications',
+  profile: 'Profile',
+  help: 'Help',
 };
 
 const toneByRole = {
@@ -176,6 +185,80 @@ const ActionTile = ({ title, description }) => {
   );
 };
 
+const NotificationItem = ({ item }) => {
+  const toneMap = {
+    blue: 'blue',
+    amber: 'amber',
+    emerald: 'emerald',
+    rose: 'rose',
+    slate: 'slate',
+  };
+
+  return (
+    <div className="rounded-[1.4rem] border border-slate-200/70 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/70">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{item.description}</p>
+          <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-400">{formatDateTime(item.createdAt)}</p>
+        </div>
+        <Badge tone={toneMap[item.tone] || 'slate'}>{item.tone || 'info'}</Badge>
+      </div>
+    </div>
+  );
+};
+
+const MetricList = ({ items, emptyMessage }) => {
+  if (!items?.length) {
+    return <EmptyState title="Nothing here yet" description={emptyMessage} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      {items.map((item) => {
+        const values = Object.entries(item).filter(([key]) => !['courseId', 'courseLabel', 'label'].includes(key));
+        return (
+          <div key={item.courseId || item.label} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/70">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="font-semibold text-slate-900 dark:text-slate-100">{item.courseLabel || item.label}</p>
+              </div>
+              <div className="grid min-w-[18rem] gap-3 sm:grid-cols-2">
+                {values.map(([key, value]) => (
+                  <div key={key} className="rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-800/70">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{key.replace(/([A-Z])/g, ' $1').trim()}</p>
+                    <p className="mt-2 font-semibold text-slate-900 dark:text-slate-100">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const HelpArticleList = ({ articles, contact }) => (
+  <div className="space-y-4">
+    {articles?.map((article) => (
+      <div key={article.title} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/70">
+        <div className="flex items-start gap-3">
+          <CircleHelp className="mt-1 h-5 w-5 text-blue-500" />
+          <div>
+            <p className="font-semibold text-slate-900 dark:text-slate-100">{article.title}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{article.body}</p>
+          </div>
+        </div>
+      </div>
+    ))}
+    <div className="rounded-[1.5rem] border border-blue-200 bg-blue-50/70 p-5 dark:border-slate-700 dark:bg-blue-950/30">
+      <p className="font-semibold text-slate-900 dark:text-slate-100">Need human support?</p>
+      <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Email <span className="font-semibold">{contact?.email || 'support@attendance-system.local'}</span> and expect a reply {contact?.responseTime || 'soon'}.</p>
+    </div>
+  </div>
+);
+
 const Input = ({ label, onChange, ...props }) => {
   const { isDark } = useTheme();
 
@@ -288,6 +371,12 @@ const Dashboard = () => {
   const [search, setSearch] = useState('');
 
   const [summary, setSummary] = useState(null);
+  const [analytics, setAnalytics] = useState({ highlightCards: [], charts: {}, tables: {} });
+  const [notifications, setNotifications] = useState([]);
+  const [helpCenter, setHelpCenter] = useState({ articles: [], contact: null });
+  const [profile, setProfile] = useState(null);
+  const [profileForm, setProfileForm] = useState({ firstName: '', lastName: '', department: '', faculty: '', program: '' });
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [users, setUsers] = useState([]);
   const [lecturers, setLecturers] = useState([]);
   const [students, setStudents] = useState([]);
@@ -307,7 +396,6 @@ const Dashboard = () => {
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [studentEditForm, setStudentEditForm] = useState({ firstName: '', lastName: '', matricNumber: '', department: '', faculty: '', program: '' });
   const [enrollmentForm, setEnrollmentForm] = useState({ semester: 'rain', academicYear: new Date().getFullYear() + '/' + String(new Date().getFullYear() + 1).slice(-2), courseIds: [] });
-  const [studentEnrollments, setStudentEnrollments] = useState([]);
   const [reactivateDrafts, setReactivateDrafts] = useState({});
   const [linkForm, setLinkForm] = useState({ registryId: '', userId: '' });
 
@@ -360,6 +448,25 @@ const Dashboard = () => {
         setLoading(true);
       }
 
+      const [analyticsResponse, notificationsResponse, helpResponse, profileResponse] = await Promise.all([
+        api.get('/dashboard/analytics'),
+        api.get('/dashboard/notifications'),
+        api.get('/dashboard/help'),
+        api.get('/users/me/profile'),
+      ]);
+
+      setAnalytics(analyticsResponse.data.data || { highlightCards: [], charts: {}, tables: {} });
+      setNotifications(notificationsResponse.data.data || []);
+      setHelpCenter(helpResponse.data.data || { articles: [], contact: null });
+      setProfile(profileResponse.data.data || null);
+      setProfileForm({
+        firstName: profileResponse.data.data?.firstName || '',
+        lastName: profileResponse.data.data?.lastName || '',
+        department: profileResponse.data.data?.department || '',
+        faculty: profileResponse.data.data?.faculty || '',
+        program: profileResponse.data.data?.program || '',
+      });
+
       if (role === 'admin') {
         const [summaryResponse, usersResponse, lecturersResponse, studentsResponse, coursesResponse, registryResponse, buildingsResponse] = await Promise.all([
           api.get('/users/summary'),
@@ -383,6 +490,7 @@ const Dashboard = () => {
         setHistory([]);
         setSessionDetail(null);
         setQrDataUrl('');
+        return;
       }
 
       if (role === 'lecturer') {
@@ -414,6 +522,7 @@ const Dashboard = () => {
           setSessionDetail(null);
           setQrDataUrl('');
         }
+        return;
       }
 
       if (role === 'student') {
@@ -559,6 +668,31 @@ const Dashboard = () => {
       const link = document.createElement('a');
       link.href = url;
       link.download = `attendance_${courseId}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setMessage('Report downloaded successfully.');
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Report download failed.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleDownloadSpecialReport = async (reportType, format) => {
+    try {
+      setBusyAction(`download-${reportType}-${format}`);
+      setMessage();
+      const endpoint = reportType === 'system' ? `/reports/system/export?format=${format}` : `/reports/me/export?format=${format}`;
+      const response = await api.get(endpoint, { responseType: 'blob' });
+      const blob = new Blob([response.data], {
+        type: format === 'pdf' ? 'application/pdf' : 'text/csv',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${reportType}_report.${format}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -839,7 +973,6 @@ const Dashboard = () => {
     try {
       const response = await api.get(`/users/${studentId}/enrollments`);
       const enrollments = response.data.data || [];
-      setStudentEnrollments(enrollments);
       if (enrollments.length > 0) {
         const primary = enrollments[0];
         const semester = primary.semester || enrollmentForm.semester;
@@ -849,9 +982,7 @@ const Dashboard = () => {
           .map((entry) => entry.courseId);
         setEnrollmentForm({ semester, academicYear, courseIds });
       }
-    } catch (loadError) {
-      setStudentEnrollments([]);
-    }
+    } catch (loadError) {}
   };
 
   const toggleEnrollmentCourse = (courseId) => {
@@ -1031,8 +1162,80 @@ const Dashboard = () => {
     ];
   }, [role, summary]);
 
+  const analyticsHighlights = useMemo(() => analytics?.highlightCards || [], [analytics]);
+  const analyticsBreakdowns = useMemo(() => {
+    const charts = analytics?.charts || {};
+    return Object.entries(charts).map(([key, values]) => ({
+      key,
+      title: key.replace(/([A-Z])/g, ' $1').replace(/^./, (value) => value.toUpperCase()),
+      values: values || [],
+    }));
+  }, [analytics]);
+
+  const reportActions = useMemo(() => {
+    if (role === 'admin') {
+      return [
+        { key: 'system-csv', label: 'Download system CSV', reportType: 'system', format: 'csv' },
+        { key: 'system-pdf', label: 'Download system PDF', reportType: 'system', format: 'pdf' },
+      ];
+    }
+
+    if (role === 'student') {
+      return [
+        { key: 'my-csv', label: 'Download my CSV', reportType: 'me', format: 'csv' },
+        { key: 'my-pdf', label: 'Download my PDF', reportType: 'me', format: 'pdf' },
+      ];
+    }
+
+    return [
+      { key: 'lecturer-note', label: 'Use course cards below', helper: 'Download per-course reports from your Courses tab.' },
+    ];
+  }, [role]);
+
   const handleLogout = () => {
     dispatch(logout());
+  };
+
+  const handleUpdateProfile = async (event) => {
+    event.preventDefault();
+    try {
+      setBusyAction('update-profile');
+      setMessage();
+      const response = await api.put('/users/me/profile', profileForm);
+      setProfile((current) => ({ ...(current || {}), ...response.data.data }));
+      setMessage('Profile updated successfully.');
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Profile update failed.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleChangePassword = async (event) => {
+    event.preventDefault();
+    if (!passwordForm.currentPassword || !passwordForm.newPassword) {
+      setMessage('', 'Current password and new password are required.');
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setMessage('', 'New password and confirmation do not match.');
+      return;
+    }
+
+    try {
+      setBusyAction('change-password');
+      setMessage();
+      await api.post('/auth/change-password', {
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      });
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setMessage('Password changed successfully.');
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Password change failed.');
+    } finally {
+      setBusyAction('');
+    }
   };
 
   if (loading) {
@@ -1113,6 +1316,169 @@ const Dashboard = () => {
                   {role === 'admin' && <><ActionTile title="Load school registry" description="Add matric records so students can self-signup without admin hand-holding." /><ActionTile title="Assign lecturers to courses" description="Courses only become usable for attendance when a lecturer is attached." /><ActionTile title="Prepare deployment" description="Use the Docker and env setup included below to move this app into production." /></>}
                   {role === 'lecturer' && <><ActionTile title="Create a fresh session" description="Generate a QR-ready attendance window for the next class." /><ActionTile title="Close sessions after class" description="The system will list absentees and auto-send absence queries immediately." /><ActionTile title="Review student responses" description="Pending queries can be reviewed and closed from your dashboard." /></>}
                   {role === 'student' && <><ActionTile title="Use QR whenever possible" description="Scanning the QR code is the fastest and most accurate attendance method." /><ActionTile title="Keep location enabled" description="This adds an extra verification signal when your institution wants stricter attendance proof." /><ActionTile title="Reply to lecturer queries" description="Prompt responses keep your attendance record cleaner and easier to audit." /></>}
+                </div>
+              </Panel>
+            </div>
+          )}
+
+          {activeTab === 'analytics' && (
+            <div className="grid gap-8">
+              <Panel title="Performance analytics" eyebrow="Insight center">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  {analyticsHighlights.length > 0 ? analyticsHighlights.map((item) => (
+                    <SummaryTile key={item.label} label={item.label} value={item.value} helper={item.helper} />
+                  )) : <EmptyState title="Analytics not ready" description="We could not load advanced analytics for this role yet." />}
+                </div>
+              </Panel>
+
+              <div className="grid gap-8 xl:grid-cols-[0.85fr_1.15fr]">
+                <Panel title="Breakdowns" eyebrow="Distribution">
+                  <div className="space-y-6">
+                    {analyticsBreakdowns.map((group) => (
+                      <div key={group.key}>
+                        <p className="mb-3 text-sm font-semibold uppercase tracking-[0.2em] text-blue-500">{group.title}</p>
+                        <div className="space-y-3">
+                          {group.values.map((entry) => {
+                            const total = group.values.reduce((sum, current) => sum + Number(current.value || 0), 0) || 1;
+                            const width = Math.max(8, Math.round((Number(entry.value || 0) / total) * 100));
+                            return (
+                              <div key={`${group.key}-${entry.label}`}>
+                                <div className="mb-2 flex items-center justify-between text-sm">
+                                  <span className="font-medium text-slate-700 dark:text-slate-200">{entry.label}</span>
+                                  <span className="text-slate-500 dark:text-slate-400">{entry.value}</span>
+                                </div>
+                                <div className="h-3 rounded-full bg-slate-200 dark:bg-slate-800">
+                                  <div className="h-3 rounded-full bg-gradient-to-r from-blue-500 to-cyan-400" style={{ width: `${width}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
+
+                <Panel title="Top performance table" eyebrow="Operational detail">
+                  <MetricList items={analytics?.tables?.courseAnalytics || []} emptyMessage="No course analytics are available yet for this role." />
+                </Panel>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'reports' && (
+            <div className="grid gap-8 xl:grid-cols-[0.8fr_1.2fr]">
+              <Panel title="Report center" eyebrow="Exports">
+                <div className="space-y-4">
+                  {reportActions.map((item) => item.reportType ? (
+                    <button
+                      key={item.key}
+                      onClick={() => handleDownloadSpecialReport(item.reportType, item.format)}
+                      disabled={busyAction === `download-${item.reportType}-${item.format}`}
+                      className="flex w-full items-center justify-between rounded-[1.5rem] border border-slate-200 bg-slate-50/80 px-5 py-4 text-left transition hover:border-blue-300 hover:bg-blue-50/70 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900/70 dark:hover:border-blue-700 dark:hover:bg-slate-900"
+                    >
+                      <div>
+                        <p className="font-semibold text-slate-900 dark:text-slate-100">{item.label}</p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Ready-to-share export for meetings, reviews, and record keeping.</p>
+                      </div>
+                      {busyAction === `download-${item.reportType}-${item.format}` ? <LoaderCircle className="h-5 w-5 animate-spin text-blue-500" /> : <Download className="h-5 w-5 text-blue-500" />}
+                    </button>
+                  ) : (
+                    <ActionTile key={item.key} title={item.label} description={item.helper} />
+                  ))}
+                </div>
+              </Panel>
+
+              <Panel title="What each report gives you" eyebrow="Guide">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <ActionTile title="CSV export" description="Best for Excel, statistics work, faculty submissions, and filtering by course, student, or attendance status." />
+                  <ActionTile title="PDF export" description="Best for formal presentation, approvals, and sending a clean professional summary without extra editing." />
+                  <ActionTile title="Lecturer course exports" description="Lecturers can already export per-course reports directly inside the Courses tab, including PDF and CSV." />
+                  <ActionTile title="Student personal history" description="Students can leave with a personal attendance record they can keep for reference or dispute resolution." />
+                </div>
+              </Panel>
+            </div>
+          )}
+
+          {activeTab === 'notifications' && (
+            <div className="grid gap-8">
+              <Panel title="Notification center" eyebrow="Recent activity">
+                <div className="space-y-4">
+                  {notifications.length > 0 ? notifications.map((item, index) => <NotificationItem key={`${item.title}-${index}`} item={item} />) : <EmptyState title="No notifications yet" description="Fresh activity, responses, and attendance events will appear here." />}
+                </div>
+              </Panel>
+            </div>
+          )}
+
+          {activeTab === 'profile' && (
+            <div className="grid gap-8 xl:grid-cols-[0.9fr_1.1fr]">
+              <Panel title="Profile summary" eyebrow="Identity">
+                <div className="space-y-4">
+                  <SummaryTile label="Full name" value={fullName(profile || user)} helper="Displayed throughout the system." />
+                  <SummaryTile label="Email" value={profile?.email || user?.email || 'Not set'} helper="Used for login and email notifications." />
+                  <SummaryTile label="Role" value={role} helper="Controls the workspace sections available to you." />
+                  <SummaryTile label="Department" value={profile?.department || 'Not set'} helper="Used for reporting and institutional grouping." />
+                  {profile?.matricNumber && <SummaryTile label="Matric number" value={profile.matricNumber} helper="Linked to your registry record." />}
+                </div>
+              </Panel>
+
+              <div className="grid gap-8">
+                <Panel title="Update your profile" eyebrow="Self service">
+                  <form onSubmit={handleUpdateProfile} className="grid gap-4 md:grid-cols-2">
+                    <Input label="First name" value={profileForm.firstName} onChange={(value) => setProfileForm((current) => ({ ...current, firstName: value }))} />
+                    <Input label="Last name" value={profileForm.lastName} onChange={(value) => setProfileForm((current) => ({ ...current, lastName: value }))} />
+                    <Input label="Department" value={profileForm.department} onChange={(value) => setProfileForm((current) => ({ ...current, department: value }))} />
+                    <Input label="Faculty" value={profileForm.faculty} onChange={(value) => setProfileForm((current) => ({ ...current, faculty: value }))} />
+                    <div className="md:col-span-2">
+                      <Input label="Program" value={profileForm.program} onChange={(value) => setProfileForm((current) => ({ ...current, program: value }))} />
+                    </div>
+                    <div className="md:col-span-2">
+                      <button type="submit" disabled={busyAction === 'update-profile'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">
+                        {busyAction === 'update-profile' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserCog className="h-4 w-4" />}
+                        Save profile
+                      </button>
+                    </div>
+                  </form>
+                </Panel>
+
+                <Panel title="Security settings" eyebrow="Password">
+                  <form onSubmit={handleChangePassword} className="grid gap-4 md:grid-cols-2">
+                    <Input label="Current password" type="password" value={passwordForm.currentPassword} onChange={(value) => setPasswordForm((current) => ({ ...current, currentPassword: value }))} />
+                    <Input label="New password" type="password" value={passwordForm.newPassword} onChange={(value) => setPasswordForm((current) => ({ ...current, newPassword: value }))} />
+                    <div className="md:col-span-2">
+                      <Input label="Confirm new password" type="password" value={passwordForm.confirmPassword} onChange={(value) => setPasswordForm((current) => ({ ...current, confirmPassword: value }))} />
+                    </div>
+                    <div className="md:col-span-2">
+                      <button type="submit" disabled={busyAction === 'change-password'} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
+                        {busyAction === 'change-password' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                        Change password
+                      </button>
+                    </div>
+                  </form>
+                </Panel>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'help' && (
+            <div className="grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
+              <Panel title="Help & support" eyebrow="Guidance">
+                <HelpArticleList articles={helpCenter.articles} contact={helpCenter.contact} />
+              </Panel>
+              <Panel title="Quick support actions" eyebrow="Support">
+                <div className="space-y-4">
+                  <ActionTile title="Check notifications first" description="Most day-to-day issues already show up in the notification center before they become a support request." />
+                  <ActionTile title="Use exports for escalation" description="When reporting an issue to your department or administrator, attach the appropriate PDF or CSV report so the evidence is clear." />
+                  <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/70">
+                    <div className="flex items-start gap-3">
+                      <Mail className="mt-1 h-5 w-5 text-blue-500" />
+                      <div>
+                        <p className="font-semibold text-slate-900 dark:text-slate-100">Support channel</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Primary contact: {helpCenter.contact?.email || 'support@attendance-system.local'}</p>
+                        <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">Expected response time: {helpCenter.contact?.responseTime || 'Within one working day'}</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </Panel>
             </div>

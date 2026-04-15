@@ -50,6 +50,7 @@ app.use('/api/buildings', require('./routes/buildingRoutes'));
 app.use('/api/attendance', require('./routes/attendanceRoutes'));
 app.use('/api/queries', require('./routes/absenceQueryRoutes'));
 app.use('/api/reports', require('./routes/reportRoutes'));
+app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Route not found' });

@@ -6,6 +6,8 @@ const { roleMiddleware } = require('../middleware/roleMiddleware');
 
 router.use(authMiddleware);
 
+router.get('/me/profile', userController.getMyProfile);
+router.put('/me/profile', userController.updateMyProfile);
 router.get('/summary', roleMiddleware('admin'), userController.getSystemSummary);
 router.get('/lecturers', roleMiddleware('admin', 'lecturer'), userController.getLecturers);
 router.get('/students', roleMiddleware('admin', 'lecturer'), userController.getStudents);
