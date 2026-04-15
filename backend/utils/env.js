@@ -6,6 +6,13 @@ const parseOrigins = (value) => {
   return value
     .split(',')
     .map((item) => item.trim())
+    .map((item) => {
+      try {
+        return new URL(item).origin;
+      } catch (error) {
+        return item.replace(/\/+$/, '');
+      }
+    })
     .filter(Boolean);
 };
 
