@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Development of a Web-Based Class Attendance Management System</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 24mm 22mm 24mm 28mm;
+    }
+
+    :root {
+      --ink: #141414;
+      --muted: #555555;
+      --rule: #1f3c88;
+      --paper: #ffffff;
+      --bg: #ececec;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Times New Roman", Times, serif;
+      line-height: 1.6;
+    }
+
+    main {
+      width: 210mm;
+      margin: 0 auto;
+      background: var(--paper);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+    }
+
+    section {
+      padding: 0;
+    }
+
+    .page {
+      min-height: 297mm;
+      padding: 0;
+    }
+
+    .page-break {
+      break-before: page;
+      page-break-before: always;
+    }
+
+    .page-inner {
+      padding: 24mm 22mm 24mm 28mm;
+      min-height: 297mm;
+    }
+
+    .cover {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+
+    .cover .page-inner {
+      display: flex;
+      min-height: 297mm;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .cover-kicker {
+      font-size: 14px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .cover-title {
+      max-width: 140mm;
+      font-size: 26px;
+      font-weight: 700;
+      line-height: 1.45;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .cover-rule {
+      width: 78mm;
+      height: 2px;
+      background: var(--rule);
+      margin: 10px 0;
+    }
+
+    .cover-subtitle {
+      font-size: 16px;
+      color: var(--muted);
+    }
+
+    .cover-meta {
+      margin-top: 22px;
+      font-size: 15px;
+    }
+
+    .cover-meta strong {
+      font-weight: 700;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0 0 12px;
+      line-height: 1.35;
+    }
+
+    h1 {
+      font-size: 22px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    h2 {
+      font-size: 18px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    h3 {
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    p {
+      margin: 0 0 12px;
+      font-size: 14px;
+      text-align: justify;
+    }
+
+    .section-title {
+      margin-top: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #c6cde0;
+    }
+
+    .chapter-header {
+      margin-bottom: 16px;
+    }
+
+    .chapter-header .chapter-label {
+      margin-bottom: 6px;
+      font-size: 18px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .chapter-header .chapter-title {
+      font-size: 22px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--rule);
+    }
+
+    .toc-heading {
+      margin-bottom: 18px;
+      text-align: center;
+    }
+
+    .toc-intro {
+      margin-bottom: 18px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .toc-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      font-size: 14px;
+    }
+
+    .toc-list li {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .toc-list .toc-text {
+      white-space: nowrap;
+    }
+
+    .toc-list .toc-dots {
+      flex: 1;
+      border-bottom: 1px dotted #8e96aa;
+      transform: translateY(-3px);
+    }
+
+    .toc-list .toc-level-1 {
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .toc-list .toc-level-2 {
+      padding-left: 12px;
+    }
+
+    .toc-list .toc-level-3 {
+      padding-left: 28px;
+    }
+
+    ol {
+      margin: 0 0 14px 22px;
+      padding: 0;
+    }
+
+    li {
+      margin-bottom: 8px;
+      font-size: 14px;
+      text-align: justify;
+    }
+
+    .note {
+      margin-top: 20px;
+      padding: 12px 14px;
+      border-left: 4px solid var(--rule);
+      background: #f5f7fc;
+      font-size: 13px;
+      color: #2d3552;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .spacer-lg {
+      height: 18px;
+    }
+
+    @media print {
+      body {
+        background: #ffffff;
+      }
+
+      main {
+        width: auto;
+        margin: 0;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="page cover">
+      <div class="page-inner">
+        <div class="cover-kicker">Project Report Draft</div>
+        <div class="cover-title">Development of a Web-Based Class Attendance Management System</div>
+        <div class="cover-rule"></div>
+        <div class="cover-subtitle">Professionally formatted draft of Chapters One and Two</div>
+        <div class="cover-meta">
+          <div><strong>Document Scope:</strong> Chapter One and Chapter Two</div>
+          <div><strong>Prepared:</strong> April 2026</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page page-break">
+      <div class="page-inner">
+        <div class="toc-heading">
+          <h1>Table of Contents</h1>
+          <p class="toc-intro">Structured to follow the sample report style while adapting the content to the attendance management system project.</p>
+        </div>
+
+        <ul class="toc-list">
+          <li><span class="toc-text toc-level-1">Chapter One</span><span class="toc-dots"></span><span>Introduction</span></li>
+          <li><span class="toc-text toc-level-2">1.0 Introduction</span><span class="toc-dots"></span><span>Overview</span></li>
+          <li><span class="toc-text toc-level-2">1.1 Background of the Study</span><span class="toc-dots"></span><span>Context</span></li>
+          <li><span class="toc-text toc-level-2">1.2 Problem Statement</span><span class="toc-dots"></span><span>Challenge</span></li>
+          <li><span class="toc-text toc-level-2">1.3 Aim and Objectives</span><span class="toc-dots"></span><span>Purpose</span></li>
+          <li><span class="toc-text toc-level-2">1.4 Scope of Study</span><span class="toc-dots"></span><span>Coverage</span></li>
+          <li><span class="toc-text toc-level-2">1.5 Justification of Study</span><span class="toc-dots"></span><span>Relevance</span></li>
+          <li><span class="toc-text toc-level-1">Chapter Two</span><span class="toc-dots"></span><span>Literature Review</span></li>
+          <li><span class="toc-text toc-level-2">2.0 Introduction</span><span class="toc-dots"></span><span>Overview</span></li>
+          <li><span class="toc-text toc-level-2">2.1 Evolution of Attendance Management Systems</span><span class="toc-dots"></span><span>History</span></li>
+          <li><span class="toc-text toc-level-2">2.2 Importance of Accurate Attendance Monitoring</span><span class="toc-dots"></span><span>Academic Value</span></li>
+          <li><span class="toc-text toc-level-2">2.3 Review of Web-Based Attendance System Design</span><span class="toc-dots"></span><span>Existing Work</span></li>
+          <li><span class="toc-text toc-level-2">2.4 Terminology</span><span class="toc-dots"></span><span>Definitions</span></li>
+          <li><span class="toc-text toc-level-3">2.4.1 Manual Attendance Versus Automated Attendance Systems</span><span class="toc-dots"></span><span>Comparison</span></li>
+          <li><span class="toc-text toc-level-2">2.5 Components of an Attendance Management System</span><span class="toc-dots"></span><span>Core Parts</span></li>
+          <li><span class="toc-text toc-level-3">2.5.1 User and Access Management</span><span class="toc-dots"></span><span>Security</span></li>
+          <li><span class="toc-text toc-level-3">2.5.2 Course, Registry, and Enrollment Management</span><span class="toc-dots"></span><span>Academic Data</span></li>
+          <li><span class="toc-text toc-level-3">2.5.3 Session Creation and QR Code Generation</span><span class="toc-dots"></span><span>Session Flow</span></li>
+          <li><span class="toc-text toc-level-3">2.5.4 Attendance Capture and Validation</span><span class="toc-dots"></span><span>Verification</span></li>
+          <li><span class="toc-text toc-level-2">2.6 Attendance Marking Methods</span><span class="toc-dots"></span><span>Approaches</span></li>
+          <li><span class="toc-text toc-level-2">2.7 Technologies for Web-Based Attendance Systems</span><span class="toc-dots"></span><span>Tools</span></li>
+          <li><span class="toc-text toc-level-2">2.8 Security, Accuracy, and Reliability Considerations</span><span class="toc-dots"></span><span>Quality</span></li>
+          <li><span class="toc-text toc-level-2">2.9 Design Requirements and Information</span><span class="toc-dots"></span><span>Requirements</span></li>
+          <li><span class="toc-text toc-level-3">2.9.1 Functional Requirements</span><span class="toc-dots"></span><span>Functions</span></li>
+          <li><span class="toc-text toc-level-3">2.9.2 Non-Functional Requirements</span><span class="toc-dots"></span><span>Quality Attributes</span></li>
+          <li><span class="toc-text toc-level-3">2.9.3 Gaps in Existing Approaches and Basis for the Proposed System</span><span class="toc-dots"></span><span>Research Gap</span></li>
+        </ul>
+
+        <div class="note">
+          This formatted version uses your exact project title and is presented as a polished academic draft for Chapters One and Two.
+        </div>
+      </div>
+    </section>
+
+    <section class="page page-break">
+      <div class="page-inner">
+        <div class="chapter-header">
+          <div class="chapter-label">Chapter One</div>
+          <div class="chapter-title">Introduction</div>
+        </div>
+
+        <h3 class="section-title">1.0 Introduction</h3>
+        <p>Attendance management is an important administrative and academic activity in schools, colleges, and universities. It is used to determine student participation in lectures, monitor commitment to academic work, support internal record keeping, and provide evidence for decision-making by lecturers and administrators. In many institutions, however, attendance is still recorded manually through paper registers, signature sheets, or verbal roll call. These approaches are often slow, stressful, error-prone, and vulnerable to manipulation.</p>
+        <p>The growth of digital technology has created opportunities for institutions to replace manual attendance methods with more reliable automated systems. Web-based systems, in particular, provide flexible access, centralized data storage, faster processing, and easier report generation. When combined with technologies such as QR code verification, role-based authentication, and optional location validation, they offer a more practical and secure way of recording attendance.</p>
+        <p>This project focuses on the development of a web-based class attendance management system for tertiary institutions. The system is intended to support three major categories of users: administrators, lecturers, and students. Administrators can manage users, registry records, and academic data; lecturers can create attendance sessions and generate QR codes; students can mark attendance, view their records, and respond to lecturer queries where necessary. The system is also designed to improve accountability through session codes, optional geofencing, automated absence tracking, and report generation.</p>
+        <p>This chapter presents the background of the study, the problem statement, the aim and objectives of the study, the scope of the work, and the justification for undertaking the project.</p>
+
+        <h3 class="section-title">1.1 Background of the Study</h3>
+        <p>Attendance plays a major role in the academic environment because it is closely related to student participation, discipline, performance monitoring, and institutional administration. In higher institutions, attendance records are often needed for continuous assessment, departmental monitoring, examination eligibility, and communication between staff and students. A dependable attendance system therefore contributes not only to classroom management but also to the overall efficiency of the academic process.</p>
+        <p>Traditionally, attendance in many institutions has been taken manually. Lecturers may call names one after another, circulate paper sheets for signatures, or simply estimate presence based on visual observation. Although these methods have been used for a long time, they present several challenges. Manual attendance consumes lecture time, especially in large classes. It can also lead to incomplete or inaccurate records due to omission, illegible handwriting, mistaken identity, or deliberate impersonation. In some cases, students sign for absent classmates, while records may later be misplaced, altered, or difficult to retrieve.</p>
+        <p>The need for a more efficient approach has become increasingly important with the growth in student population and the expansion of digital learning environments. Educational institutions now require systems that can collect, store, and process attendance information quickly and securely. They also need systems that support multiple stakeholders at once. While a lecturer may need to open and close attendance sessions, a student may need to view attendance history, and an administrator may need to manage user accounts, class records, and reports from a central platform.</p>
+        <p>Web-based attendance systems have emerged as a practical response to these needs. Because they operate through browsers and server-side databases, they can be accessed from different devices without requiring separate installations for every user. They provide a centralized data repository, which improves consistency and makes records easier to search, verify, and analyze. They also support role-based operations, meaning that different categories of users can perform only the actions that match their responsibilities.</p>
+        <p>More recently, QR code-based attendance systems have gained attention because of their speed and convenience. In this method, a lecturer creates an attendance session and generates a QR code linked to that session. Students scan the code with their devices and the system records their attendance automatically. Compared with manual sign-in sheets, QR code attendance reduces delays and improves the user experience. However, QR code attendance by itself may still be abused if additional controls are not included. For example, a student may share a code with another person outside the classroom. This has created interest in stronger verification measures such as time-bound session codes, secure authentication, and location-based validation.</p>
+        <p>Another important development is the use of geolocation or geofencing in attendance systems. With this feature, attendance can be linked to a defined physical area such as a classroom or lecture venue. A student may be required to mark attendance only when the device location falls within an approved radius of the session venue. This helps reduce fraudulent attendance claims and strengthens the credibility of the records.</p>
+        <p>In addition to recording presence, modern attendance systems are expected to support wider academic workflows. These include student registry validation, course allocation, password recovery, absence tracking, notifications, and report generation. A complete attendance platform therefore goes beyond a simple sign-in page; it becomes an integrated academic support system.</p>
+        <p>This project is based on the need to develop such a platform. The proposed web-based class attendance management system combines centralized administration, role-based access, QR code session handling, optional location verification, automated absence query support, and reporting tools into a single application. It is intended to provide a more reliable, transparent, and scalable solution for attendance management in a tertiary institution setting.</p>
+
+        <h3 class="section-title">1.2 Problem Statement</h3>
+        <p>Many attendance management processes in educational institutions still depend on manual methods that are inefficient and unreliable. In large classes, lecturers spend valuable teaching time calling names or passing attendance sheets around. These practices slow down classroom activities and reduce the time available for actual teaching and learning.</p>
+        <p>Manual attendance systems are also prone to several forms of error and abuse. Students may sign for absent classmates, signatures may be unclear or duplicated, and records may be lost or improperly stored. When attendance records are kept in notebooks or loose sheets, retrieving past information becomes difficult and time-consuming. This creates problems during academic reviews, student disputes, and report preparation.</p>
+        <p>Another challenge is the absence of a centralized platform for managing attendance-related activities. In many cases, student data, course records, attendance sheets, and administrative reports are handled separately. This lack of integration reduces efficiency and makes it harder for administrators and lecturers to obtain a clear picture of attendance performance across courses and sessions.</p>
+        <p>There is also the issue of security and verification. A basic attendance system that only records names or simple codes may not be sufficient to confirm that the right student was physically present at the right time. Without secure login, session validation, and optional location checks, attendance data can be manipulated, leading to inaccurate records and poor accountability.</p>
+        <p>Furthermore, institutions need better ways to respond to absenteeism. When students miss classes, the absence is often discovered too late, and there may be no structured workflow for follow-up. This weakens academic monitoring and reduces the institution's ability to intervene early.</p>
+        <p>The problem addressed in this project is therefore the lack of an efficient, secure, and integrated attendance management system that can reduce manual workload, improve record accuracy, support multiple user roles, verify attendance more effectively, and provide better monitoring and reporting within a tertiary institution.</p>
+
+        <h3 class="section-title">1.3 Aim and Objectives</h3>
+        <p>The aim of this project is to develop a web-based class attendance management system for tertiary institutions.</p>
+        <p>The specific objectives of the study are to:</p>
+        <ol>
+          <li>develop a role-based attendance platform for administrators, lecturers, and students;</li>
+          <li>provide a centralized system for managing users, student registry records, courses, and enrollment data;</li>
+          <li>enable lecturers to create attendance sessions and generate QR codes for class attendance;</li>
+          <li>allow students to mark attendance using QR codes or session codes through a secure interface;</li>
+          <li>incorporate optional location-based verification to improve the authenticity of attendance records;</li>
+          <li>automate follow-up workflows such as absence queries, notifications, and attendance history tracking;</li>
+          <li>generate reports and summaries that support academic monitoring and administrative decision-making; and</li>
+          <li>improve the overall reliability, speed, and security of attendance management in the institution.</li>
+        </ol>
+
+        <h3 class="section-title">1.4 Scope of Study</h3>
+        <p>This project is limited to the development of a web-based class attendance management system for use in an academic environment. The system covers the following functional areas:</p>
+        <ol>
+          <li>user authentication and role-based access control for administrators, lecturers, and students;</li>
+          <li>student registry support for structured student onboarding and record validation;</li>
+          <li>course creation, lecturer assignment, and semester-based enrollment management;</li>
+          <li>attendance session creation by lecturers with QR code and session code generation;</li>
+          <li>student attendance marking through QR scanning or manual code entry;</li>
+          <li>optional location capture and geofencing support for stronger attendance verification;</li>
+          <li>attendance history tracking, absence query workflow, and report generation; and</li>
+          <li>password reset and notification support for improved usability and account recovery.</li>
+        </ol>
+        <p>The study does not cover biometric hardware integration such as fingerprint or facial recognition devices. It also does not include full institutional ERP integration, offline-first mobile applications, or advanced machine learning analytics. The project focuses mainly on a browser-based solution backed by a database and intended for academic attendance operations.</p>
+
+        <h3 class="section-title">1.5 Justification of Study</h3>
+        <p>The justification for this study lies in the need for a more efficient, accurate, and secure method of managing attendance in educational institutions. Manual attendance systems are no longer adequate for many modern academic environments, especially where class sizes are large and records need to be available quickly for verification, reporting, and decision-making.</p>
+        <p>First, the proposed system reduces the time spent on attendance during lectures. QR-based and code-based attendance marking is faster than calling names or circulating paper sheets. This allows lecturers to focus more on teaching and reduces classroom disruption.</p>
+        <p>Second, the system improves record accuracy and accountability. Secure login, session handling, and optional location validation make it harder for attendance to be manipulated. This increases confidence in the records produced by the system and supports fair academic decisions.</p>
+        <p>Third, the project provides a centralized platform that connects several related academic processes. Instead of handling users, course data, attendance records, and follow-up actions separately, the system brings them together in one environment. This improves data consistency and simplifies administration.</p>
+        <p>Fourth, the system supports timely monitoring of absenteeism. By preserving structured attendance histories and enabling absence query workflows, the institution can respond more quickly when students begin to miss classes. This promotes better academic supervision and student engagement.</p>
+        <p>Finally, the study is justified because it contributes to the broader movement toward digital transformation in education. A web-based class attendance management system offers a practical and scalable solution that can be adopted, extended, and maintained more easily than manual methods. It therefore has academic, administrative, and operational value.</p>
+      </div>
+    </section>
+
+    <section class="page page-break">
+      <div class="page-inner">
+        <div class="chapter-header">
+          <div class="chapter-label">Chapter Two</div>
+          <div class="chapter-title">Literature Review</div>
+        </div>
+
+        <h3 class="section-title">2.0 Introduction</h3>
+        <p>This chapter reviews concepts, technologies, and existing approaches relevant to attendance management systems. The review examines the evolution of attendance methods, the importance of attendance monitoring in academic institutions, the design of web-based attendance systems, relevant terminology, major system components, attendance capture methods, enabling technologies, and key issues of security and reliability. It also identifies the design requirements that shape the proposed system.</p>
+
+        <h3 class="section-title">2.1 Evolution of Attendance Management Systems</h3>
+        <p>Attendance management has evolved significantly over time. In the earliest form, attendance was recorded manually through registers, notebooks, and signature sheets. Teachers or lecturers would call names and mark students as present or absent by hand. While this method was simple and required little technology, it became increasingly unsuitable as class sizes grew and institutional processes became more data-driven.</p>
+        <p>The next stage of development involved semi-automated systems such as spreadsheet-based records and digital databases maintained by staff. These systems improved storage and retrieval compared with paper records, but attendance was still collected manually before being transferred into a digital format. As a result, problems such as impersonation, delay, and data entry errors remained.</p>
+        <p>Further advances introduced card-based and identity-based systems, including magnetic cards, smart cards, RFID, and biometric attendance platforms. These methods improved automation and verification, but many of them required specialized hardware, higher deployment costs, and dedicated maintenance. In some institutions, these requirements limited adoption.</p>
+        <p>With the rise of internet technologies and mobile devices, web-based attendance systems became more common. These systems enabled real-time data entry, centralized storage, remote administration, and dashboard-based reporting. More recent solutions incorporate QR codes, mobile scanning, cloud databases, geolocation services, and automated notifications. This evolution reflects a shift from isolated, manually controlled attendance records toward integrated digital platforms that support institutional efficiency, transparency, and scalability.</p>
+
+        <h3 class="section-title">2.2 The Importance of Accurate Attendance Monitoring in Educational Institutions</h3>
+        <p>Attendance monitoring is an important part of academic administration because it provides measurable evidence of student participation. Regular attendance is often linked to academic engagement, continuity in learning, and improved performance. When attendance data is properly captured and analyzed, lecturers and school administrators can identify trends such as frequent absenteeism, late participation, or weak engagement in specific courses.</p>
+        <p>Accurate attendance monitoring also supports institutional accountability. Many academic policies depend on reliable attendance records, including eligibility for tests, coursework participation, departmental supervision, and student counseling. Where attendance records are inaccurate or inconsistent, decisions based on those records may be unfair or misleading.</p>
+        <p>In addition, attendance monitoring can support early intervention. Students who repeatedly miss classes may require academic guidance, welfare support, or disciplinary attention. A dependable attendance system makes it easier to discover such cases early rather than after performance has already declined.</p>
+        <p>At the administrative level, attendance information contributes to planning and evaluation. It can be used to assess class turnout, measure the effectiveness of scheduling, identify heavily utilized courses, and generate reports for departments and management. Because of these benefits, attendance should not be viewed merely as a classroom formality but as a valuable source of academic intelligence.</p>
+
+        <h3 class="section-title">2.3 Review of Web-Based Attendance Management System Design</h3>
+        <p>Web-based attendance management systems are designed to improve how attendance is captured, stored, processed, and reviewed. In most designs, the system consists of a frontend interface for users, a backend service for processing requests, and a database for storing records. Different user categories interact with the system through role-based dashboards that provide access to functions relevant to their responsibilities.</p>
+        <p>One common design approach is the use of lecturer-controlled session creation. In this model, the lecturer selects a course, opens an attendance session, and provides a means for students to mark attendance. This may be done through a generated code, a QR code, or a shared session link. The design helps ensure that attendance can only be recorded during an active class period.</p>
+        <p>Another common approach is student self-service attendance submission. This allows students to scan a QR code or enter a session code through their own devices. The advantage is speed and convenience, especially in large classes. However, such systems require additional safeguards to prevent misuse. Without authentication, time restrictions, or location checks, students may still attempt to mark attendance fraudulently.</p>
+        <p>Many modern systems therefore adopt layered verification. These may include user login, session expiration, course matching, device-based scanning, and location capture. Some systems also provide automatic absence reporting, which helps lecturers detect students who were enrolled but did not mark attendance during a valid session.</p>
+        <p>From a design perspective, web-based systems offer several advantages over purely manual or hardware-dependent systems. They are easier to deploy, can be updated centrally, and support access through common devices such as smartphones, tablets, and laptops. They also provide better opportunities for integration with related academic workflows such as course allocation, reporting, password recovery, and notifications.</p>
+        <p>The proposed system follows this direction by combining role-based web access, QR code session handling, secure authentication, optional geofencing, centralized storage, and post-session follow-up features.</p>
+
+        <h3 class="section-title">2.4 Terminology</h3>
+        <p>The following terms are central to the understanding of this project:</p>
+        <p><strong>Attendance Management System:</strong> A software application used to record, store, process, and report attendance data for an institution.</p>
+        <p><strong>QR Code:</strong> A machine-readable code that stores information in a visual pattern and can be scanned using digital devices. In this project, it is used to represent an attendance session.</p>
+        <p><strong>Session Code:</strong> A unique code generated for an attendance session. It serves as an alternative method for marking attendance when QR scanning is not used.</p>
+        <p><strong>Geofencing:</strong> A location-based control method that allows an action only when the user is within a defined geographic radius.</p>
+        <p><strong>Absence Query:</strong> A follow-up record generated when a student who is enrolled for a course fails to mark attendance for an active session.</p>
+        <p><strong>Role-Based Access Control:</strong> A security method that grants permissions according to user roles such as administrator, lecturer, or student.</p>
+        <p><strong>Dashboard:</strong> A summary interface that displays important system information, recent activity, and available actions for a user.</p>
+
+        <h3 class="section-title">2.4.1 Manual Attendance Versus Automated Attendance Systems</h3>
+        <p>Manual attendance systems depend on human effort for data collection and record keeping. They are easy to start with because they require little technology, but they suffer from major weaknesses such as delay, inaccuracy, impersonation, poor storage, and limited reporting capability.</p>
+        <p>Automated attendance systems use digital tools to reduce or eliminate repeated manual work. These systems may employ web forms, QR codes, RFID, biometrics, or mobile applications. Their main strengths include speed, better data consistency, easier storage, faster retrieval, and improved reporting. They can also support stronger verification through authentication and location checks.</p>
+        <p>However, automated systems must be designed carefully. A weakly designed digital system may still be vulnerable to security problems, system downtime, or poor usability. The goal is therefore not just automation, but secure and reliable automation. This study adopts a web-based automated approach because it balances accessibility, scalability, and practical deployment for an academic setting.</p>
+
+        <h3 class="section-title">2.5 Components of an Attendance Management System</h3>
+        <p>An effective attendance management system is usually made up of several interacting components. These components work together to ensure that attendance is recorded correctly and that related academic operations can be managed from the same platform.</p>
+
+        <h3 class="section-title">2.5.1 User and Access Management</h3>
+        <p>User management is the foundation of any multi-user attendance system. It defines how users are created, authenticated, and authorized to perform actions. In an academic attendance application, common user roles include administrator, lecturer, and student.</p>
+        <p>Administrators are generally responsible for managing user accounts, school registry records, and high-level system settings. Lecturers need access to courses, attendance session tools, and student attendance summaries. Students require access to course information, attendance marking interfaces, and attendance history. A secure system must therefore control access carefully so that each role sees only what it is permitted to use.</p>
+        <p>Authentication mechanisms such as password-based login and password reset features are also part of this component. Without proper access management, the reliability of the entire attendance system is weakened.</p>
+
+        <h3 class="section-title">2.5.2 Course, Registry, and Enrollment Management</h3>
+        <p>Attendance does not exist in isolation; it is linked to academic structure. Before a student can validly mark attendance, the system should know the student's identity, approved courses, and enrollment status. This makes registry and enrollment management an essential component.</p>
+        <p>Registry management allows the institution to store and validate official student information before or during account creation. Course management handles the creation of courses and assignment of lecturers. Enrollment management connects students to the courses they are expected to attend. Together, these components ensure that attendance records are associated with the correct users and academic units.</p>
+
+        <h3 class="section-title">2.5.3 Session Creation and QR Code Generation</h3>
+        <p>A session management component allows lecturers to define when attendance is open, for which course, and under what conditions. This may include the date, start time, session duration, and venue information. Once a session is created, the system can generate a session code and a QR code that encode or reference the session details.</p>
+        <p>This component is important because it prevents random attendance submission outside a valid class context. It also supports a more organized and traceable record structure, where each attendance entry belongs to a distinct session.</p>
+
+        <h3 class="section-title">2.5.4 Attendance Capture and Validation</h3>
+        <p>Attendance capture is the process through which a student's presence is recorded. In the proposed system, this may happen through scanning a QR code or entering a session code manually. Validation logic then checks whether the session is active, whether the student is eligible for the course, and whether any optional location condition has been met.</p>
+        <p>Validation helps preserve the integrity of the records. Instead of simply accepting all submissions, the system evaluates whether each attendance request is genuine and contextually correct.</p>
+
+        <h3 class="section-title">2.6 Attendance Marking Methods</h3>
+        <p>There are several methods for recording attendance in academic systems. The most common include manual roll call, paper sign-in sheets, card-based scanning, biometric verification, RFID tagging, GPS-enabled mobile check-in, and QR code scanning.</p>
+        <p>Manual roll call is inexpensive but time-consuming. Paper sign-in is simple but vulnerable to impersonation and storage problems. RFID and biometric systems may provide stronger identity assurance, but they usually require dedicated hardware and higher setup costs. GPS-only systems can help verify location, but may not by themselves prove class participation. QR code systems are popular because they are fast, relatively inexpensive, and easy to deploy using common mobile devices.</p>
+        <p>For this reason, QR code attendance has become a practical solution in many educational settings. When strengthened with secure login, session timing, and location validation, it can provide a good balance between usability and trustworthiness. The proposed system adopts this combined approach.</p>
+
+        <h3 class="section-title">2.7 Technologies for Web-Based Attendance Systems</h3>
+        <p>The development of a web-based attendance management system depends on a combination of frontend, backend, database, and supporting technologies.</p>
+        <p>The frontend layer is responsible for the user interface. It handles pages for login, dashboard access, session management, attendance marking, and reports. A responsive frontend is important because users may access the system from laptops, tablets, or mobile phones.</p>
+        <p>The backend layer processes requests, applies business logic, manages authentication, validates attendance conditions, and communicates with the database. It ensures that the system operates consistently and securely across different user actions.</p>
+        <p>The database layer stores users, courses, sessions, attendance records, registry information, notifications, and query responses. Since attendance data must be preserved and retrieved efficiently, the database is central to the stability of the system.</p>
+        <p>Supporting technologies include QR code generation libraries, QR scanning tools, notification services, and location services. Together, these technologies enable the system to move beyond simple record storage into real-time interaction and verification.</p>
+        <p>In the context of this project, the system is implemented as a web application with a frontend interface, a backend API, a relational database, QR code support, and optional location capture.</p>
+
+        <h3 class="section-title">2.8 Security, Accuracy, and Reliability Considerations</h3>
+        <p>Security, accuracy, and reliability are major concerns in attendance system design. If a system can be manipulated easily, then the value of the records it produces becomes questionable. Likewise, if the system frequently fails or records incorrect information, users will lose confidence in it.</p>
+        <p>Security begins with authentication and authorization. Users should log in with verified credentials, and actions should be restricted according to their role. Sensitive operations such as session creation, report generation, and user management must not be accessible to unauthorized persons.</p>
+        <p>Accuracy depends on correct validation rules and proper data relationships. The system should confirm that a student is enrolled in the course, that the session is valid and active, and that duplicate or invalid submissions are prevented. Optional location verification also contributes to accuracy by strengthening the link between physical presence and digital attendance marking.</p>
+        <p>Reliability concerns the consistent availability and correctness of the system over time. This includes stable data storage, appropriate error handling, logging, and secure recovery processes such as password reset support. A reliable attendance system should also support easy report generation and historical review without record loss.</p>
+        <p>The proposed system addresses these concerns by using authenticated access, role separation, structured session logic, database-backed storage, and optional geofencing for stronger validation.</p>
+
+        <h3 class="section-title">2.9 Design Requirements and Information</h3>
+        <p>To develop an effective attendance management system, clear design requirements must be established. These requirements define what the system must do, how it should behave, and what quality standards it should maintain.</p>
+
+        <h3 class="section-title">2.9.1 Functional Requirements</h3>
+        <p>The functional requirements of the proposed system include the ability to:</p>
+        <ol>
+          <li>register and authenticate users based on their roles;</li>
+          <li>manage student registry data and course enrollment records;</li>
+          <li>create courses and assign them to lecturers and students;</li>
+          <li>create attendance sessions with dates, times, and session codes;</li>
+          <li>generate QR codes for attendance sessions;</li>
+          <li>allow students to mark attendance through QR scanning or code entry;</li>
+          <li>capture optional location data for attendance verification;</li>
+          <li>generate attendance histories, notifications, and reports; and</li>
+          <li>support absence queries and password reset workflows.</li>
+        </ol>
+
+        <h3 class="section-title">2.9.2 Non-Functional Requirements</h3>
+        <p>The non-functional requirements include:</p>
+        <ol>
+          <li>security, so that only authorized users can access protected features;</li>
+          <li>usability, so that users can interact with the system easily across devices;</li>
+          <li>reliability, so that data is preserved correctly and system functions remain stable;</li>
+          <li>performance, so that attendance operations and dashboard interactions happen quickly;</li>
+          <li>scalability, so that the system can support many users and sessions over time; and</li>
+          <li>maintainability, so that future improvements and updates can be made without major redesign.</li>
+        </ol>
+
+        <h3 class="section-title">2.9.3 Gaps in Existing Approaches and Basis for the Proposed System</h3>
+        <p>Many existing attendance approaches solve only part of the problem. Manual systems are easy to start with but weak in speed and integrity. Hardware-based systems may offer strong verification but are often expensive and difficult to maintain. Some digital systems improve speed yet do not adequately address impersonation, role-based administration, or integrated academic workflows.</p>
+        <p>The gap identified from the literature and common practice is the need for a solution that is affordable, accessible, secure, and academically integrated. A practical system should not only record attendance but also connect attendance to enrollment data, support lecturer workflows, allow administrative oversight, and provide students with transparent access to their records.</p>
+        <p>The proposed web-based class attendance management system is intended to fill this gap by combining centralized administration, QR code attendance, optional location verification, structured follow-up for absences, and role-based dashboard access within a single web platform.</p>
+
+        <div class="note">
+          The front-page identity details such as student name, matric number, department, and institution can be inserted in a final personalized revision if you want me to prepare the submission-ready version.
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,6 +1,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ChevronDown,
   Bell,
   BookOpen,
   Calendar,
@@ -9,12 +10,16 @@ import {
   Clock3,
   CircleHelp,
   Download,
+  FileText,
   GraduationCap,
+  Home,
   KeyRound,
   LayoutDashboard,
   LoaderCircle,
   LogOut,
   Mail,
+  Menu,
+  MessageSquare,
   Search,
   Send,
   ShieldCheck,
@@ -39,15 +44,22 @@ const initialSessionForm = { courseId: '', date: '', startTime: '', durationMinu
 const initialBuildingForm = { name: '', tag: '', latitude: '', longitude: '', radiusMeters: '80' };
 const initialQueryForm = { studentId: '', sessionId: '', title: '', message: '' };
 const initialAttendanceForm = { sessionCode: '', useLocation: true };
+const PENDING_SESSION_CODE_KEY = 'attendance_pending_session_code';
 
 const TABS_BY_ROLE = {
-  admin: ['overview', 'analytics', 'users', 'registry', 'courses', 'reports', 'notifications', 'profile', 'help'],
-  lecturer: ['overview', 'analytics', 'courses', 'sessions', 'queries', 'reports', 'notifications', 'profile', 'help'],
-  student: ['overview', 'analytics', 'courses', 'attendance', 'queries', 'reports', 'notifications', 'profile', 'help'],
+  admin: ['overview', 'analytics', 'users', 'registry', 'courses', 'reports', 'notifications', 'help'],
+  lecturer: ['overview', 'analytics', 'courses', 'sessions', 'queries', 'reports', 'notifications', 'help'],
+  student: ['overview', 'analytics', 'courses', 'attendance', 'queries', 'reports', 'notifications', 'help'],
+};
+
+const PRIMARY_TABS_BY_ROLE = {
+  admin: ['overview', 'users', 'registry', 'courses', 'reports', 'notifications'],
+  lecturer: ['overview', 'courses', 'sessions', 'queries', 'reports', 'notifications'],
+  student: ['overview', 'courses', 'attendance', 'queries', 'reports', 'notifications'],
 };
 
 const TAB_LABELS = {
-  overview: 'Overview',
+  overview: 'Dashboard',
   analytics: 'Analytics',
   users: 'Users',
   registry: 'Registry',
@@ -61,10 +73,19 @@ const TAB_LABELS = {
   help: 'Help',
 };
 
-const toneByRole = {
-  admin: 'from-slate-900 via-blue-800 to-sky-500',
-  lecturer: 'from-blue-900 via-blue-700 to-sky-400',
-  student: 'from-cyan-900 via-blue-700 to-sky-500',
+const TAB_ICONS = {
+  overview: Home,
+  analytics: LayoutDashboard,
+  users: Users,
+  registry: ShieldCheck,
+  courses: BookOpen,
+  sessions: Calendar,
+  attendance: CheckCircle2,
+  queries: MessageSquare,
+  reports: FileText,
+  notifications: Bell,
+  profile: UserCog,
+  help: CircleHelp,
 };
 
 const formatDate = (value) => (value ? new Date(value).toLocaleDateString() : 'Not set');
@@ -90,10 +111,29 @@ const getCurrentLocation = () =>
 
 const extractSessionCode = (decodedText) => {
   try {
-    const parsed = JSON.parse(decodedText);
-    return parsed.sessionCode || decodedText.trim();
+    const parsedUrl = new URL(decodedText);
+    const directCode = parsedUrl.searchParams.get('sessionCode');
+    if (directCode) {
+      return directCode.trim().toUpperCase();
+    }
   } catch (error) {
-    return decodedText.trim();
+    // not a full absolute URL, keep trying other formats
+  }
+
+  if (decodedText.includes('sessionCode=')) {
+    const queryString = decodedText.includes('?') ? decodedText.slice(decodedText.indexOf('?') + 1) : decodedText;
+    const params = new URLSearchParams(queryString);
+    const queryCode = params.get('sessionCode');
+    if (queryCode) {
+      return queryCode.trim().toUpperCase();
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(decodedText);
+    return (parsed.sessionCode || decodedText).trim().toUpperCase();
+  } catch (error) {
+    return decodedText.trim().toUpperCase();
   }
 };
 
@@ -111,25 +151,6 @@ const Panel = ({ title, eyebrow, action, children }) => {
     </div>
     {children}
   </section>
-  );
-};
-
-const StatCard = ({ label, value, helper, icon: Icon, tone }) => {
-  const { isDark } = useTheme();
-
-  return (
-  <div className={`rounded-[1.75rem] border p-6 ${isDark ? 'border-slate-700 bg-slate-900/80 shadow-[0_20px_50px_rgba(2,6,23,0.6)]' : 'border-white/70 bg-white/90 shadow-[0_20px_50px_rgba(148,163,184,0.14)]'}`}>
-    <div className="flex items-start justify-between gap-4">
-      <div>
-        <p className={`text-sm font-medium ${isDark ? 'text-slate-300' : 'text-slate-500'}`}>{label}</p>
-        <p className={`mt-2 text-3xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>{value}</p>
-        <p className={`mt-2 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{helper}</p>
-      </div>
-      <div className={`rounded-2xl p-3 ${tone}`}>
-        <Icon className="h-6 w-6 text-white" />
-      </div>
-    </div>
-  </div>
   );
 };
 
@@ -259,6 +280,18 @@ const HelpArticleList = ({ articles, contact }) => (
   </div>
 );
 
+const buildTrendPoints = (values = []) => {
+  const fallback = values.length > 0 ? values : [48, 46, 57, 61, 59, 71, 85];
+  const max = Math.max(...fallback, 100);
+  const width = 660;
+  const height = 240;
+  return fallback.map((value, index) => {
+    const x = (index / Math.max(fallback.length - 1, 1)) * width;
+    const y = height - (value / max) * height;
+    return { x, y, value };
+  });
+};
+
 const Input = ({ label, onChange, ...props }) => {
   const { isDark } = useTheme();
 
@@ -361,6 +394,7 @@ const Dashboard = () => {
   const { user } = useSelector((state) => state.auth);
   const role = user?.role || 'student';
   const tabs = TABS_BY_ROLE[role] || TABS_BY_ROLE.student;
+  const primaryTabs = PRIMARY_TABS_BY_ROLE[role] || PRIMARY_TABS_BY_ROLE.student;
 
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [loading, setLoading] = useState(true);
@@ -391,6 +425,10 @@ const Dashboard = () => {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [bulkRegistry, setBulkRegistry] = useState('');
   const [registryFileName, setRegistryFileName] = useState('');
+  const [courseCatalogFileName, setCourseCatalogFileName] = useState('');
+  const [timetableFileName, setTimetableFileName] = useState('');
+  const [lecturerRosterFileName, setLecturerRosterFileName] = useState('');
+  const [lecturerRosterCourseId, setLecturerRosterCourseId] = useState('');
   const [responseDrafts, setResponseDrafts] = useState({});
   const [registryFilters, setRegistryFilters] = useState({ faculty: '', department: '', program: '', level: '', claimed: '' });
   const [selectedStudentId, setSelectedStudentId] = useState('');
@@ -406,12 +444,65 @@ const Dashboard = () => {
   const [buildingForm, setBuildingForm] = useState(initialBuildingForm);
   const [queryForm, setQueryForm] = useState(initialQueryForm);
   const [attendanceForm, setAttendanceForm] = useState(initialAttendanceForm);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [autoMarkedSessionCode, setAutoMarkedSessionCode] = useState('');
+  const [autoMarkStatus, setAutoMarkStatus] = useState('');
 
   const activeSession = useMemo(() => sessions.find((session) => session.status === 'active') || null, [sessions]);
 
   useEffect(() => {
     setActiveTab(tabs[0]);
   }, [tabs]);
+
+  useEffect(() => {
+    if (role !== 'lecturer') {
+      return;
+    }
+
+    if (!courses.length) {
+      setLecturerRosterCourseId('');
+      return;
+    }
+
+    if (!courses.some((course) => String(course.id) === String(lecturerRosterCourseId))) {
+      setLecturerRosterCourseId(String(courses[0].id));
+    }
+  }, [courses, lecturerRosterCourseId, role]);
+
+  useEffect(() => {
+    if (role !== 'student') {
+      return;
+    }
+
+    const pendingSessionCode = localStorage.getItem(PENDING_SESSION_CODE_KEY);
+    if (!pendingSessionCode) {
+      return;
+    }
+
+    setAttendanceForm((current) => ({
+      ...current,
+      sessionCode: pendingSessionCode,
+    }));
+    setActiveTab('attendance');
+    setSuccess('QR code detected. We are attempting to mark attendance automatically.');
+    setAutoMarkStatus('QR detected. Verifying location and marking attendance...');
+  }, [role]);
+
+  useEffect(() => {
+    if (!accountMenuOpen) {
+      return undefined;
+    }
+
+    const handleDocumentClick = (event) => {
+      if (!event.target.closest('.dashboard-account-menu')) {
+        setAccountMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleDocumentClick);
+    return () => document.removeEventListener('mousedown', handleDocumentClick);
+  }, [accountMenuOpen]);
 
   const setMessage = (nextSuccess = '', nextError = '') => {
     setSuccess(nextSuccess);
@@ -430,7 +521,8 @@ const Dashboard = () => {
     setSessionDetail(detail);
 
     if (detail?.sessionCode) {
-      const dataUrl = await QRCode.toDataURL(JSON.stringify({ sessionCode: detail.sessionCode }), {
+      const attendanceEntryUrl = `${window.location.origin}${window.location.pathname}?sessionCode=${encodeURIComponent(detail.sessionCode)}#/login`;
+      const dataUrl = await QRCode.toDataURL(attendanceEntryUrl, {
         width: 320,
         margin: 2,
         color: { dark: '#0f172a', light: '#ffffff' },
@@ -840,6 +932,175 @@ const Dashboard = () => {
     }
   };
 
+  const handleCourseCatalogCsvUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      setBusyAction('bulk-courses-csv');
+      setMessage();
+      setCourseCatalogFileName(file.name);
+
+      const content = await file.text();
+      const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      if (lines.length < 2) {
+        throw new Error('Course CSV must include a header row and at least one course row');
+      }
+
+      const headers = parseCsvRow(lines[0]).map(normalizeHeader);
+      const coursesPayload = lines.slice(1).map((line) => {
+        const values = parseCsvRow(line);
+        const row = {};
+        headers.forEach((header, index) => {
+          row[header] = values[index] || '';
+        });
+
+        const courseCode = (row.coursecode || row.code || '').toUpperCase();
+        const courseName = row.coursename || row.title || row.name || '';
+        const lecturerEmail = row.lectureremail || row.lecturer || row.email || '';
+        const lecturerId = row.lecturerid || '';
+
+        if (!courseCode || !courseName || !(lecturerEmail || lecturerId) || !row.semester || !row.academicyear) {
+          throw new Error('Each course row must include courseCode, courseName, semester, academicYear, and lecturerEmail or lecturerId');
+        }
+
+        return {
+          courseCode,
+          courseName,
+          semester: row.semester.toLowerCase(),
+          academicYear: row.academicyear,
+          lecturerEmail,
+          lecturerId,
+          description: row.description || '',
+          faculty: row.faculty || '',
+          department: row.department || '',
+          program: row.program || '',
+          level: row.level || '',
+        };
+      });
+
+      const response = await api.post('/courses/bulk', { courses: coursesPayload });
+      setMessage(`Course catalog imported successfully from ${file.name}. ${response.data.data?.count || coursesPayload.length} course rows processed.`);
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || actionError.message || 'Course catalog import failed.');
+    } finally {
+      setBusyAction('');
+      event.target.value = '';
+    }
+  };
+
+  const handleTimetableCsvUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      setBusyAction('bulk-timetable-csv');
+      setMessage();
+      setTimetableFileName(file.name);
+
+      const content = await file.text();
+      const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      if (lines.length < 2) {
+        throw new Error('Timetable CSV must include a header row and at least one timetable row');
+      }
+
+      const headers = parseCsvRow(lines[0]).map(normalizeHeader);
+      const schedules = lines.slice(1).map((line) => {
+        const values = parseCsvRow(line);
+        const row = {};
+        headers.forEach((header, index) => {
+          row[header] = values[index] || '';
+        });
+
+        const courseCode = (row.coursecode || row.code || '').toUpperCase();
+        const dayOfWeek = row.dayofweek || row.day || '';
+        const startTime = row.starttime || row.start || '';
+        const endTime = row.endtime || row.end || '';
+        if (!courseCode || !dayOfWeek || !startTime || !endTime) {
+          throw new Error('Each timetable row must include courseCode, dayOfWeek, startTime, and endTime');
+        }
+
+        return {
+          courseCode,
+          dayOfWeek,
+          startTime,
+          endTime,
+          venue: row.venue || row.location || '',
+          notifyMinutesBefore: row.notifyminutesbefore || row.notifybefore || '30',
+        };
+      });
+
+      const response = await api.post('/courses/schedules/bulk', { schedules });
+      setMessage(`Timetable imported successfully from ${file.name}. ${response.data.data?.count || schedules.length} schedule rows processed.`);
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || actionError.message || 'Timetable import failed.');
+    } finally {
+      setBusyAction('');
+      event.target.value = '';
+    }
+  };
+
+  const handleLecturerRosterCsvUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!lecturerRosterCourseId) {
+      setMessage('', 'Choose a course before importing the student roster.');
+      event.target.value = '';
+      return;
+    }
+
+    try {
+      setBusyAction('bulk-course-roster-csv');
+      setMessage();
+      setLecturerRosterFileName(file.name);
+
+      const content = await file.text();
+      const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      if (lines.length < 2) {
+        throw new Error('Roster CSV must include a header row and at least one student row');
+      }
+
+      const headers = parseCsvRow(lines[0]).map(normalizeHeader);
+      const studentsPayload = lines.slice(1).map((line) => {
+        const values = parseCsvRow(line);
+        const row = {};
+        headers.forEach((header, index) => {
+          row[header] = values[index] || '';
+        });
+
+        const matricNumber = (row.matricnumber || row.matric || row.regnumber || '').toUpperCase();
+        const email = row.email || '';
+        if (!matricNumber && !email) {
+          throw new Error('Each roster row must include matricNumber or email');
+        }
+
+        return {
+          matricNumber,
+          email,
+        };
+      });
+
+      const response = await api.post(`/courses/${lecturerRosterCourseId}/enrollments/bulk`, { students: studentsPayload });
+      const missingCount = response.data.data?.missing?.length || 0;
+      setMessage(`Roster import completed from ${file.name}. ${response.data.data?.count || 0} students linked.${missingCount ? ` ${missingCount} rows could not be matched.` : ''}`);
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || actionError.message || 'Student roster import failed.');
+    } finally {
+      setBusyAction('');
+      event.target.value = '';
+    }
+  };
+
   const handleCreateSession = async (event) => {
     event.preventDefault();
     try {
@@ -921,7 +1182,7 @@ const Dashboard = () => {
     }
   };
 
-  const handleMarkAttendance = async (overrideCode) => {
+  const handleMarkAttendance = useCallback(async (overrideCode) => {
     try {
       setBusyAction('mark-attendance');
       setMessage();
@@ -935,12 +1196,55 @@ const Dashboard = () => {
       setAttendanceForm(initialAttendanceForm);
       setMessage('Attendance marked successfully.');
       await loadData(true);
+      return true;
     } catch (actionError) {
       setMessage('', actionError.response?.data?.message || 'Attendance could not be marked.');
+      return false;
     } finally {
       setBusyAction('');
     }
-  };
+  }, [attendanceForm.sessionCode, attendanceForm.useLocation, loadData]);
+
+  useEffect(() => {
+    if (role !== 'student' || loading || busyAction === 'mark-attendance') {
+      return;
+    }
+
+    const pendingSessionCode = localStorage.getItem(PENDING_SESSION_CODE_KEY);
+    if (!pendingSessionCode || autoMarkedSessionCode === pendingSessionCode) {
+      return;
+    }
+
+    let cancelled = false;
+    setAutoMarkedSessionCode(pendingSessionCode);
+    setAutoMarkStatus('Verifying location and marking attendance...');
+
+    const runAutoMark = async () => {
+      const success = await handleMarkAttendance(pendingSessionCode);
+      if (cancelled) {
+        return;
+      }
+
+      localStorage.removeItem(PENDING_SESSION_CODE_KEY);
+      setAutoMarkStatus('');
+
+      if (!success) {
+        setAttendanceForm((current) => ({
+          ...current,
+          sessionCode: pendingSessionCode,
+        }));
+        setActiveTab('attendance');
+        setSuccess('');
+        setAutoMarkStatus('Automatic attendance failed. Review the session code below and try again.');
+      }
+    };
+
+    runAutoMark();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [autoMarkedSessionCode, busyAction, handleMarkAttendance, loading, role]);
 
   const handleDeactivateUser = async (userId) => {
     try {
@@ -1192,6 +1496,98 @@ const Dashboard = () => {
     ];
   }, [role]);
 
+  const primaryStats = useMemo(() => stats.slice(0, 4), [stats]);
+  const recentActivity = useMemo(() => {
+    if (notifications.length > 0) {
+      return notifications.slice(0, 4);
+    }
+
+    if (role === 'student') {
+      return history.slice(0, 4).map((entry) => ({
+        title: `Attendance ${entry.status}`,
+        description: `${entry.session?.course?.courseCode || 'Course'} on ${formatDateTime(entry.markedAt)}`,
+        createdAt: entry.markedAt,
+        tone: entry.status === 'present' ? 'emerald' : entry.status === 'late' ? 'amber' : 'rose',
+      }));
+    }
+
+    if (role === 'lecturer') {
+      return queries.slice(0, 4).map((entry) => ({
+        title: entry.title,
+        description: entry.message,
+        createdAt: entry.createdAt,
+        tone: entry.status === 'pending' ? 'amber' : 'blue',
+      }));
+    }
+
+    return courses.slice(0, 4).map((entry) => ({
+      title: `${entry.courseCode} active`,
+      description: entry.courseName,
+      createdAt: entry.createdAt,
+      tone: 'blue',
+    }));
+  }, [courses, history, notifications, queries, role]);
+
+  const upcomingItems = useMemo(() => {
+    if (role === 'student') {
+      return courses.slice(0, 3).map((course, index) => ({
+        title: course.courseName || course.courseCode,
+        subtitle: course.courseCode,
+        time: index === 0 ? '10:00 AM' : index === 1 ? '12:00 PM' : '2:00 PM',
+      }));
+    }
+
+    if (role === 'lecturer') {
+      return sessions.slice(0, 3).map((session) => ({
+        title: session.course?.courseName || session.course?.courseCode || 'Attendance session',
+        subtitle: session.course?.courseCode || session.sessionCode,
+        time: formatTime(session.startTime),
+      }));
+    }
+
+    return [
+      { title: 'Registry audit', subtitle: 'Admin workflow', time: '09:00 AM' },
+      { title: 'Course review', subtitle: 'Academic setup', time: '11:30 AM' },
+      { title: 'Report export', subtitle: 'Faculty reports', time: '03:00 PM' },
+    ];
+  }, [courses, role, sessions]);
+
+  const attendanceTrendValues = useMemo(() => {
+    const series = role === 'student'
+      ? [
+          history.filter((entry) => entry.status === 'present').length * 10 + 35,
+          45,
+          57,
+          62,
+          59,
+          72,
+          Math.min(95, (history.filter((entry) => entry.status === 'present').length * 12) + 40),
+        ]
+      : role === 'lecturer'
+        ? [
+            44,
+            48,
+            58,
+            61,
+            60,
+            76,
+            Math.min(95, (sessionDetail?.attendanceStats?.markedCount || 0) + 55),
+          ]
+        : [40, 52, 57, 63, 66, 74, 88];
+
+    return series.map((value) => Math.min(100, Math.max(15, value)));
+  }, [history, role, sessionDetail]);
+
+  const trendPoints = useMemo(() => buildTrendPoints(attendanceTrendValues), [attendanceTrendValues]);
+  const trendPath = useMemo(
+    () => trendPoints.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x},${point.y}`).join(' '),
+    [trendPoints]
+  );
+  const trendArea = useMemo(
+    () => `${trendPath} L ${trendPoints[trendPoints.length - 1]?.x || 660},240 L 0,240 Z`,
+    [trendPath, trendPoints]
+  );
+
   const handleLogout = () => {
     dispatch(logout());
   };
@@ -1250,74 +1646,254 @@ const Dashboard = () => {
   }
 
   return (
-    <div className={`dashboard-shell min-h-screen pb-10 ${isDark ? 'dark bg-[radial-gradient(circle_at_top,_#0f172a,_#020617_30%,_#111827_58%,_#0b1120_100%)] text-slate-100' : 'bg-[radial-gradient(circle_at_top,_#eff6ff,_#dbeafe_30%,_#bfdbfe_58%,_#e0f2fe_100%)] text-slate-900'}`}>
+    <div className={`dashboard-shell min-h-screen ${isDark ? 'dark dashboard-shell--app text-slate-100' : 'text-slate-900'}`}>
       <QrScannerPanel isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={handleMarkAttendance} />
-      <div className={`dashboard-top relative overflow-hidden bg-gradient-to-r ${toneByRole[role]} px-4 pb-28 pt-8 text-white`}>
-        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.16),transparent_42%,rgba(15,23,42,0.22))]" />
-        <div className="relative mx-auto max-w-7xl">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="inline-flex items-center gap-3 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold backdrop-blur-xl">
-                <GraduationCap className="h-4 w-4" />
-                Attendance System
-              </div>
-              <h1 className="mt-6 text-4xl font-black tracking-tight">{role.charAt(0).toUpperCase() + role.slice(1)} dashboard</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-blue-100">
-                {role === 'admin' && 'Manage users, school registry records, course allocations, and readiness for deployment from one control center.'}
-                {role === 'lecturer' && 'Create QR attendance sessions, review absentees, and let the system automatically follow up with students who miss class.'}
-                {role === 'student' && 'Mark attendance with QR, reply to lecturer queries, and track your semester activity in one place.'}
-              </p>
+      <div className="dashboard-frame">
+        <aside className={`dashboard-sidebar ${sidebarOpen ? 'is-open' : ''}`}>
+          <div className="dashboard-brand">
+            <div className="dashboard-brand__logo">
+              <GraduationCap className="h-5 w-5" />
             </div>
-            <div className="flex flex-wrap gap-3">
-              <button onClick={handleLogout} className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur-xl transition hover:bg-white/20">
-                <LogOut className="h-4 w-4" />
-                Sign out
-              </button>
-            </div>
+            <span>Attendance System</span>
           </div>
-          <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
-            <div>
-              <p className="text-sm text-blue-100">Signed in as</p>
-              <p className="mt-2 text-2xl font-bold">{fullName(user)}</p>
-              <p className="mt-1 text-sm text-blue-100">{user?.email} {user?.matricNumber ? `| ${user.matricNumber}` : ''}</p>
-            </div>
-            <div className="rounded-[1.5rem] border border-white/20 bg-white/10 px-5 py-4 backdrop-blur-xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-100">Role access</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {tabs.map((tab) => (
-                  <button key={tab} onClick={() => setActiveTab(tab)} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${activeTab === tab ? 'bg-white text-blue-800' : 'bg-white/10 text-white hover:bg-white/20'}`}>{TAB_LABELS[tab]}</button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      <div className="relative z-10 mx-auto -mt-16 max-w-7xl px-4">
+          <nav className="dashboard-nav">
+            {primaryTabs.map((tab) => {
+              const Icon = TAB_ICONS[tab] || LayoutDashboard;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => {
+                    setActiveTab(tab);
+                    setSidebarOpen(false);
+                  }}
+                  className={`dashboard-nav__item ${activeTab === tab ? 'is-active' : ''}`}
+                >
+                  <Icon className="h-5 w-5" />
+                  <span>{TAB_LABELS[tab]}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="dashboard-sidebar__footer">
+            <div className="dashboard-userchip">
+              <div className="dashboard-userchip__avatar">{(user?.firstName || user?.email || 'A').charAt(0).toUpperCase()}</div>
+              <div>
+                <p className="dashboard-userchip__name">{fullName(user)}</p>
+                <p className="dashboard-userchip__meta">{role}</p>
+              </div>
+              <ChevronDown className="h-4 w-4" />
+            </div>
+          </div>
+        </aside>
+
+        <main className="dashboard-main">
+          <header className="dashboard-topbar">
+            <div className="dashboard-topbar__left">
+              <button className="dashboard-menu-button lg:hidden" onClick={() => setSidebarOpen((current) => !current)}>
+                <Menu className="h-5 w-5" />
+              </button>
+              <div className="dashboard-search">
+                <Search className="h-4 w-4 text-slate-500" />
+                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search..." />
+              </div>
+            </div>
+            <div className="dashboard-topbar__right">
+              <button className="dashboard-icon-button">
+                <Bell className="h-5 w-5" />
+              </button>
+              <div className={`dashboard-account-menu ${accountMenuOpen ? 'is-open' : ''}`}>
+                <button type="button" className="dashboard-account" onClick={() => setAccountMenuOpen((current) => !current)}>
+                  <div className="dashboard-account__avatar">{(user?.firstName || user?.email || 'A').charAt(0).toUpperCase()}</div>
+                  <ChevronDown className="h-4 w-4" />
+                </button>
+                <div className="dashboard-account-dropdown">
+                  {tabs.includes('analytics') && (
+                    <button
+                      type="button"
+                      className="dashboard-account-dropdown__item"
+                      onClick={() => {
+                        setActiveTab('analytics');
+                        setAccountMenuOpen(false);
+                        setSidebarOpen(false);
+                      }}
+                    >
+                      <LayoutDashboard className="h-4 w-4" />
+                      <span>Analytics</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="dashboard-account-dropdown__item"
+                    onClick={() => {
+                      setActiveTab('profile');
+                      setAccountMenuOpen(false);
+                      setSidebarOpen(false);
+                    }}
+                  >
+                    <UserCog className="h-4 w-4" />
+                    <span>Profile</span>
+                  </button>
+                  {tabs.includes('help') && (
+                    <button
+                      type="button"
+                      className="dashboard-account-dropdown__item"
+                      onClick={() => {
+                        setActiveTab('help');
+                        setAccountMenuOpen(false);
+                        setSidebarOpen(false);
+                      }}
+                    >
+                      <CircleHelp className="h-4 w-4" />
+                      <span>Help</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="dashboard-account-dropdown__item"
+                    onClick={() => {
+                      setAccountMenuOpen(false);
+                      handleLogout();
+                    }}
+                  >
+                    <LogOut className="h-4 w-4" />
+                    <span>Sign out</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <section className="dashboard-content">
+        {autoMarkStatus && (
+          <div className="mb-6 flex items-center gap-3 rounded-[1.5rem] border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-700">
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+            <span>{autoMarkStatus}</span>
+          </div>
+        )}
         {error && <div className="mb-6 rounded-[1.5rem] border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>}
         {success && <div className="mb-6 rounded-[1.5rem] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">{success}</div>}
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{stats.map((stat) => <StatCard key={stat.label} {...stat} />)}</div>
-        <div className="mt-8 grid gap-8">
-          <Panel title="Workspace search" eyebrow="Quick filter" action={<div className="relative w-full sm:w-80"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search users, courses, sessions, queries" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /></div>}>
-            <p className="text-sm leading-7 text-slate-600">Use one search bar to narrow the visible data in the current dashboard section.</p>
-          </Panel>
+        <div className="mt-2 grid gap-8">
 
           {activeTab === 'overview' && (
-            <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
-              <Panel title="Operational summary" eyebrow="Overview">
-                <div className="grid gap-4 md:grid-cols-2">
-                  {role === 'admin' && <><SummaryTile label="Registry coverage" value={`${summary?.claimedRegistryRecords || 0} / ${summary?.totalRegistryRecords || 0}`} helper="Students who can self-signup right now" /><SummaryTile label="Enrollments" value={summary?.totalEnrollments || 0} helper="Active semester course registrations" /><SummaryTile label="Attendance marks" value={summary?.attendanceMarks || 0} helper="All recorded attendance entries" /><SummaryTile label="Live sessions" value={summary?.activeSessions || 0} helper="Classes currently open for attendance" /></>}
-                  {role === 'lecturer' && <><SummaryTile label="Automatic follow-up" value="Enabled" helper="Absent students are queried and emailed when you close a session" /><SummaryTile label="Current session" value={activeSession?.sessionCode || 'None'} helper={activeSession ? `${activeSession.course?.courseCode} in progress` : 'Create a session to start attendance'} /><SummaryTile label="Marked attendance" value={sessionDetail?.attendanceStats?.markedCount || 0} helper="Students who have checked in for the selected session" /><SummaryTile label="Absent list" value={sessionDetail?.attendanceStats?.absentCount || 0} helper="Students who missed the selected session" /></>}
-                  {role === 'student' && <><SummaryTile label="Attendance profile" value={`${history.filter((item) => item.status === 'present').length} present`} helper="Sessions marked inside the attendance window" /><SummaryTile label="Latest mark" value={history[0]?.session?.course?.courseCode || 'None'} helper={history[0] ? formatDateTime(history[0].markedAt) : 'No attendance marked yet'} /><SummaryTile label="Pending responses" value={queries.filter((query) => query.status === 'pending').length} helper="Queries waiting for your explanation" /><SummaryTile label="Location capture" value={attendanceForm.useLocation ? 'On' : 'Off'} helper="You can include location when marking attendance" /></>}
+            <div className="dashboard-overview">
+              <section className="dashboard-welcome">
+                <h1>Welcome back, {user?.firstName || 'there'} <span className="wave" role="img" aria-label="waving hand">{'\u{1F44B}'}</span></h1>
+                <p>
+                  {role === 'admin' && "Here's what's happening across the system today."}
+                  {role === 'lecturer' && "Here's what's happening with your classes today."}
+                  {role === 'student' && "Here's what's happening today."}
+                </p>
+              </section>
+
+              <div className="dashboard-stat-grid">
+                {primaryStats.map((stat, index) => (
+                  <article key={stat.label} className="dashboard-stat-card">
+                    <div className={`dashboard-stat-card__icon tone-${index + 1}`}>
+                      <stat.icon className="h-5 w-5" />
+                    </div>
+                    <p className="dashboard-stat-card__label">{stat.label}</p>
+                    <p className="dashboard-stat-card__value">{stat.value}</p>
+                    <p className="dashboard-stat-card__helper">{stat.helper}</p>
+                  </article>
+                ))}
+              </div>
+
+              <div className="dashboard-overview__grid">
+                <section className="dashboard-chart-card">
+                  <div className="dashboard-card__header">
+                    <div>
+                      <h2>Attendance</h2>
+                      <p>Weekly overview</p>
+                    </div>
+                    <div className="dashboard-card__meta">Compared to last week</div>
+                  </div>
+                  <div className="dashboard-chart__summary">
+                    <span>{attendanceTrendValues[attendanceTrendValues.length - 1]}%</span>
+                    <small>Current trend</small>
+                  </div>
+                  <div className="dashboard-chart">
+                    <svg viewBox="0 0 660 240" preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient id="attendanceFill" x1="0%" x2="0%" y1="0%" y2="100%">
+                          <stop offset="0%" stopColor="rgba(90,137,255,0.35)" />
+                          <stop offset="100%" stopColor="rgba(90,137,255,0.02)" />
+                        </linearGradient>
+                      </defs>
+                      {[0, 1, 2, 3].map((line) => (
+                        <line key={line} x1="0" x2="660" y1={line * 60} y2={line * 60} className="dashboard-chart__grid" />
+                      ))}
+                      <path d={trendArea} fill="url(#attendanceFill)" />
+                      <path d={trendPath} className="dashboard-chart__line" />
+                      {trendPoints.map((point, index) => (
+                        <circle key={index} cx={point.x} cy={point.y} r="5" className="dashboard-chart__point" />
+                      ))}
+                    </svg>
+                    {role === 'student' && `${history[0]?.session?.course?.courseCode || 'No latest attendance yet'} - Stay on top of your courses and lecturer responses.`}
+                    {role === 'lecturer' && `${activeSession?.course?.courseCode || 'No active session'} - Keep attendance open only during class and close promptly after.`}
+                    {role === 'admin' && `${summary?.totalCourses || 0} active courses - Registry, users, and reports are all available from the left menu.`}
+                  </div>
+                </section>
+
+                <div className="dashboard-stack">
+                  <section className="dashboard-feed-card">
+                    <div className="dashboard-card__header">
+                      <h2>Recent Activity</h2>
+                    </div>
+                    <div className="dashboard-feed">
+                      {recentActivity.slice(0, 3).map((item, index) => (
+                        <div key={`${item.title}-${index}`} className="dashboard-feed__item">
+                          <div className={`dashboard-feed__icon tone-${(index % 3) + 1}`}>
+                            {index === 0 ? <CheckCircle2 className="h-4 w-4" /> : index === 1 ? <Bell className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
+                          </div>
+                          <div>
+                            <p className="dashboard-feed__title">{item.title}</p>
+                            <p className="dashboard-feed__description">{item.description}</p>
+                            <span className="dashboard-feed__time">{formatDateTime(item.createdAt)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="dashboard-upcoming-card">
+                    <div className="dashboard-card__header">
+                      <h2>Upcoming {role === 'student' ? 'Classes' : role === 'lecturer' ? 'Sessions' : 'Tasks'}</h2>
+                    </div>
+                    <div className="dashboard-upcoming">
+                      {upcomingItems.map((item) => (
+                        <div key={`${item.title}-${item.time}`} className="dashboard-upcoming__item">
+                          <div className="dashboard-upcoming__icon">
+                            <Calendar className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <p className="dashboard-upcoming__title">{item.title}</p>
+                            <p className="dashboard-upcoming__subtitle">{item.subtitle}</p>
+                          </div>
+                          <span className="dashboard-upcoming__time">{item.time}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
                 </div>
-              </Panel>
-              <Panel title="Priority actions" eyebrow="Next best steps">
-                <div className="space-y-4">
-                  {role === 'admin' && <><ActionTile title="Load school registry" description="Add matric records so students can self-signup without admin hand-holding." /><ActionTile title="Assign lecturers to courses" description="Courses only become usable for attendance when a lecturer is attached." /><ActionTile title="Prepare deployment" description="Use the Docker and env setup included below to move this app into production." /></>}
-                  {role === 'lecturer' && <><ActionTile title="Create a fresh session" description="Generate a QR-ready attendance window for the next class." /><ActionTile title="Close sessions after class" description="The system will list absentees and auto-send absence queries immediately." /><ActionTile title="Review student responses" description="Pending queries can be reviewed and closed from your dashboard." /></>}
-                  {role === 'student' && <><ActionTile title="Use QR whenever possible" description="Scanning the QR code is the fastest and most accurate attendance method." /><ActionTile title="Keep location enabled" description="This adds an extra verification signal when your institution wants stricter attendance proof." /><ActionTile title="Reply to lecturer queries" description="Prompt responses keep your attendance record cleaner and easier to audit." /></>}
+              </div>
+
+              <section className="dashboard-summary-strip">
+                <div className="dashboard-summary-strip__icon">
+                  <LayoutDashboard className="h-5 w-5" />
                 </div>
-              </Panel>
+                <div>
+                  <p className="dashboard-summary-strip__title">
+                    {role === 'student' ? 'Attendance status' : role === 'lecturer' ? 'Current session focus' : 'System focus'}
+                  </p>
+                  <p className="dashboard-summary-strip__body">
+                    {role === 'student' && `${history[0]?.session?.course?.courseCode || 'No latest attendance yet'} - Stay on top of your courses and lecturer responses.`}
+                    {role === 'lecturer' && `${activeSession?.course?.courseCode || 'No active session'} - Keep attendance open only during class and close promptly after.`}
+                    {role === 'admin' && `${summary?.totalCourses || 0} active courses - Registry, users, and reports are all available from the left menu.`}
+                  </p>
+                </div>
+              </section>
             </div>
           )}
 
@@ -1660,6 +2236,30 @@ const Dashboard = () => {
                     </Panel>
                   )}
                   {role === 'admin' && (
+                    <Panel title="Import course catalog" eyebrow="Faculty course list">
+                      <div className="space-y-4">
+                        <p className="text-sm leading-7 text-slate-600">Upload a CSV with headers like <span className="font-mono">courseCode, courseName, semester, academicYear, lecturerEmail, faculty, department, program, level</span>.</p>
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700">Upload course CSV</label>
+                          <input type="file" accept=".csv,text/csv" onChange={handleCourseCatalogCsvUpload} className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" />
+                          {courseCatalogFileName && <p className="mt-2 text-xs text-slate-500">Last selected file: {courseCatalogFileName}</p>}
+                        </div>
+                      </div>
+                    </Panel>
+                  )}
+                  {role === 'admin' && (
+                    <Panel title="Import timetable" eyebrow="Schedule upload">
+                      <div className="space-y-4">
+                        <p className="text-sm leading-7 text-slate-600">Upload a CSV with headers like <span className="font-mono">courseCode, dayOfWeek, startTime, endTime, venue, notifyMinutesBefore</span>. These timetable rows drive student pre-class notifications.</p>
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700">Upload timetable CSV</label>
+                          <input type="file" accept=".csv,text/csv" onChange={handleTimetableCsvUpload} className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" />
+                          {timetableFileName && <p className="mt-2 text-xs text-slate-500">Last selected file: {timetableFileName}</p>}
+                        </div>
+                      </div>
+                    </Panel>
+                  )}
+                  {role === 'admin' && (
                     <Panel title="Building geofences" eyebrow="Location setup">
                       <form onSubmit={handleCreateBuilding} className="grid gap-4 md:grid-cols-2">
                         <Input label="Building name" value={buildingForm.name} onChange={(value) => setBuildingForm((current) => ({ ...current, name: value }))} />
@@ -1698,6 +2298,19 @@ const Dashboard = () => {
                         )) : (
                           <EmptyState title="No building geofences yet" description="Add lecture halls/buildings so lecturers can select them when creating sessions." />
                         )}
+                      </div>
+                    </Panel>
+                  )}
+                  {role === 'lecturer' && (
+                    <Panel title="Import course roster" eyebrow="Lecturer student list">
+                      <div className="space-y-4">
+                        <Select label="Assigned course" value={lecturerRosterCourseId} onChange={(value) => setLecturerRosterCourseId(value)} options={[{ value: '', label: 'Choose course' }, ...courses.map((course) => ({ value: course.id, label: `${course.courseCode} - ${course.courseName}` }))]} />
+                        <p className="text-sm leading-7 text-slate-600">Upload a CSV with headers like <span className="font-mono">matricNumber</span> or <span className="font-mono">email</span>. Matched students will be enrolled into the selected course automatically.</p>
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-700">Upload roster CSV</label>
+                          <input type="file" accept=".csv,text/csv" onChange={handleLecturerRosterCsvUpload} className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" />
+                          {lecturerRosterFileName && <p className="mt-2 text-xs text-slate-500">Last selected file: {lecturerRosterFileName}</p>}
+                        </div>
                       </div>
                     </Panel>
                   )}
@@ -1744,6 +2357,15 @@ const Dashboard = () => {
                           <p className="mt-2 text-sm text-slate-500">{course.semester} semester | {course.academicYear}</p>
                           <p className="mt-1 text-sm text-slate-500">Lecturer: {fullName(course.lecturer)}</p>
                           {course.enrollment && <p className="mt-1 text-sm text-slate-500">Enrollment status: {course.enrollment.status}</p>}
+                          {course.schedules?.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {course.schedules.map((schedule) => (
+                                <Badge key={`${course.id}-${schedule.id}`} tone="slate">
+                                  {schedule.dayOfWeek} {formatTime(schedule.startTime)}-{formatTime(schedule.endTime)}{schedule.venue ? ` | ${schedule.venue}` : ''}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <div className="flex flex-wrap gap-2"><Badge tone={course.isActive === false ? 'rose' : 'emerald'}>{course.isActive === false ? 'archived' : 'active'}</Badge>{course.enrollment && <Badge tone="blue">enrolled</Badge>}</div>
                       </div>
@@ -1904,6 +2526,8 @@ const Dashboard = () => {
             </div>
           )}
         </div>
+          </section>
+        </main>
       </div>
     </div>
   );

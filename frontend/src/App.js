@@ -11,6 +11,30 @@ import ForceResetPassword from './pages/ForceResetPassword';
 import Dashboard from './pages/Dashboard';
 import { ThemeProvider } from './theme/ThemeContext';
 
+const PENDING_SESSION_CODE_KEY = 'attendance_pending_session_code';
+
+const getPendingSessionCodeFromUrl = () => {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  const directSearchParams = new URLSearchParams(window.location.search);
+  const directCode = directSearchParams.get('sessionCode');
+  if (directCode) {
+    return directCode.trim().toUpperCase();
+  }
+
+  const hash = window.location.hash || '';
+  const hashQuery = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+  if (!hashQuery) {
+    return '';
+  }
+
+  const hashSearchParams = new URLSearchParams(hashQuery);
+  const hashCode = hashSearchParams.get('sessionCode');
+  return hashCode ? hashCode.trim().toUpperCase() : '';
+};
+
 const AuthBootstrap = ({ children }) => {
   const dispatch = useDispatch();
   const { token, user, bootstrapped } = useSelector((state) => state.auth);
@@ -20,6 +44,13 @@ const AuthBootstrap = ({ children }) => {
       dispatch(fetchCurrentUser());
     }
   }, [dispatch, token, user]);
+
+  useEffect(() => {
+    const code = getPendingSessionCodeFromUrl();
+    if (code) {
+      localStorage.setItem(PENDING_SESSION_CODE_KEY, code);
+    }
+  }, []);
 
   if (token && !user && !bootstrapped) {
     return (

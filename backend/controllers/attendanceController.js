@@ -1,4 +1,5 @@
-const { AbsenceQuery, Session, Attendance, Course, User, Building } = require('../models');
+const { Op } = require('sequelize');
+const { AbsenceQuery, Session, Attendance, Course, User, Building, Enrollment } = require('../models');
 const crypto = require('crypto');
 const { sendEmail } = require('../utils/mailer');
 const { findEnrollmentsForCourse } = require('../utils/enrollmentLookup');
@@ -200,6 +201,33 @@ exports.markAttendance = async (req, res) => {
     const existing = await Attendance.findOne({ where: { sessionId: session.id, studentId: req.user.id } });
     if (existing) {
       return res.status(400).json({ success: false, message: 'Already marked attendance' });
+    }
+
+    const course = await Course.findByPk(session.courseId, { attributes: ['id', 'semester', 'academicYear'] });
+    const enrollment = await Enrollment.findOne({
+      where: {
+        userId: req.user.id,
+        courseId: session.courseId,
+        status: 'active',
+        [Op.or]: [
+          {
+            semester: course?.semester || null,
+            academicYear: course?.academicYear || null,
+          },
+          {
+            courseId: session.courseId,
+            userId: req.user.id,
+            status: 'active',
+          },
+        ],
+      },
+    });
+
+    if (!enrollment) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not registered for this course, so attendance cannot be marked.',
+      });
     }
 
     const sessionStart = new Date(`${session.date}T${session.startTime}`);

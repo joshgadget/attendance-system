@@ -1,10 +1,92 @@
 const { Op } = require('sequelize');
-const { User, Course, Enrollment, Session, Attendance, AbsenceQuery, StudentRegistry } = require('../models');
+const { User, Course, Enrollment, Session, Attendance, AbsenceQuery, StudentRegistry, CourseSchedule } = require('../models');
 
 const sortByDateDesc = (items, accessor) =>
   [...items].sort((left, right) => new Date(accessor(right)).getTime() - new Date(accessor(left)).getTime());
 
 const formatCourseName = (course) => [course?.courseCode, course?.courseName].filter(Boolean).join(' - ');
+const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const dayIndexMap = dayOrder.reduce((acc, day, index) => ({ ...acc, [day]: index }), {});
+
+const getCurrentLagosParts = () => {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Lagos',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    weekday: 'long',
+  });
+
+  const parts = Object.fromEntries(formatter.formatToParts(new Date()).map((part) => [part.type, part.value]));
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    second: Number(parts.second),
+    weekday: String(parts.weekday || '').toLowerCase(),
+  };
+};
+
+const minutesSinceMidnight = (time = '') => {
+  const [hours = 0, minutes = 0] = String(time).split(':').map(Number);
+  return (hours * 60) + minutes;
+};
+
+const getNextOccurrenceMinutes = (schedule, nowParts) => {
+  const todayIndex = dayIndexMap[nowParts.weekday];
+  const scheduleIndex = dayIndexMap[String(schedule.dayOfWeek || '').toLowerCase()];
+  if (todayIndex === undefined || scheduleIndex === undefined) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const nowMinutes = (nowParts.hour * 60) + nowParts.minute;
+  const startMinutes = minutesSinceMidnight(schedule.startTime);
+  let diffDays = scheduleIndex - todayIndex;
+
+  if (diffDays < 0 || (diffDays === 0 && startMinutes < nowMinutes)) {
+    diffDays += 7;
+  }
+
+  return (diffDays * 1440) + (startMinutes - nowMinutes);
+};
+
+const buildUpcomingScheduleNotifications = (enrollments = [], scope = 'student') => {
+  const nowParts = getCurrentLagosParts();
+  const upcoming = [];
+
+  for (const enrollment of enrollments) {
+    const course = enrollment.course || enrollment;
+    const schedules = course?.schedules || [];
+    for (const schedule of schedules) {
+      const minutesUntil = getNextOccurrenceMinutes(schedule, nowParts);
+      if (!Number.isFinite(minutesUntil) || minutesUntil < 0 || minutesUntil > 24 * 60) {
+        continue;
+      }
+
+      const notifyBefore = Number(schedule.notifyMinutesBefore || 30);
+      const title = scope === 'lecturer'
+        ? `Upcoming class for ${course.courseCode || 'your course'}`
+        : `Upcoming class: ${course.courseCode || 'Course'}`;
+      const description = `${course.courseName || 'Scheduled class'} starts ${minutesUntil <= 0 ? 'now' : minutesUntil === 1 ? 'in 1 minute' : `in ${minutesUntil} minutes`} on ${schedule.dayOfWeek} at ${String(schedule.startTime).slice(0, 5)}${schedule.venue ? ` in ${schedule.venue}` : ''}.`;
+
+      upcoming.push({
+        title,
+        description,
+        tone: minutesUntil <= notifyBefore ? 'amber' : 'blue',
+        createdAt: new Date(Date.now() - (minutesUntil * 60 * 1000)).toISOString(),
+        priority: minutesUntil,
+      });
+    }
+  }
+
+  return upcoming.sort((left, right) => left.priority - right.priority).slice(0, 8);
+};
 
 const buildAdminAnalytics = async () => {
   const [users, courses, sessions, attendances, queries, registryRecords, enrollments] = await Promise.all([
@@ -238,7 +320,7 @@ const buildAdminNotifications = async () => {
 };
 
 const buildLecturerNotifications = async (userId) => {
-  const [queries, sessions] = await Promise.all([
+  const [queries, sessions, courses] = await Promise.all([
     AbsenceQuery.findAll({
       where: { lecturerId: userId },
       include: [
@@ -253,6 +335,11 @@ const buildLecturerNotifications = async (userId) => {
       include: [{ model: Course, as: 'course', attributes: ['courseCode', 'courseName'] }],
       order: [['updatedAt', 'DESC']],
       limit: 5,
+    }),
+    Course.findAll({
+      where: { lecturerId: userId, isActive: true },
+      include: [{ model: CourseSchedule, as: 'schedules', where: { isActive: true }, required: false }],
+      attributes: ['id', 'courseCode', 'courseName'],
     }),
   ]);
 
@@ -271,6 +358,7 @@ const buildLecturerNotifications = async (userId) => {
         tone: session.status === 'active' ? 'blue' : 'emerald',
         createdAt: session.updatedAt || session.createdAt,
       })),
+    ...buildUpcomingScheduleNotifications(courses, 'lecturer'),
   ];
 
   return sortByDateDesc(items, (entry) => entry.createdAt).slice(0, 10);
@@ -292,6 +380,17 @@ const buildStudentNotifications = async (userId) => {
     }),
   ]);
 
+  const enrollments = await Enrollment.findAll({
+    where: { userId, status: 'active' },
+    include: [{
+      model: Course,
+      as: 'course',
+      attributes: ['id', 'courseCode', 'courseName'],
+      include: [{ model: CourseSchedule, as: 'schedules', where: { isActive: true }, required: false }],
+    }],
+    order: [['createdAt', 'DESC']],
+  });
+
   const items = [
     ...queries.map((query) => ({
       title: query.status === 'pending' ? 'New lecturer query' : query.status === 'closed' ? 'Query resolved' : 'Query update received',
@@ -305,6 +404,7 @@ const buildStudentNotifications = async (userId) => {
       tone: attendance.status === 'present' ? 'emerald' : attendance.status === 'late' ? 'amber' : 'rose',
       createdAt: attendance.markedAt,
     })),
+    ...buildUpcomingScheduleNotifications(enrollments, 'student'),
   ];
 
   return sortByDateDesc(items, (entry) => entry.createdAt).slice(0, 10);
