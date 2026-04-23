@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -10,22 +10,9 @@ const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [detectedSessionCode, setDetectedSessionCode] = useState('');
   const dispatch = useDispatch();
   const { loading, error } = useSelector((state) => state.auth);
   const { isDark } = useTheme();
-
-  useEffect(() => {
-    const directSearchParams = new URLSearchParams(window.location.search);
-    const directCode = directSearchParams.get('sessionCode');
-    const hash = window.location.hash || '';
-    const hashQuery = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
-    const hashSearchParams = new URLSearchParams(hashQuery);
-    const hashCode = hashSearchParams.get('sessionCode');
-    const savedCode = localStorage.getItem('attendance_pending_session_code');
-    const resolvedCode = directCode || hashCode || savedCode || '';
-    setDetectedSessionCode(String(resolvedCode).trim().toUpperCase());
-  }, []);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -68,12 +55,6 @@ const Login = () => {
           <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className={`mb-8 text-center ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
             Smart attendance tracking for modern education
           </motion.p>
-
-          {detectedSessionCode && (
-            <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} className={`mb-6 rounded-2xl border p-4 text-center text-sm ${isDark ? 'border-blue-900/60 bg-blue-950/40 text-blue-200' : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
-              Attendance session detected: <span className="font-semibold">{detectedSessionCode}</span>. Sign in and the system will try to mark your attendance automatically.
-            </motion.div>
-          )}
 
           {error && (
             <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-center text-sm text-red-600">

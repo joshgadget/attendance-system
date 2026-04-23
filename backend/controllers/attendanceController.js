@@ -200,7 +200,11 @@ exports.markAttendance = async (req, res) => {
 
     const existing = await Attendance.findOne({ where: { sessionId: session.id, studentId: req.user.id } });
     if (existing) {
-      return res.status(400).json({ success: false, message: 'Already marked attendance' });
+      return res.status(200).json({
+        success: true,
+        message: 'Attendance already recorded for this session.',
+        data: existing,
+      });
     }
 
     const course = await Course.findByPk(session.courseId, { attributes: ['id', 'semester', 'academicYear'] });
@@ -275,6 +279,26 @@ exports.markAttendance = async (req, res) => {
       deviceInfo: req.get('user-agent') || null,
       location: latitude && longitude ? `${latitude},${longitude}` : req.ip
     });
+
+    const duplicateAttendances = await Attendance.findAll({
+      where: { sessionId: session.id, studentId: req.user.id },
+      order: [['createdAt', 'ASC'], ['id', 'ASC']],
+    });
+
+    if (duplicateAttendances.length > 1) {
+      const primaryAttendance = duplicateAttendances[0];
+      const duplicateIds = duplicateAttendances.slice(1).map((entry) => entry.id);
+
+      if (duplicateIds.length) {
+        await Attendance.destroy({ where: { id: duplicateIds } });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Attendance already recorded for this session.',
+        data: primaryAttendance,
+      });
+    }
 
     res.status(201).json({ success: true, message: `Attendance marked as ${status}`, data: attendance });
   } catch (error) {
