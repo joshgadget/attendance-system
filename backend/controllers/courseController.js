@@ -324,11 +324,39 @@ const findLecturer = async ({ lecturerId, lecturerEmail }) => {
   return null;
 };
 
+const resolveFallbackLecturer = async (preferredUserId) => {
+  if (preferredUserId) {
+    const preferredUser = await User.findByPk(Number(preferredUserId));
+    if (preferredUser?.isActive) {
+      return preferredUser;
+    }
+  }
+
+  const activeLecturer = await User.findOne({
+    where: { role: 'lecturer', isActive: true },
+    order: [['createdAt', 'ASC']],
+  });
+  if (activeLecturer) {
+    return activeLecturer;
+  }
+
+  const activeAdmin = await User.findOne({
+    where: { role: 'admin', isActive: true },
+    order: [['createdAt', 'ASC']],
+  });
+  if (activeAdmin) {
+    return activeAdmin;
+  }
+
+  return null;
+};
+
 exports.createCourse = async (req, res) => {
   try {
     const { courseCode, courseName, description, semester, academicYear, lecturerId, faculty, department, program, level } = req.body;
+    const normalizedAcademicYear = buildAcademicYear(academicYear);
 
-    if (!courseCode || !courseName || !semester || !academicYear || !lecturerId) {
+    if (!courseCode || !courseName || !semester || !normalizedAcademicYear || !lecturerId) {
       return res.status(400).json({
         success: false,
         message: 'courseCode, courseName, semester, academicYear and lecturerId are required',
@@ -351,7 +379,7 @@ exports.createCourse = async (req, res) => {
       courseName,
       description,
       semester,
-      academicYear,
+      academicYear: normalizedAcademicYear,
       lecturerId,
       faculty: faculty || null,
       department: department || null,
@@ -379,6 +407,14 @@ exports.bulkUpsertCourses = async (req, res) => {
 
     const results = [];
     const existingCourseLookup = await buildCourseLookup();
+    const fallbackLecturer = await resolveFallbackLecturer(req.user?.id);
+
+    if (!fallbackLecturer) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active lecturer or admin account is available to own imported courses yet.',
+      });
+    }
 
     for (const entry of courses) {
       const courseCode = normalizeCourseCode(entry.courseCode || '');
@@ -399,7 +435,7 @@ exports.bulkUpsertCourses = async (req, res) => {
 
       const lecturer = (entry.lecturerId || entry.lecturerEmail)
         ? await findLecturer({ lecturerId: entry.lecturerId, lecturerEmail: entry.lecturerEmail })
-        : null;
+        : fallbackLecturer;
       if ((entry.lecturerId || entry.lecturerEmail) && !lecturer) {
         return res.status(400).json({ success: false, message: `Assigned lecturer not found for ${courseCode}` });
       }
@@ -415,7 +451,7 @@ exports.bulkUpsertCourses = async (req, res) => {
           description: entry.description || null,
           semester,
           academicYear,
-          lecturerId: lecturer?.id || null,
+          lecturerId: lecturer?.id || fallbackLecturer.id,
           faculty: entry.faculty || null,
           department: normalizeUpper(entry.department) || null,
           program: entry.program || null,
@@ -432,7 +468,7 @@ exports.bulkUpsertCourses = async (req, res) => {
           description: entry.description || null,
           semester,
           academicYear,
-          lecturerId: lecturer?.id || course.lecturerId || null,
+          lecturerId: lecturer?.id || course.lecturerId || fallbackLecturer.id,
           faculty: entry.faculty || null,
           department: normalizeUpper(entry.department) || null,
           program: entry.program || null,
@@ -556,6 +592,13 @@ exports.importTimetablePdf = async (req, res) => {
     }
 
     const existingCourseLookup = await buildCourseLookup();
+    const fallbackLecturer = await resolveFallbackLecturer(req.user?.id);
+    if (!fallbackLecturer) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active lecturer or admin account is available to own timetable-imported courses yet.',
+      });
+    }
     const touchedCourseIds = new Set();
     const touchedDepartments = [];
     let audienceCount = 0;
@@ -579,7 +622,7 @@ exports.importTimetablePdf = async (req, res) => {
             description: `Imported from timetable PDF${fileName ? ` (${fileName})` : ''}`,
             semester: extractedSemester,
             academicYear: extractedAcademicYear,
-            lecturerId: null,
+            lecturerId: fallbackLecturer.id,
             faculty: extractedFaculty || null,
             department: null,
             program: null,
@@ -591,6 +634,7 @@ exports.importTimetablePdf = async (req, res) => {
           await course.update({
             semester: extractedSemester,
             academicYear: extractedAcademicYear,
+            lecturerId: course.lecturerId || fallbackLecturer.id,
             faculty: course.faculty || extractedFaculty || null,
             isActive: true,
           });
@@ -782,7 +826,7 @@ exports.bulkEnrollStudentsForCourse = async (req, res) => {
     }
 
     const resolvedSemester = String(semester || course.semester || '').trim().toLowerCase();
-    const resolvedAcademicYear = String(academicYear || course.academicYear || '').trim();
+    const resolvedAcademicYear = buildAcademicYear(academicYear || course.academicYear || '');
 
     if (!resolvedSemester || !resolvedAcademicYear) {
       return res.status(400).json({ success: false, message: 'semester and academicYear are required' });
@@ -866,6 +910,9 @@ exports.updateCourse = async (req, res) => {
     }
 
     const payload = { ...req.body };
+    if (payload.academicYear) {
+      payload.academicYear = buildAcademicYear(payload.academicYear);
+    }
     if (payload.lecturerId) {
       const lecturer = await User.findByPk(payload.lecturerId);
       if (!lecturer || lecturer.role !== 'lecturer') {

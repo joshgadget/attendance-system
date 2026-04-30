@@ -45,6 +45,7 @@ const createStudentEnrollments = async (userId, courseIds, semester, academicYea
     return;
   }
 
+  const resolvedAcademicYear = normalizeAcademicYearInput(academicYear);
   const uniqueCourseIds = [...new Set(courseIds.map(Number))].filter(Boolean);
   const courses = await Course.findAll({ where: { id: uniqueCourseIds, isActive: true } });
 
@@ -57,7 +58,7 @@ const createStudentEnrollments = async (userId, courseIds, semester, academicYea
       userId,
       courseId,
       semester,
-      academicYear,
+      academicYear: resolvedAcademicYear,
       status: 'active',
     })),
     { ignoreDuplicates: true }
@@ -79,6 +80,50 @@ const normalizeLevel = (value = '') => {
   }
 
   return digits;
+};
+
+const normalizeAcademicYearInput = (value = '') => {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return '';
+  }
+
+  const fourDigitYears = raw.match(/\d{4}/g);
+  if (fourDigitYears && fourDigitYears.length >= 2) {
+    return `${fourDigitYears[0].slice(-2)}/${fourDigitYears[1].slice(-2)}`;
+  }
+
+  const twoDigitYears = raw.match(/\d{2}/g);
+  if (twoDigitYears && twoDigitYears.length >= 2) {
+    return `${twoDigitYears[0]}/${twoDigitYears[1]}`;
+  }
+
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length >= 4) {
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}`;
+  }
+
+  return raw;
+};
+
+const buildAcademicYearVariants = (value = '') => {
+  const raw = String(value || '').trim();
+  const normalized = normalizeAcademicYearInput(raw);
+  if (!normalized) {
+    return [];
+  }
+
+  const [startShort = '', endShort = ''] = normalized.split('/');
+  const startLong = startShort.length === 2 ? `20${startShort}` : startShort;
+  const endLong = endShort.length === 2 ? `20${endShort}` : endShort;
+
+  return [...new Set([
+    raw,
+    normalized,
+    `${startLong}/${endLong}`,
+    `${startLong}/${endShort}`,
+    `${startShort}/${endLong}`,
+  ].filter(Boolean))];
 };
 
 const register = async (req, res) => {
@@ -179,10 +224,6 @@ const getPublicCourses = async (req, res) => {
       where.semester = semester;
     }
 
-    if (academicYear) {
-      where.academicYear = academicYear;
-    }
-
     const audienceWhere = { isActive: true };
     const audienceFilters = [];
 
@@ -221,7 +262,12 @@ const getPublicCourses = async (req, res) => {
       order: [['courseCode', 'ASC']],
     });
 
-    res.json({ success: true, data: courses });
+    const normalizedRequestedYear = normalizeAcademicYearInput(academicYear);
+    const filteredCourses = normalizedRequestedYear
+      ? courses.filter((course) => normalizeAcademicYearInput(course.academicYear) === normalizedRequestedYear)
+      : courses;
+
+    res.json({ success: true, data: filteredCourses });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -230,8 +276,9 @@ const getPublicCourses = async (req, res) => {
 const studentSignup = async (req, res) => {
   try {
     const { matricNumber, email, password, semester, academicYear, courseIds } = req.body;
+    const normalizedAcademicYear = normalizeAcademicYearInput(academicYear);
 
-    if (!matricNumber || !email || !password || !semester || !academicYear) {
+    if (!matricNumber || !email || !password || !semester || !normalizedAcademicYear) {
       return res.status(400).json({
         success: false,
         message: 'matricNumber, email, password, semester and academicYear are required',
@@ -253,7 +300,6 @@ const studentSignup = async (req, res) => {
         where: {
           isActive: true,
           semester,
-          academicYear,
         },
         include: [{
           model: CourseAudience,
@@ -275,10 +321,12 @@ const studentSignup = async (req, res) => {
           },
           attributes: [],
         }],
-        attributes: ['id'],
+        attributes: ['id', 'academicYear'],
       });
 
-      resolvedCourseIds = matchingCourses.map((course) => course.id);
+      resolvedCourseIds = matchingCourses
+        .filter((course) => normalizeAcademicYearInput(course.academicYear) === normalizedAcademicYear)
+        .map((course) => course.id);
     }
 
     if (resolvedCourseIds.length === 0) {
@@ -305,7 +353,7 @@ const studentSignup = async (req, res) => {
       program: registryRecord.program,
     });
 
-    await createStudentEnrollments(user.id, resolvedCourseIds, semester, academicYear);
+    await createStudentEnrollments(user.id, resolvedCourseIds, semester, normalizedAcademicYear);
 
     registryRecord.claimedByUserId = user.id;
     await registryRecord.save();

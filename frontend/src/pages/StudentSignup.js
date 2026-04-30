@@ -18,13 +18,24 @@ const initialSignupForm = {
 };
 
 const normalizeAcademicYear = (value = '') => {
-  const digits = String(value).replace(/\D/g, '').slice(0, 4);
+  const raw = String(value || '').trim();
+  const fourDigitYears = raw.match(/\d{4}/g);
 
+  if (fourDigitYears && fourDigitYears.length >= 2) {
+    return `${fourDigitYears[0].slice(-2)}/${fourDigitYears[1].slice(-2)}`;
+  }
+
+  const twoDigitYears = raw.match(/\d{2}/g);
+  if (twoDigitYears && twoDigitYears.length >= 2) {
+    return `${twoDigitYears[0]}/${twoDigitYears[1]}`;
+  }
+
+  const digits = raw.replace(/\D/g, '').slice(0, 4);
   if (digits.length <= 2) {
     return digits;
   }
 
-  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}`;
 };
 
 const StudentSignup = () => {
