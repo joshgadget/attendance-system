@@ -46,7 +46,7 @@ const Course = sequelize.define('Course', {
   },
   lecturerId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true,
     references: {
       model: 'users',
       key: 'id'

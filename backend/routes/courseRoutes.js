@@ -10,6 +10,7 @@ router.get('/mine', roleMiddleware('student', 'lecturer', 'admin'), courseContro
 router.get('/schedules', roleMiddleware('admin', 'lecturer'), courseController.getCourseSchedules);
 router.get('/', roleMiddleware('admin', 'lecturer'), courseController.getCourses);
 router.post('/bulk', roleMiddleware('admin'), courseController.bulkUpsertCourses);
+router.post('/timetable/pdf-import', roleMiddleware('admin'), courseController.importTimetablePdf);
 router.post('/schedules/bulk', roleMiddleware('admin'), courseController.bulkUpsertSchedules);
 router.post('/:id/enrollments/bulk', roleMiddleware('admin', 'lecturer'), courseController.bulkEnrollStudentsForCourse);
 router.get('/:id', roleMiddleware('admin', 'lecturer'), courseController.getCourse);

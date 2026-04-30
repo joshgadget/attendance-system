@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { Enrollment, Course, StudentRegistry, User } = require('../models');
+const { Op } = require('sequelize');
+const { Enrollment, Course, CourseAudience, StudentRegistry, User } = require('../models');
 const authConfig = require('../config/auth');
 const { sendEmail } = require('../utils/mailer');
 
@@ -61,6 +62,23 @@ const createStudentEnrollments = async (userId, courseIds, semester, academicYea
     })),
     { ignoreDuplicates: true }
   );
+};
+
+const normalizeLevel = (value = '') => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) {
+    return '';
+  }
+
+  if (digits.length === 1) {
+    return `${digits}00`;
+  }
+
+  if (digits.length >= 3) {
+    return `${digits[0]}00`;
+  }
+
+  return digits;
 };
 
 const register = async (req, res) => {
@@ -165,24 +183,40 @@ const getPublicCourses = async (req, res) => {
       where.academicYear = academicYear;
     }
 
+    const audienceWhere = { isActive: true };
+    const audienceFilters = [];
+
     if (faculty) {
-      where.faculty = faculty;
+      audienceWhere.faculty = faculty;
+      audienceFilters.push('faculty');
     }
 
     if (department) {
-      where.department = department;
+      audienceWhere.department = String(department).trim().toUpperCase();
+      audienceFilters.push('department');
     }
 
     if (program) {
-      where.program = program;
+      audienceWhere[Op.or] = [{ program }, { program: null }];
+      audienceFilters.push('program');
     }
 
     if (level) {
-      where.level = level;
+      audienceWhere.level = normalizeLevel(level);
+      audienceFilters.push('level');
     }
 
     const courses = await Course.findAll({
       where,
+      include: audienceFilters.length > 0
+        ? [{
+            model: CourseAudience,
+            as: 'audiences',
+            where: audienceWhere,
+            required: true,
+            attributes: [],
+          }]
+        : [],
       attributes: ['id', 'courseCode', 'courseName', 'semester', 'academicYear'],
       order: [['courseCode', 'ASC']],
     });
@@ -204,13 +238,6 @@ const studentSignup = async (req, res) => {
       });
     }
 
-    if (!Array.isArray(courseIds) || courseIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Complete your course registration before signing up. Select at least one course.',
-      });
-    }
-
     const registryRecord = await StudentRegistry.findOne({ where: { matricNumber, isActive: true } });
     if (!registryRecord) {
       return res.status(404).json({ success: false, message: 'Matric number not found in school registry' });
@@ -218,6 +245,47 @@ const studentSignup = async (req, res) => {
 
     if (registryRecord.claimedByUserId) {
       return res.status(409).json({ success: false, message: 'This matric number has already been used to sign up' });
+    }
+
+    let resolvedCourseIds = Array.isArray(courseIds) ? courseIds : [];
+    if (resolvedCourseIds.length === 0) {
+      const matchingCourses = await Course.findAll({
+        where: {
+          isActive: true,
+          semester,
+          academicYear,
+        },
+        include: [{
+          model: CourseAudience,
+          as: 'audiences',
+          required: true,
+          where: {
+            isActive: true,
+            [Op.and]: [
+              registryRecord.faculty ? { faculty: registryRecord.faculty } : {},
+              registryRecord.department ? { department: registryRecord.department.toUpperCase() } : {},
+              registryRecord.level ? { level: normalizeLevel(registryRecord.level) } : {},
+              {
+                [Op.or]: [
+                  { program: registryRecord.program || null },
+                  { program: null },
+                ],
+              },
+            ],
+          },
+          attributes: [],
+        }],
+        attributes: ['id'],
+      });
+
+      resolvedCourseIds = matchingCourses.map((course) => course.id);
+    }
+
+    if (resolvedCourseIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No semester courses were matched to your department and level yet. Ask the admin to import the timetable first.',
+      });
     }
 
     const existing = await User.findOne({ where: { email: normalizeEmail(email) } });
@@ -237,7 +305,7 @@ const studentSignup = async (req, res) => {
       program: registryRecord.program,
     });
 
-    await createStudentEnrollments(user.id, courseIds, semester, academicYear);
+    await createStudentEnrollments(user.id, resolvedCourseIds, semester, academicYear);
 
     registryRecord.claimedByUserId = user.id;
     await registryRecord.save();

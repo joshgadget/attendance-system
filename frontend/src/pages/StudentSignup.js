@@ -62,6 +62,17 @@ const StudentSignup = () => {
     });
   }, [form.semester, form.academicYear, registryRecord]);
 
+  useEffect(() => {
+    if (!registryRecord) {
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      courseIds: courses.map((course) => course.id),
+    }));
+  }, [courses, registryRecord]);
+
   const handleLookup = async () => {
     if (!canLookup) {
       setError('Enter a valid matric number first.');
@@ -159,7 +170,7 @@ const StudentSignup = () => {
 
             <h1 className={`mt-8 text-4xl font-black tracking-tight ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>Join Attendance System</h1>
             <p className={`mt-4 text-base leading-7 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
-              Students sign up with a school-issued matric number. Once we verify your record, your profile details appear automatically and you can choose the courses you are offering this semester.
+              Students sign up with a school-issued matric number. Once we verify your record, your profile details appear automatically and the system loads the timetable-based courses for your department and level.
             </p>
 
             <div className={`mt-8 space-y-4 rounded-[1.75rem] border p-5 ${isDark ? 'border-slate-700 bg-slate-800/70' : 'border-blue-100 bg-blue-50/80'}`}>
@@ -169,7 +180,7 @@ const StudentSignup = () => {
               </div>
               <div className="flex items-start gap-3">
                 <BookOpen className="mt-0.5 h-5 w-5 text-blue-600" />
-                <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>You can choose the semester courses you are offering during signup.</p>
+                <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Your semester courses can now be preloaded automatically from the imported timetable.</p>
               </div>
               <div className="flex items-start gap-3">
                 <IdCard className="mt-0.5 h-5 w-5 text-blue-600" />
@@ -251,12 +262,12 @@ const StudentSignup = () => {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-600">Step 3</p>
-                  <h2 className={`mt-2 text-2xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>Choose semester courses</h2>
+                  <h2 className={`mt-2 text-2xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>Review semester courses</h2>
                 </div>
                 <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>Showing active courses for {form.semester} semester, {form.academicYear}.</p>
               </div>
               <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                Course registration is required. You must choose at least one course before your student account can be created.
+                Courses are preselected from the school timetable for your department and level. You can still adjust them before creating your account.
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

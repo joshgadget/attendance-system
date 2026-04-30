@@ -468,6 +468,11 @@ const Dashboard = () => {
   }, [tabs]);
 
   useEffect(() => {
+    setAccountMenuOpen(false);
+    setSidebarOpen(false);
+  }, [activeTab]);
+
+  useEffect(() => {
     if (role !== 'lecturer') {
       return;
     }
@@ -850,6 +855,18 @@ const Dashboard = () => {
     return values.map((value) => value.replace(/^"|"$/g, ''));
   };
 
+  const fileToBase64 = async (file) => {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+
+    for (let index = 0; index < bytes.length; index += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+    }
+
+    return window.btoa(binary);
+  };
+
   const splitName = (name) => {
     const pieces = String(name || '').trim().split(/\s+/).filter(Boolean);
     if (pieces.length === 0) {
@@ -994,6 +1011,22 @@ const Dashboard = () => {
       setBusyAction('bulk-timetable-csv');
       setMessage();
       setTimetableFileName(file.name);
+
+      const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+      if (isPdf) {
+        const base64Data = await fileToBase64(file);
+        const response = await api.post('/courses/timetable/pdf-import', {
+          fileName: file.name,
+          base64Data,
+          autoAssignClaimedStudents: true,
+        });
+        const importedDepartments = response.data.data?.departments?.length || 0;
+        const importedCourses = response.data.data?.courseCount || 0;
+        const syncedEnrollments = response.data.data?.syncedEnrollments || 0;
+        setMessage(`Timetable PDF imported from ${file.name}. ${importedDepartments} departments matched, ${importedCourses} course records updated, ${syncedEnrollments} student course enrollments synced.`);
+        await loadData(true);
+        return;
+      }
 
       const content = await file.text();
       const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -1611,6 +1644,12 @@ const Dashboard = () => {
     <div className={`dashboard-shell min-h-screen ${isDark ? 'dark dashboard-shell--app text-slate-100' : 'text-slate-900'}`}>
       <QrScannerPanel isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={handleMarkAttendance} />
       <div className="dashboard-frame">
+        <button
+          type="button"
+          aria-label="Close navigation menu"
+          className={`dashboard-sidebar-backdrop ${sidebarOpen ? 'is-visible' : ''}`}
+          onClick={() => setSidebarOpen(false)}
+        />
         <aside className={`dashboard-sidebar ${sidebarOpen ? 'is-open' : ''}`}>
           <div className="dashboard-brand">
             <div className="dashboard-brand__logo">
@@ -1653,7 +1692,7 @@ const Dashboard = () => {
         <main className="dashboard-main">
           <header className="dashboard-topbar">
             <div className="dashboard-topbar__left">
-              <button className="dashboard-menu-button lg:hidden" onClick={() => setSidebarOpen((current) => !current)}>
+              <button className="dashboard-menu-button" onClick={() => setSidebarOpen((current) => !current)}>
                 <Menu className="h-5 w-5" />
               </button>
               <div className="dashboard-search">
@@ -2206,10 +2245,10 @@ const Dashboard = () => {
                   {role === 'admin' && (
                     <Panel title="Import timetable" eyebrow="Schedule upload">
                       <div className="space-y-4">
-                        <p className="text-sm leading-7 text-slate-600">Upload a CSV with headers like <span className="font-mono">courseCode, dayOfWeek, startTime, endTime, venue, notifyMinutesBefore</span>. These timetable rows drive student pre-class notifications.</p>
+                        <p className="text-sm leading-7 text-slate-600">Upload your school timetable <span className="font-mono">PDF</span> to map offered courses by department and level automatically, or upload a <span className="font-mono">CSV</span> with headers like <span className="font-mono">courseCode, dayOfWeek, startTime, endTime, venue, notifyMinutesBefore</span> for detailed class-time notifications.</p>
                         <div>
-                          <label className="block text-sm font-semibold text-slate-700">Upload timetable CSV</label>
-                          <input type="file" accept=".csv,text/csv" onChange={handleTimetableCsvUpload} className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" />
+                          <label className="block text-sm font-semibold text-slate-700">Upload timetable file</label>
+                          <input type="file" accept=".pdf,.csv,text/csv,application/pdf" onChange={handleTimetableCsvUpload} className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" />
                           {timetableFileName && <p className="mt-2 text-xs text-slate-500">Last selected file: {timetableFileName}</p>}
                         </div>
                       </div>

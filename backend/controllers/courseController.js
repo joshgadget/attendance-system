@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
-const { Course, CourseSchedule, Enrollment, User, StudentRegistry } = require('../models');
+const { PDFParse } = require('pdf-parse');
+const { Course, CourseSchedule, CourseAudience, Enrollment, User, StudentRegistry } = require('../models');
 
 const normalizeDayOfWeek = (value = '') => {
   const normalized = String(value).trim().toLowerCase();
@@ -43,9 +44,266 @@ const normalizeTime = (value = '') => {
   return '';
 };
 
+const dayMap = {
+  MON: 'monday',
+  TUE: 'tuesday',
+  WED: 'wednesday',
+  THUR: 'thursday',
+  FRI: 'friday',
+  SAT: 'saturday',
+  SUN: 'sunday',
+};
+
+const courseCodePattern = /(?:OOU-)?([A-Z]{2,4})\s?(\d{3})(?:\s*-\s*PR|\s*PR)?(?:\((?:NEW|OLD)\))?/gi;
+
+const normalizeText = (value = '') => String(value || '').trim();
+const normalizeUpper = (value = '') => normalizeText(value).toUpperCase();
+const normalizeLevel = (value = '') => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) {
+    return '';
+  }
+
+  if (digits.length === 1) {
+    return `${digits}00`;
+  }
+
+  if (digits.length >= 3) {
+    return `${digits[0]}00`;
+  }
+
+  return digits;
+};
+
+const normalizeCourseCode = (value = '') => {
+  const cleaned = normalizeUpper(value)
+    .replace(/OOU-/g, '')
+    .replace(/\((NEW|OLD)\)/g, '')
+    .replace(/\s*-\s*PR\b/g, '')
+    .replace(/\s*PR\b/g, '')
+    .replace(/\bLAB\b/g, '')
+    .replace(/[^A-Z0-9]/g, '');
+  const match = cleaned.match(/^([A-Z]{2,4})(\d{3})$/);
+  if (!match) {
+    return '';
+  }
+
+  return `${match[1]} ${match[2]}`;
+};
+
+const courseCodeKey = (value = '') => normalizeCourseCode(value).replace(/\s/g, '');
+
+const deriveLevelFromCourseCode = (courseCode = '') => {
+  const match = normalizeCourseCode(courseCode).match(/(\d{3})$/);
+  if (!match) {
+    return '';
+  }
+
+  return `${match[1][0]}00`;
+};
+
+const buildAcademicYear = (value = '') => {
+  const years = String(value || '').match(/\d{4}/g);
+  if (!years || years.length < 2) {
+    return normalizeText(value);
+  }
+
+  return `${years[0].slice(-2)}/${years[1].slice(-2)}`;
+};
+
+const extractCourseCodes = (value = '') => {
+  const found = new Set();
+  const text = String(value || '').replace(/\r?\n/g, ' ');
+  for (const match of text.matchAll(courseCodePattern)) {
+    const normalized = normalizeCourseCode(`${match[1]} ${match[2]}`);
+    if (normalized) {
+      found.add(normalized);
+    }
+  }
+
+  return [...found];
+};
+
+const parsePdfTimetableMetadata = (text = '') => {
+  const facultyMatch = text.match(/FACULTY OF\s+([A-Z][A-Z\s&-]+)/i);
+  const titleMatch = text.match(/TIMETABLE FOR\s+(\d{4})\s*-\s*(\d{4})\s+(RAIN|HARMATTAN)\s+SEMESTER/i);
+
+  return {
+    faculty: facultyMatch ? normalizeText(facultyMatch[1]).replace(/\s+/g, ' ') : '',
+    academicYear: titleMatch ? `${titleMatch[1].slice(-2)}/${titleMatch[2].slice(-2)}` : '',
+    semester: titleMatch ? String(titleMatch[3]).toLowerCase() : '',
+  };
+};
+
+const parsePdfCourseOfferings = (text = '') => {
+  const lines = String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const offeringsByDepartment = new Map();
+  let currentDay = '';
+  let currentDepartment = '';
+
+  for (const line of lines) {
+    if (/^--\s*\d+\s+of\s+\d+\s*--$/i.test(line)) {
+      continue;
+    }
+
+    if (/^distribution:/i.test(line)) {
+      break;
+    }
+
+    const day = dayMap[normalizeUpper(line)];
+    if (day) {
+      currentDay = day;
+      currentDepartment = '';
+      continue;
+    }
+
+    if (!currentDay) {
+      continue;
+    }
+
+    if (/^DAYS\/?$/i.test(line) || /^DEPT\b/i.test(line) || /^B R E A K$/i.test(line) || /^SPORTS$/i.test(line) || /^J U M A$/i.test(line)) {
+      continue;
+    }
+
+    const departmentLead = line.match(/^([A-Z]{2,4})(?:\s+|$)(.*)$/);
+    if (departmentLead && !/\d/.test(departmentLead[1]) && !dayMap[departmentLead[1]]) {
+      currentDepartment = departmentLead[1];
+      if (!offeringsByDepartment.has(currentDepartment)) {
+        offeringsByDepartment.set(currentDepartment, []);
+      }
+
+      if (departmentLead[2]) {
+        offeringsByDepartment.get(currentDepartment).push(departmentLead[2]);
+      }
+      continue;
+    }
+
+    if (currentDepartment) {
+      offeringsByDepartment.get(currentDepartment).push(line);
+    }
+  }
+
+  return [...offeringsByDepartment.entries()].map(([department, chunks]) => {
+    const courseCodes = extractCourseCodes(chunks.join(' '));
+    return {
+      department,
+      courseCodes,
+      levels: [...new Set(courseCodes.map((code) => deriveLevelFromCourseCode(code)).filter(Boolean))].sort(),
+    };
+  }).filter((entry) => entry.courseCodes.length > 0);
+};
+
+const buildCourseLookup = async () => {
+  const courses = await Course.findAll();
+  const lookup = new Map();
+  courses.forEach((course) => {
+    const key = courseCodeKey(course.courseCode);
+    if (key) {
+      lookup.set(key, course);
+    }
+  });
+  return lookup;
+};
+
+const upsertCourseAudience = async (courseId, audience = {}) => {
+  const payload = {
+    courseId,
+    faculty: normalizeText(audience.faculty) || null,
+    department: normalizeUpper(audience.department) || null,
+    program: normalizeText(audience.program) || null,
+    level: normalizeLevel(audience.level) || null,
+    isActive: audience.isActive !== false,
+  };
+
+  if (!payload.department && !payload.program && !payload.level && !payload.faculty) {
+    return null;
+  }
+
+  const [record] = await CourseAudience.findOrCreate({
+    where: {
+      courseId: payload.courseId,
+      faculty: payload.faculty,
+      department: payload.department,
+      program: payload.program,
+      level: payload.level,
+    },
+    defaults: payload,
+  });
+
+  if (!record.isActive && payload.isActive) {
+    await record.update({ isActive: true });
+  }
+
+  return record;
+};
+
+const syncClaimedStudentEnrollments = async (courses = []) => {
+  if (!courses.length) {
+    return 0;
+  }
+
+  const registryRecords = await StudentRegistry.findAll({
+    where: {
+      isActive: true,
+      claimedByUserId: { [Op.ne]: null },
+    },
+  });
+
+  const rows = [];
+  courses.forEach((course) => {
+    const audiences = (course.audiences || []).filter((entry) => entry.isActive !== false);
+    audiences.forEach((audience) => {
+      registryRecords.forEach((record) => {
+        if (audience.faculty && normalizeUpper(record.faculty) !== normalizeUpper(audience.faculty)) {
+          return;
+        }
+        if (audience.department && normalizeUpper(record.department) !== normalizeUpper(audience.department)) {
+          return;
+        }
+        if (audience.program && normalizeUpper(record.program) !== normalizeUpper(audience.program)) {
+          return;
+        }
+        if (audience.level && normalizeLevel(record.level) !== normalizeLevel(audience.level)) {
+          return;
+        }
+
+        rows.push({
+          userId: record.claimedByUserId,
+          courseId: course.id,
+          semester: course.semester,
+          academicYear: course.academicYear,
+          status: 'active',
+        });
+      });
+    });
+  });
+
+  if (!rows.length) {
+    return 0;
+  }
+
+  const uniqueRows = [];
+  const seen = new Set();
+  rows.forEach((row) => {
+    const key = `${row.userId}:${row.courseId}:${row.semester}:${row.academicYear}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    uniqueRows.push(row);
+  });
+
+  await Enrollment.bulkCreate(uniqueRows, { ignoreDuplicates: true });
+  return uniqueRows.length;
+};
+
 const courseInclude = [
   { model: User, as: 'lecturer', attributes: ['id', 'firstName', 'lastName', 'email', 'department'] },
   { model: CourseSchedule, as: 'schedules', where: { isActive: true }, required: false, order: [['dayOfWeek', 'ASC'], ['startTime', 'ASC']] },
+  { model: CourseAudience, as: 'audiences', where: { isActive: true }, required: false },
 ];
 
 const findLecturer = async ({ lecturerId, lecturerEmail }) => {
@@ -82,13 +340,14 @@ exports.createCourse = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Assigned lecturer not found' });
     }
 
-    const existing = await Course.findOne({ where: { courseCode } });
+    const normalizedCode = normalizeCourseCode(courseCode);
+    const existing = await Course.findOne({ where: { courseCode: normalizedCode || courseCode } });
     if (existing) {
       return res.status(400).json({ success: false, message: 'Course code already exists' });
     }
 
     const course = await Course.create({
-      courseCode,
+      courseCode: normalizedCode || courseCode,
       courseName,
       description,
       semester,
@@ -100,6 +359,8 @@ exports.createCourse = async (req, res) => {
       level: level || null,
       isActive: true,
     });
+
+    await upsertCourseAudience(course.id, { faculty, department, program, level });
 
     const created = await Course.findByPk(course.id, { include: courseInclude });
     res.status(201).json({ success: true, message: 'Course created successfully', data: created });
@@ -117,12 +378,13 @@ exports.bulkUpsertCourses = async (req, res) => {
     }
 
     const results = [];
+    const existingCourseLookup = await buildCourseLookup();
 
     for (const entry of courses) {
-      const courseCode = String(entry.courseCode || '').trim().toUpperCase();
+      const courseCode = normalizeCourseCode(entry.courseCode || '');
       const courseName = String(entry.courseName || '').trim();
       const semester = String(entry.semester || '').trim().toLowerCase();
-      const academicYear = String(entry.academicYear || '').trim();
+      const academicYear = buildAcademicYear(entry.academicYear || '');
 
       if (!courseCode || !courseName || !semester || !academicYear) {
         return res.status(400).json({
@@ -135,27 +397,34 @@ exports.bulkUpsertCourses = async (req, res) => {
         return res.status(400).json({ success: false, message: `Invalid semester for ${courseCode}` });
       }
 
-      const lecturer = await findLecturer({ lecturerId: entry.lecturerId, lecturerEmail: entry.lecturerEmail });
-      if (!lecturer) {
+      const lecturer = (entry.lecturerId || entry.lecturerEmail)
+        ? await findLecturer({ lecturerId: entry.lecturerId, lecturerEmail: entry.lecturerEmail })
+        : null;
+      if ((entry.lecturerId || entry.lecturerEmail) && !lecturer) {
         return res.status(400).json({ success: false, message: `Assigned lecturer not found for ${courseCode}` });
       }
 
-      const [course, created] = await Course.findOrCreate({
-        where: { courseCode },
-        defaults: {
+      const lookupKey = courseCodeKey(courseCode);
+      let course = existingCourseLookup.get(lookupKey) || null;
+      let created = false;
+
+      if (!course) {
+        course = await Course.create({
           courseCode,
           courseName,
           description: entry.description || null,
           semester,
           academicYear,
-          lecturerId: lecturer.id,
+          lecturerId: lecturer?.id || null,
           faculty: entry.faculty || null,
-          department: entry.department || null,
+          department: normalizeUpper(entry.department) || null,
           program: entry.program || null,
-          level: entry.level || null,
+          level: normalizeLevel(entry.level) || null,
           isActive: true,
-        },
-      });
+        });
+        existingCourseLookup.set(lookupKey, course);
+        created = true;
+      }
 
       if (!created) {
         await course.update({
@@ -163,14 +432,21 @@ exports.bulkUpsertCourses = async (req, res) => {
           description: entry.description || null,
           semester,
           academicYear,
-          lecturerId: lecturer.id,
+          lecturerId: lecturer?.id || course.lecturerId || null,
           faculty: entry.faculty || null,
-          department: entry.department || null,
+          department: normalizeUpper(entry.department) || null,
           program: entry.program || null,
-          level: entry.level || null,
+          level: normalizeLevel(entry.level) || null,
           isActive: true,
         });
       }
+
+      await upsertCourseAudience(course.id, {
+        faculty: entry.faculty || null,
+        department: entry.department || null,
+        program: entry.program || null,
+        level: entry.level || null,
+      });
 
       results.push({ courseCode, action: created ? 'created' : 'updated', courseId: course.id });
     }
@@ -190,9 +466,10 @@ exports.bulkUpsertSchedules = async (req, res) => {
     }
 
     const results = [];
+    const existingCourseLookup = await buildCourseLookup();
 
     for (const entry of schedules) {
-      const courseCode = String(entry.courseCode || '').trim().toUpperCase();
+      const courseCode = normalizeCourseCode(entry.courseCode || '');
       const dayOfWeek = normalizeDayOfWeek(entry.dayOfWeek);
       const startTime = normalizeTime(entry.startTime);
       const endTime = normalizeTime(entry.endTime);
@@ -204,7 +481,7 @@ exports.bulkUpsertSchedules = async (req, res) => {
         });
       }
 
-      const course = await Course.findOne({ where: { courseCode, isActive: true } });
+      const course = existingCourseLookup.get(courseCodeKey(courseCode)) || null;
       if (!course) {
         return res.status(400).json({ success: false, message: `Course not found for schedule entry: ${courseCode}` });
       }
@@ -240,6 +517,118 @@ exports.bulkUpsertSchedules = async (req, res) => {
     }
 
     res.json({ success: true, message: 'Timetable imported successfully', data: { count: results.length, results } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.importTimetablePdf = async (req, res) => {
+  try {
+    const { fileName, base64Data, semester, academicYear, faculty, autoAssignClaimedStudents = true } = req.body;
+
+    if (!base64Data) {
+      return res.status(400).json({ success: false, message: 'base64Data is required for timetable PDF import' });
+    }
+
+    const buffer = Buffer.from(String(base64Data).replace(/^data:application\/pdf;base64,/i, ''), 'base64');
+    const parser = new PDFParse({ data: buffer });
+    const result = await parser.getText();
+    await parser.destroy();
+
+    const metadata = parsePdfTimetableMetadata(result.text);
+    const extractedSemester = String(semester || metadata.semester || '').toLowerCase();
+    const extractedAcademicYear = buildAcademicYear(academicYear || metadata.academicYear || '');
+    const extractedFaculty = normalizeText(faculty || metadata.faculty || '');
+
+    if (!extractedSemester || !extractedAcademicYear) {
+      return res.status(400).json({
+        success: false,
+        message: 'The timetable PDF could not provide semester and academic year clearly. Supply them manually and try again.',
+      });
+    }
+
+    const departmentOfferings = parsePdfCourseOfferings(result.text);
+    if (!departmentOfferings.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'No department course offerings could be extracted from this timetable PDF.',
+      });
+    }
+
+    const existingCourseLookup = await buildCourseLookup();
+    const touchedCourseIds = new Set();
+    const touchedDepartments = [];
+    let audienceCount = 0;
+
+    for (const offering of departmentOfferings) {
+      touchedDepartments.push({
+        department: offering.department,
+        courseCount: offering.courseCodes.length,
+        levels: offering.levels,
+      });
+
+      for (const courseCode of offering.courseCodes) {
+        const lookupKey = courseCodeKey(courseCode);
+        let course = existingCourseLookup.get(lookupKey) || null;
+        const level = deriveLevelFromCourseCode(courseCode);
+
+        if (!course) {
+          course = await Course.create({
+            courseCode,
+            courseName: courseCode,
+            description: `Imported from timetable PDF${fileName ? ` (${fileName})` : ''}`,
+            semester: extractedSemester,
+            academicYear: extractedAcademicYear,
+            lecturerId: null,
+            faculty: extractedFaculty || null,
+            department: null,
+            program: null,
+            level: null,
+            isActive: true,
+          });
+          existingCourseLookup.set(lookupKey, course);
+        } else {
+          await course.update({
+            semester: extractedSemester,
+            academicYear: extractedAcademicYear,
+            faculty: course.faculty || extractedFaculty || null,
+            isActive: true,
+          });
+        }
+
+        touchedCourseIds.add(course.id);
+        const audience = await upsertCourseAudience(course.id, {
+          faculty: extractedFaculty || null,
+          department: offering.department,
+          level,
+        });
+        if (audience) {
+          audienceCount += 1;
+        }
+      }
+    }
+
+    const touchedCourses = await Course.findAll({
+      where: { id: [...touchedCourseIds] },
+      include: courseInclude,
+    });
+
+    const syncedEnrollments = autoAssignClaimedStudents ? await syncClaimedStudentEnrollments(touchedCourses) : 0;
+
+    res.json({
+      success: true,
+      message: 'Timetable PDF imported successfully',
+      data: {
+        fileName: fileName || null,
+        semester: extractedSemester,
+        academicYear: extractedAcademicYear,
+        faculty: extractedFaculty || null,
+        departments: touchedDepartments,
+        courseCount: touchedCourses.length,
+        audienceCount,
+        syncedEnrollments,
+      },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -485,6 +874,12 @@ exports.updateCourse = async (req, res) => {
     }
 
     await course.update(payload);
+    await upsertCourseAudience(course.id, {
+      faculty: payload.faculty ?? course.faculty,
+      department: payload.department ?? course.department,
+      program: payload.program ?? course.program,
+      level: payload.level ?? course.level,
+    });
 
     const updatedCourse = await Course.findByPk(course.id, {
       include: courseInclude,
@@ -507,6 +902,7 @@ exports.deactivateCourse = async (req, res) => {
     await course.save();
 
     await CourseSchedule.update({ isActive: false }, { where: { courseId: course.id } });
+    await CourseAudience.update({ isActive: false }, { where: { courseId: course.id } });
 
     res.json({ success: true, message: 'Course archived successfully', data: course });
   } catch (error) {
