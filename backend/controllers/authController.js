@@ -126,6 +126,119 @@ const buildAcademicYearVariants = (value = '') => {
   ].filter(Boolean))];
 };
 
+const ENTITY_STOP_WORDS = new Set(['OF', 'AND', 'THE', 'STUDIES', 'SCIENCES']);
+const DEPARTMENT_ALIAS_MAP = {
+  'MECHANICAL ENGINEERING': ['MEE', 'MECH', 'ME'],
+  'COMPUTER ENGINEERING': ['CPE', 'COE'],
+  'ELECTRICAL ELECTRONICS ENGINEERING': ['EEE', 'ELE', 'ELECTRICALENGINEERING'],
+  'ELECTRICAL/ELECTRONICS ENGINEERING': ['EEE', 'ELE', 'ELECTRICALENGINEERING'],
+  'CIVIL ENGINEERING': ['CVE', 'CEE', 'CE'],
+  'AGRICULTURAL ENGINEERING': ['AGE', 'AGEE', 'AE'],
+  'CHEMICAL ENGINEERING': ['CHE', 'CHEE'],
+};
+
+const normalizeEntity = (value = '') => String(value || '')
+  .trim()
+  .toUpperCase()
+  .replace(/[^A-Z0-9]+/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const compressEntity = (value = '') => normalizeEntity(value).replace(/\s+/g, '');
+
+const buildEntityVariants = (value = '', aliasMap = null) => {
+  const normalized = normalizeEntity(value);
+  if (!normalized) {
+    return new Set();
+  }
+
+  const variants = new Set([normalized, compressEntity(normalized)]);
+  const tokens = normalized.split(' ').filter(Boolean);
+  if (tokens.length > 1) {
+    variants.add(tokens.map((token) => token[0]).join(''));
+    variants.add(tokens.filter((token) => !ENTITY_STOP_WORDS.has(token)).map((token) => token[0]).join(''));
+  }
+
+  const aliasValues = aliasMap?.[normalized] || [];
+  aliasValues.forEach((alias) => {
+    const aliasNormalized = normalizeEntity(alias);
+    if (!aliasNormalized) {
+      return;
+    }
+    variants.add(aliasNormalized);
+    variants.add(compressEntity(aliasNormalized));
+  });
+
+  return variants;
+};
+
+const entitiesMatch = (left = '', right = '', aliasMap = null) => {
+  if (!left || !right) {
+    return false;
+  }
+
+  const leftVariants = buildEntityVariants(left, aliasMap);
+  const rightVariants = buildEntityVariants(right, aliasMap);
+  for (const variant of leftVariants) {
+    if (rightVariants.has(variant)) {
+      return true;
+    }
+  }
+
+  const leftCompressed = compressEntity(left);
+  const rightCompressed = compressEntity(right);
+  return leftCompressed.includes(rightCompressed) || rightCompressed.includes(leftCompressed);
+};
+
+const audienceMatchesRegistry = (audience, registryRecord) => {
+  if (!audience) {
+    return false;
+  }
+
+  if (audience.faculty && registryRecord?.faculty && !entitiesMatch(audience.faculty, registryRecord.faculty)) {
+    return false;
+  }
+
+  if (audience.department && registryRecord?.department && !entitiesMatch(audience.department, registryRecord.department, DEPARTMENT_ALIAS_MAP)) {
+    return false;
+  }
+
+  if (audience.program && registryRecord?.program && !entitiesMatch(audience.program, registryRecord.program, DEPARTMENT_ALIAS_MAP)) {
+    return false;
+  }
+
+  if (audience.level && registryRecord?.level && normalizeLevel(audience.level) !== normalizeLevel(registryRecord.level)) {
+    return false;
+  }
+
+  return true;
+};
+
+const courseMatchesRegistry = (course, registryRecord, semester, academicYear) => {
+  if (semester && course.semester && course.semester !== semester) {
+    return false;
+  }
+
+  if (academicYear && normalizeAcademicYearInput(course.academicYear) !== normalizeAcademicYearInput(academicYear)) {
+    return false;
+  }
+
+  const audiences = Array.isArray(course.audiences)
+    ? course.audiences.filter((audience) => audience?.isActive !== false)
+    : [];
+
+  if (audiences.length > 0) {
+    return audiences.some((audience) => audienceMatchesRegistry(audience, registryRecord));
+  }
+
+  return (
+    (!course.faculty || !registryRecord?.faculty || entitiesMatch(course.faculty, registryRecord.faculty)) &&
+    (!course.department || !registryRecord?.department || entitiesMatch(course.department, registryRecord.department, DEPARTMENT_ALIAS_MAP)) &&
+    (!course.program || !registryRecord?.program || entitiesMatch(course.program, registryRecord.program, DEPARTMENT_ALIAS_MAP)) &&
+    (!course.level || !registryRecord?.level || normalizeLevel(course.level) === normalizeLevel(registryRecord.level))
+  );
+};
+
 const register = async (req, res) => {
   try {
     const { email, password, firstName, lastName, role, department, faculty, program, matricNumber } = req.body;
@@ -224,48 +337,25 @@ const getPublicCourses = async (req, res) => {
       where.semester = semester;
     }
 
-    const audienceWhere = { isActive: true };
-    const audienceFilters = [];
-
-    if (faculty) {
-      audienceWhere.faculty = faculty;
-      audienceFilters.push('faculty');
-    }
-
-    if (department) {
-      audienceWhere.department = String(department).trim().toUpperCase();
-      audienceFilters.push('department');
-    }
-
-    if (program) {
-      audienceWhere[Op.or] = [{ program }, { program: null }];
-      audienceFilters.push('program');
-    }
-
-    if (level) {
-      audienceWhere.level = normalizeLevel(level);
-      audienceFilters.push('level');
-    }
-
     const courses = await Course.findAll({
       where,
-      include: audienceFilters.length > 0
-        ? [{
-            model: CourseAudience,
-            as: 'audiences',
-            where: audienceWhere,
-            required: true,
-            attributes: [],
-          }]
-        : [],
-      attributes: ['id', 'courseCode', 'courseName', 'semester', 'academicYear'],
+      include: [{
+        model: CourseAudience,
+        as: 'audiences',
+        where: { isActive: true },
+        required: false,
+      }],
+      attributes: ['id', 'courseCode', 'courseName', 'semester', 'academicYear', 'faculty', 'department', 'program', 'level'],
       order: [['courseCode', 'ASC']],
     });
 
     const normalizedRequestedYear = normalizeAcademicYearInput(academicYear);
-    const filteredCourses = normalizedRequestedYear
-      ? courses.filter((course) => normalizeAcademicYearInput(course.academicYear) === normalizedRequestedYear)
-      : courses;
+    const filteredCourses = courses.filter((course) => courseMatchesRegistry(course, {
+      faculty,
+      department,
+      program,
+      level,
+    }, semester, normalizedRequestedYear));
 
     res.json({ success: true, data: filteredCourses });
   } catch (error) {
@@ -304,28 +394,14 @@ const studentSignup = async (req, res) => {
         include: [{
           model: CourseAudience,
           as: 'audiences',
-          required: true,
-          where: {
-            isActive: true,
-            [Op.and]: [
-              registryRecord.faculty ? { faculty: registryRecord.faculty } : {},
-              registryRecord.department ? { department: registryRecord.department.toUpperCase() } : {},
-              registryRecord.level ? { level: normalizeLevel(registryRecord.level) } : {},
-              {
-                [Op.or]: [
-                  { program: registryRecord.program || null },
-                  { program: null },
-                ],
-              },
-            ],
-          },
-          attributes: [],
+          required: false,
+          where: { isActive: true },
         }],
-        attributes: ['id', 'academicYear'],
+        attributes: ['id', 'academicYear', 'faculty', 'department', 'program', 'level', 'semester'],
       });
 
       resolvedCourseIds = matchingCourses
-        .filter((course) => normalizeAcademicYearInput(course.academicYear) === normalizedAcademicYear)
+        .filter((course) => courseMatchesRegistry(course, registryRecord, semester, normalizedAcademicYear))
         .map((course) => course.id);
     }
 
