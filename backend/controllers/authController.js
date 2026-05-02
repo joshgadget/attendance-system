@@ -405,13 +405,6 @@ const studentSignup = async (req, res) => {
         .map((course) => course.id);
     }
 
-    if (resolvedCourseIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No semester courses were matched to your department and level yet. Ask the admin to import the timetable first.',
-      });
-    }
-
     const existing = await User.findOne({ where: { email: normalizeEmail(email) } });
     if (existing) {
       return res.status(400).json({ success: false, message: 'Email already exists' });

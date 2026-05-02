@@ -134,11 +134,6 @@ const StudentSignup = () => {
       return;
     }
 
-    if (form.courseIds.length === 0) {
-      setError('Complete your course registration before signing up. Select at least one course.');
-      return;
-    }
-
     try {
       setSubmitting(true);
       setError('');
@@ -309,7 +304,7 @@ const StudentSignup = () => {
 
             <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-500'}`}>Selected courses: <span className={`font-semibold ${isDark ? 'text-slate-100' : 'text-slate-700'}`}>{form.courseIds.length}</span></p>
-              <button type="submit" disabled={submitting || form.courseIds.length === 0} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-700 via-blue-600 to-sky-500 px-6 py-4 font-semibold text-white shadow-[0_18px_40px_rgba(37,99,235,0.32)] transition hover:shadow-[0_22px_50px_rgba(37,99,235,0.42)] disabled:cursor-not-allowed disabled:opacity-60">
+              <button type="submit" disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-700 via-blue-600 to-sky-500 px-6 py-4 font-semibold text-white shadow-[0_18px_40px_rgba(37,99,235,0.32)] transition hover:shadow-[0_22px_50px_rgba(37,99,235,0.42)] disabled:cursor-not-allowed disabled:opacity-60">
                 {submitting ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <BadgeCheck className="h-5 w-5" />}
                 Create student account
               </button>

@@ -20,9 +20,15 @@ import {
   Mail,
   Menu,
   MessageSquare,
+  Moon,
+  Palette,
   Search,
   Send,
   ShieldCheck,
+  Settings2,
+  Sun,
+  Trash2,
+  Upload,
   UserCog,
   UserPlus,
   Users,
@@ -68,6 +74,7 @@ const TAB_LABELS = {
   reports: 'Reports',
   notifications: 'Notifications',
   profile: 'Profile',
+  settings: 'Settings',
   help: 'Help',
 };
 
@@ -83,6 +90,7 @@ const TAB_ICONS = {
   reports: FileText,
   notifications: Bell,
   profile: UserCog,
+  settings: Settings2,
   help: CircleHelp,
 };
 
@@ -90,8 +98,14 @@ const formatDate = (value) => (value ? new Date(value).toLocaleDateString() : 'N
 const formatDateTime = (value) => (value ? new Date(value).toLocaleString() : 'Not available');
 const formatTime = (value) => (value ? String(value).slice(0, 5) : 'Not set');
 const fullName = (person) => [person?.firstName, person?.lastName].filter(Boolean).join(' ') || 'No name';
+const initialsFor = (person) => {
+  const seed = fullName(person) === 'No name' ? String(person?.email || 'A') : fullName(person);
+  return seed.trim().charAt(0).toUpperCase() || 'A';
+};
 const normalizeSearch = (value) => String(value || '').toLowerCase();
 const includesSearch = (value, search) => normalizeSearch(value).includes(normalizeSearch(search));
+const getAvatarStorageKey = (user) => `attendance-system-avatar:${user?.id || user?.email || 'guest'}`;
+const getPreferenceStorageKey = (user) => `attendance-system-preferences:${user?.id || user?.email || 'guest'}`;
 const normalizeAcademicYearValue = (value) => {
   const raw = String(value || '').trim();
   if (!raw) {
@@ -243,6 +257,32 @@ const ActionTile = ({ title, description }) => {
       </div>
     </div>
   </div>
+  );
+};
+
+const Avatar = ({ person, photo, className = '' }) => (
+  <div className={`dashboard-avatar ${className}`.trim()}>
+    {photo ? <img src={photo} alt={`${fullName(person)} avatar`} className="dashboard-avatar__image" /> : <span className="dashboard-avatar__fallback">{initialsFor(person)}</span>}
+  </div>
+);
+
+const PreferenceToggle = ({ label, description, checked, onChange }) => {
+  const { isDark } = useTheme();
+
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`flex w-full items-center justify-between gap-4 rounded-[1.5rem] border px-5 py-4 text-left transition ${isDark ? 'border-slate-700 bg-slate-900/70 hover:border-slate-500' : 'border-slate-200 bg-slate-50/80 hover:border-blue-300'}`}
+    >
+      <div>
+        <p className={`font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{label}</p>
+        <p className={`mt-1 text-sm leading-6 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{description}</p>
+      </div>
+      <span className={`inline-flex h-7 w-12 items-center rounded-full p-1 transition ${checked ? 'bg-blue-600' : isDark ? 'bg-slate-700' : 'bg-slate-300'}`}>
+        <span className={`h-5 w-5 rounded-full bg-white transition ${checked ? 'translate-x-5' : 'translate-x-0'}`} />
+      </span>
+    </button>
   );
 };
 
@@ -444,7 +484,7 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
 };
 
 const Dashboard = () => {
-  const { isDark } = useTheme();
+  const { isDark, theme, setTheme } = useTheme();
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
   const role = user?.role || 'student';
@@ -466,6 +506,8 @@ const Dashboard = () => {
   const [profile, setProfile] = useState(null);
   const [profileForm, setProfileForm] = useState({ firstName: '', lastName: '', department: '', faculty: '', program: '' });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [profilePhoto, setProfilePhoto] = useState('');
+  const [preferences, setPreferences] = useState({ emailUpdates: true, classReminders: true, compactMode: false });
   const [users, setUsers] = useState([]);
   const [lecturers, setLecturers] = useState([]);
   const [students, setStudents] = useState([]);
@@ -504,8 +546,39 @@ const Dashboard = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const attendanceRequestRef = useRef(false);
+  const photoInputRef = useRef(null);
 
   const activeSession = useMemo(() => sessions.find((session) => session.status === 'active') || null, [sessions]);
+
+  useEffect(() => {
+    if (!user) {
+      setProfilePhoto('');
+      setPreferences({ emailUpdates: true, classReminders: true, compactMode: false });
+      return;
+    }
+
+    const storedPhoto = window.localStorage.getItem(getAvatarStorageKey(user)) || '';
+    setProfilePhoto(storedPhoto);
+
+    try {
+      const storedPreferences = JSON.parse(window.localStorage.getItem(getPreferenceStorageKey(user)) || '{}');
+      setPreferences({
+        emailUpdates: storedPreferences.emailUpdates ?? true,
+        classReminders: storedPreferences.classReminders ?? true,
+        compactMode: storedPreferences.compactMode ?? false,
+      });
+    } catch (storageError) {
+      setPreferences({ emailUpdates: true, classReminders: true, compactMode: false });
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    window.localStorage.setItem(getPreferenceStorageKey(user), JSON.stringify(preferences));
+  }, [preferences, user]);
 
   useEffect(() => {
     setActiveTab(tabs[0]);
@@ -1802,6 +1875,56 @@ const Dashboard = () => {
 
   const handleLogout = () => {
     dispatch(logout());
+  };
+
+  const openWorkspaceTab = (tab) => {
+    setActiveTab(tab);
+    setAccountMenuOpen(false);
+    setSidebarOpen(false);
+  };
+
+  const handleProfilePhotoChange = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setMessage('', 'Please choose an image file for your profile photo.');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setMessage('', 'Profile photo should be 2MB or smaller.');
+      return;
+    }
+
+    try {
+      const nextPhoto = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('File could not be read.'));
+        reader.readAsDataURL(file);
+      });
+
+      setProfilePhoto(nextPhoto);
+      if (user) {
+        window.localStorage.setItem(getAvatarStorageKey(user), nextPhoto);
+      }
+      setMessage('Profile photo updated successfully.');
+    } catch (fileError) {
+      setMessage('', fileError.message || 'Profile photo could not be updated.');
+    }
+  };
+
+  const handleRemoveProfilePhoto = () => {
+    setProfilePhoto('');
+    if (user) {
+      window.localStorage.removeItem(getAvatarStorageKey(user));
+    }
+    setMessage('Profile photo removed.');
   };
 
   const handleUpdateProfile = async (event) => {
