@@ -92,6 +92,48 @@ const formatTime = (value) => (value ? String(value).slice(0, 5) : 'Not set');
 const fullName = (person) => [person?.firstName, person?.lastName].filter(Boolean).join(' ') || 'No name';
 const normalizeSearch = (value) => String(value || '').toLowerCase();
 const includesSearch = (value, search) => normalizeSearch(value).includes(normalizeSearch(search));
+const normalizeAcademicYearValue = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return '';
+  }
+
+  const compact = raw.replace(/\s+/g, '');
+  const match = compact.match(/^(\d{2,4})\/(\d{2,4})$/);
+  if (!match) {
+    return compact.toLowerCase();
+  }
+
+  const [, startRaw, endRaw] = match;
+  const startYear = startRaw.length === 2 ? `20${startRaw}` : startRaw;
+  const endYear = endRaw.length === 2 ? `20${endRaw}` : endRaw;
+  return `${startYear}/${endYear}`;
+};
+
+const getCourseDepartmentLabel = (course) => {
+  const primaryAudience = course?.audiences?.find((entry) => entry?.isActive !== false) || null;
+  const department = String(course?.department || primaryAudience?.department || '').trim();
+  if (department) {
+    return department;
+  }
+
+  const prefix = String(course?.courseCode || '').trim().toUpperCase().match(/^[A-Z]{2,5}/)?.[0];
+  if (!prefix || ['GST', 'GTS', 'GET', 'MTH', 'CHM', 'PHY'].includes(prefix)) {
+    return 'GENERAL & SHARED COURSES';
+  }
+
+  return prefix;
+};
+
+const getCourseLevelLabel = (course) => {
+  const rawLevel = String(course?.level || course?.audiences?.find((entry) => entry?.isActive !== false)?.level || '').trim();
+  if (!rawLevel) {
+    return 'UNSPECIFIED LEVEL';
+  }
+
+  const digits = rawLevel.match(/\d+/)?.[0];
+  return digits ? `${digits} LEVEL` : rawLevel.toUpperCase();
+};
 
 const getCurrentLocation = () =>
   new Promise((resolve) => {
@@ -447,6 +489,8 @@ const Dashboard = () => {
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [studentEditForm, setStudentEditForm] = useState({ firstName: '', lastName: '', matricNumber: '', department: '', faculty: '', program: '' });
   const [enrollmentForm, setEnrollmentForm] = useState({ semester: 'rain', academicYear: new Date().getFullYear() + '/' + String(new Date().getFullYear() + 1).slice(-2), courseIds: [] });
+  const [editingCourseId, setEditingCourseId] = useState('');
+  const [courseEditForm, setCourseEditForm] = useState(initialCourseForm);
   const [reactivateDrafts, setReactivateDrafts] = useState({});
   const [linkForm, setLinkForm] = useState({ registryId: '', userId: '' });
 
@@ -688,6 +732,45 @@ const Dashboard = () => {
       await loadData(true);
     } catch (actionError) {
       setMessage('', actionError.response?.data?.message || 'Course could not be created.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleStartCourseEdit = (course) => {
+    setEditingCourseId(String(course.id));
+    setCourseEditForm({
+      courseCode: course.courseCode || '',
+      courseName: course.courseName || '',
+      description: course.description || '',
+      semester: course.semester || 'rain',
+      academicYear: course.academicYear || '',
+      lecturerId: course.lecturerId ? String(course.lecturerId) : '',
+      faculty: course.faculty || '',
+      department: course.department || '',
+      program: course.program || '',
+      level: course.level || '',
+    });
+  };
+
+  const handleCancelCourseEdit = () => {
+    setEditingCourseId('');
+    setCourseEditForm(initialCourseForm);
+  };
+
+  const handleUpdateCourse = async (event, courseId) => {
+    event.preventDefault();
+
+    try {
+      setBusyAction(`update-course-${courseId}`);
+      setMessage();
+      await api.put(`/courses/${courseId}`, courseEditForm);
+      setMessage('Course updated successfully.');
+      setEditingCourseId('');
+      setCourseEditForm(initialCourseForm);
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Course could not be updated.');
     } finally {
       setBusyAction('');
     }
@@ -1257,6 +1340,12 @@ const Dashboard = () => {
 
   const handleSelectStudent = async (studentId) => {
     setSelectedStudentId(studentId);
+    if (!studentId) {
+      setStudentEditForm({ firstName: '', lastName: '', matricNumber: '', department: '', faculty: '', program: '' });
+      setEnrollmentForm((current) => ({ ...current, courseIds: [] }));
+      return;
+    }
+
     const student = students.find((entry) => String(entry.id) === String(studentId));
     if (student) {
       setStudentEditForm({
@@ -1280,6 +1369,8 @@ const Dashboard = () => {
           .filter((entry) => entry.semester === semester && entry.academicYear === academicYear)
           .map((entry) => entry.courseId);
         setEnrollmentForm({ semester, academicYear, courseIds });
+      } else {
+        setEnrollmentForm((current) => ({ ...current, courseIds: [] }));
       }
     } catch (loadError) {}
   };
@@ -1380,6 +1471,132 @@ const Dashboard = () => {
         : buildings.filter((entry) => [entry.name, entry.tag].some((value) => includesSearch(value, search))),
     [buildings, search]
   );
+  const selectedStudent = useMemo(
+    () => students.find((entry) => String(entry.id) === String(selectedStudentId)) || null,
+    [selectedStudentId, students]
+  );
+  const groupedCourses = useMemo(() => {
+    const departmentMap = new Map();
+
+    filteredCourses.forEach((course) => {
+      const departmentLabel = getCourseDepartmentLabel(course);
+      const levelLabel = getCourseLevelLabel(course);
+
+      if (!departmentMap.has(departmentLabel)) {
+        departmentMap.set(departmentLabel, new Map());
+      }
+
+      const levelMap = departmentMap.get(departmentLabel);
+      if (!levelMap.has(levelLabel)) {
+        levelMap.set(levelLabel, []);
+      }
+
+      levelMap.get(levelLabel).push(course);
+    });
+
+    return [...departmentMap.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([department, levels]) => ({
+        department,
+        levels: [...levels.entries()]
+          .sort(([left], [right]) => {
+            const leftNumber = Number.parseInt(String(left).replace(/\D/g, ''), 10);
+            const rightNumber = Number.parseInt(String(right).replace(/\D/g, ''), 10);
+            if (Number.isNaN(leftNumber) || Number.isNaN(rightNumber)) {
+              return left.localeCompare(right);
+            }
+            return leftNumber - rightNumber;
+          })
+          .map(([level, items]) => ({
+            level,
+            items: items.sort((left, right) => String(left.courseCode || '').localeCompare(String(right.courseCode || ''))),
+          })),
+      }));
+  }, [filteredCourses]);
+  const groupedEnrollmentCourses = useMemo(() => {
+    const currentYear = normalizeAcademicYearValue(enrollmentForm.academicYear);
+    const relevantCourses = courses.filter((course) => {
+      if (course.isActive === false) {
+        return false;
+      }
+
+      if (String(course.semester || '').toLowerCase() !== String(enrollmentForm.semester || '').toLowerCase()) {
+        return false;
+      }
+
+      return !currentYear || normalizeAcademicYearValue(course.academicYear) === currentYear;
+    });
+
+    const departmentMap = new Map();
+    relevantCourses.forEach((course) => {
+      const departmentLabel = getCourseDepartmentLabel(course);
+      const levelLabel = getCourseLevelLabel(course);
+
+      if (!departmentMap.has(departmentLabel)) {
+        departmentMap.set(departmentLabel, new Map());
+      }
+
+      const levelMap = departmentMap.get(departmentLabel);
+      if (!levelMap.has(levelLabel)) {
+        levelMap.set(levelLabel, []);
+      }
+
+      levelMap.get(levelLabel).push(course);
+    });
+
+    return [...departmentMap.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([department, levels]) => ({
+        department,
+        levels: [...levels.entries()]
+          .sort(([left], [right]) => {
+            const leftNumber = Number.parseInt(String(left).replace(/\D/g, ''), 10);
+            const rightNumber = Number.parseInt(String(right).replace(/\D/g, ''), 10);
+            if (Number.isNaN(leftNumber) || Number.isNaN(rightNumber)) {
+              return left.localeCompare(right);
+            }
+            return leftNumber - rightNumber;
+          })
+          .map(([level, items]) => ({
+            level,
+            items: items.sort((left, right) => String(left.courseCode || '').localeCompare(String(right.courseCode || ''))),
+          })),
+      }));
+  }, [courses, enrollmentForm.academicYear, enrollmentForm.semester]);
+  const recommendedEnrollmentIds = useMemo(() => {
+    if (!selectedStudent) {
+      return [];
+    }
+
+    const targetDepartment = normalizeSearch(selectedStudent.department);
+    const targetFaculty = normalizeSearch(selectedStudent.faculty);
+    const targetProgram = normalizeSearch(selectedStudent.program);
+    const targetLevel = String(selectedStudent.level || selectedStudent.registryRecord?.level || '').trim();
+    const targetYear = normalizeAcademicYearValue(enrollmentForm.academicYear);
+
+    return courses
+      .filter((course) => {
+        if (course.isActive === false) {
+          return false;
+        }
+
+        if (String(course.semester || '').toLowerCase() !== String(enrollmentForm.semester || '').toLowerCase()) {
+          return false;
+        }
+
+        if (targetYear && normalizeAcademicYearValue(course.academicYear) !== targetYear) {
+          return false;
+        }
+
+        const departmentMatches = !targetDepartment || normalizeSearch(course.department).includes(targetDepartment) || targetDepartment.includes(normalizeSearch(course.department));
+        const facultyMatches = !targetFaculty || normalizeSearch(course.faculty).includes(targetFaculty) || targetFaculty.includes(normalizeSearch(course.faculty));
+        const programMatches = !targetProgram || normalizeSearch(course.program).includes(targetProgram) || targetProgram.includes(normalizeSearch(course.program));
+        const levelMatches = !targetLevel || String(course.level || '').trim() === targetLevel;
+
+        return (departmentMatches || facultyMatches || programMatches) && levelMatches;
+      })
+      .map((course) => course.id);
+  }, [courses, enrollmentForm.academicYear, enrollmentForm.semester, selectedStudent]);
 
   const registryFilterOptions = useMemo(() => {
     const unique = (values) => [...new Set(values.filter(Boolean))].sort();
@@ -2099,14 +2316,57 @@ const Dashboard = () => {
                         <Input label="Academic year" value={enrollmentForm.academicYear} onChange={(value) => setEnrollmentForm((current) => ({ ...current, academicYear: value }))} />
                       </div>
                       <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-4">
-                        <p className="text-sm font-semibold text-slate-700">Assign courses (admin override)</p>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                          {courses.filter((course) => course.isActive !== false).map((course) => (
-                            <label key={course.id} className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                              <input type="checkbox" checked={enrollmentForm.courseIds.includes(course.id)} onChange={() => toggleEnrollmentCourse(course.id)} className="h-4 w-4 rounded border-slate-300 text-blue-600" />
-                              {course.courseCode} - {course.courseName}
-                            </label>
-                          ))}
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-700">Assign courses (admin override)</p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              The system recommends department and level matches first, then lets you add carryovers or cross-department courses manually.
+                            </p>
+                          </div>
+                          {selectedStudent && (
+                            <div className="flex flex-wrap gap-2">
+                              <Badge tone="slate">{selectedStudent.department || 'No department'}</Badge>
+                              <Badge tone="blue">{selectedStudent.level ? `${selectedStudent.level} level` : 'No level'}</Badge>
+                              <Badge tone="emerald">{enrollmentForm.semester} semester</Badge>
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-4 space-y-4">
+                          {groupedEnrollmentCourses.length > 0 ? groupedEnrollmentCourses.map((departmentGroup) => (
+                            <div key={`student-course-group-${departmentGroup.department}`} className="rounded-[1.25rem] border border-slate-200 bg-white/80 p-4">
+                              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <p className="text-sm font-bold uppercase tracking-[0.16em] text-slate-700">{departmentGroup.department}</p>
+                                <Badge tone="slate">
+                                  {departmentGroup.levels.reduce((sum, levelGroup) => sum + levelGroup.items.length, 0)} courses
+                                </Badge>
+                              </div>
+                              <div className="space-y-4">
+                                {departmentGroup.levels.map((levelGroup) => (
+                                  <div key={`student-course-level-${departmentGroup.department}-${levelGroup.level}`}>
+                                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-500">{levelGroup.level}</p>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                      {levelGroup.items.map((course) => {
+                                        const isRecommended = recommendedEnrollmentIds.includes(course.id);
+                                        return (
+                                          <label key={course.id} className={`flex items-start gap-3 rounded-2xl border px-3 py-3 text-sm ${isRecommended ? 'border-blue-200 bg-blue-50/70 text-slate-800' : 'border-slate-200 bg-white text-slate-700'}`}>
+                                            <input type="checkbox" checked={enrollmentForm.courseIds.includes(course.id)} onChange={() => toggleEnrollmentCourse(course.id)} className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600" />
+                                            <span>
+                                              <span className="block font-semibold">{course.courseCode} - {course.courseName}</span>
+                                              <span className="mt-1 block text-xs text-slate-500">
+                                                {fullName(course.lecturer)}{isRecommended ? ' | recommended for this student' : ''}
+                                              </span>
+                                            </span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )) : (
+                            <EmptyState title="No timetable-linked courses yet" description="Upload the course list or timetable for this semester and academic year, then come back to assign or override a student's courses." />
+                          )}
                         </div>
                       </div>
                       <button type="submit" disabled={busyAction === 'update-student-enrollments'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'update-student-enrollments' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}Update courses</button>
@@ -2343,34 +2603,100 @@ const Dashboard = () => {
               )}
               <Panel title={role === 'student' ? 'My semester courses' : 'Course directory'} eyebrow="Course list">
                 <div className="space-y-4">
-                  {filteredCourses.length > 0 ? filteredCourses.map((course) => (
-                    <div key={course.id} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  {groupedCourses.length > 0 ? groupedCourses.map((departmentGroup) => (
+                    <div key={`course-group-${departmentGroup.department}`} className="space-y-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">{course.courseCode}</p>
-                          <p className="mt-2 text-lg font-bold text-slate-950">{course.courseName}</p>
-                          <p className="mt-2 text-sm text-slate-500">{course.semester} semester | {course.academicYear}</p>
-                          <p className="mt-1 text-sm text-slate-500">Lecturer: {fullName(course.lecturer)}</p>
-                          {course.enrollment && <p className="mt-1 text-sm text-slate-500">Enrollment status: {course.enrollment.status}</p>}
-                          {course.schedules?.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {course.schedules.map((schedule) => (
-                                <Badge key={`${course.id}-${schedule.id}`} tone="slate">
-                                  {schedule.dayOfWeek} {formatTime(schedule.startTime)}-{formatTime(schedule.endTime)}{schedule.venue ? ` | ${schedule.venue}` : ''}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
+                          <p className="text-sm font-bold uppercase tracking-[0.18em] text-blue-600">{departmentGroup.department}</p>
+                          <p className="mt-1 text-sm text-slate-500">Grouped by department and level for cleaner academic administration.</p>
                         </div>
-                        <div className="flex flex-wrap gap-2"><Badge tone={course.isActive === false ? 'rose' : 'emerald'}>{course.isActive === false ? 'archived' : 'active'}</Badge>{course.enrollment && <Badge tone="blue">enrolled</Badge>}</div>
+                        <Badge tone="slate">{departmentGroup.levels.reduce((sum, levelGroup) => sum + levelGroup.items.length, 0)} courses</Badge>
                       </div>
-                      {role === 'admin' && course.isActive !== false && <button onClick={() => handleArchiveCourse(course.id)} disabled={busyAction === `archive-course-${course.id}`} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-50 disabled:opacity-60">{busyAction === `archive-course-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}Archive course</button>}
-                      {role === 'lecturer' && (
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <button onClick={() => handleDownloadReport(course.id, 'csv')} disabled={busyAction === `download-csv-${course.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{busyAction === `download-csv-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download CSV</button>
-                          <button onClick={() => handleDownloadReport(course.id, 'pdf')} disabled={busyAction === `download-pdf-${course.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">{busyAction === `download-pdf-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download PDF</button>
+                      {departmentGroup.levels.map((levelGroup) => (
+                        <div key={`course-level-${departmentGroup.department}-${levelGroup.level}`} className="space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{levelGroup.level}</p>
+                          <div className="space-y-4">
+                            {levelGroup.items.map((course) => (
+                              <div key={course.id} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">{course.courseCode}</p>
+                                    <p className="mt-2 text-lg font-bold text-slate-950">{course.courseName}</p>
+                                    <p className="mt-2 text-sm text-slate-500">{course.semester} semester | {course.academicYear}</p>
+                                    <p className="mt-1 text-sm text-slate-500">Lecturer: {fullName(course.lecturer)}</p>
+                                    {course.enrollment && <p className="mt-1 text-sm text-slate-500">Enrollment status: {course.enrollment.status}</p>}
+                                    {course.schedules?.length > 0 && (
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        {course.schedules.map((schedule) => (
+                                          <Badge key={`${course.id}-${schedule.id}`} tone="slate">
+                                            {schedule.dayOfWeek} {formatTime(schedule.startTime)}-{formatTime(schedule.endTime)}{schedule.venue ? ` | ${schedule.venue}` : ''}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    <Badge tone={course.isActive === false ? 'rose' : 'emerald'}>{course.isActive === false ? 'archived' : 'active'}</Badge>
+                                    <Badge tone="slate">{getCourseDepartmentLabel(course)}</Badge>
+                                    <Badge tone="blue">{getCourseLevelLabel(course)}</Badge>
+                                    {course.enrollment && <Badge tone="blue">enrolled</Badge>}
+                                  </div>
+                                </div>
+                                {role === 'admin' && (
+                                  <div className="mt-4 space-y-4">
+                                    <div className="flex flex-wrap gap-2">
+                                      {editingCourseId === String(course.id) ? (
+                                        <button onClick={handleCancelCourseEdit} type="button" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+                                          Cancel edit
+                                        </button>
+                                      ) : (
+                                        <button onClick={() => handleStartCourseEdit(course)} type="button" className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50">
+                                          Edit course
+                                        </button>
+                                      )}
+                                      {course.isActive !== false && (
+                                        <button onClick={() => handleArchiveCourse(course.id)} disabled={busyAction === `archive-course-${course.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-50 disabled:opacity-60">
+                                          {busyAction === `archive-course-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                                          Archive course
+                                        </button>
+                                      )}
+                                    </div>
+                                    {editingCourseId === String(course.id) && (
+                                      <form onSubmit={(event) => handleUpdateCourse(event, course.id)} className="grid gap-4 rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-4 md:grid-cols-2">
+                                        <Input label="Course code" value={courseEditForm.courseCode} onChange={(value) => setCourseEditForm((current) => ({ ...current, courseCode: value.toUpperCase() }))} />
+                                        <Input label="Course name" value={courseEditForm.courseName} onChange={(value) => setCourseEditForm((current) => ({ ...current, courseName: value }))} />
+                                        <Select label="Semester" value={courseEditForm.semester} onChange={(value) => setCourseEditForm((current) => ({ ...current, semester: value }))} options={[{ value: 'rain', label: 'Rain' }, { value: 'harmattan', label: 'Harmattan' }]} />
+                                        <Input label="Academic year" value={courseEditForm.academicYear} onChange={(value) => setCourseEditForm((current) => ({ ...current, academicYear: value }))} />
+                                        <Input label="Faculty" value={courseEditForm.faculty} onChange={(value) => setCourseEditForm((current) => ({ ...current, faculty: value }))} />
+                                        <Input label="Department" value={courseEditForm.department} onChange={(value) => setCourseEditForm((current) => ({ ...current, department: value }))} />
+                                        <Input label="Program" value={courseEditForm.program} onChange={(value) => setCourseEditForm((current) => ({ ...current, program: value }))} />
+                                        <Input label="Level" value={courseEditForm.level} onChange={(value) => setCourseEditForm((current) => ({ ...current, level: value }))} />
+                                        <Select label="Assign lecturer" value={courseEditForm.lecturerId} onChange={(value) => setCourseEditForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Choose lecturer' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
+                                        <div className="md:col-span-2">
+                                          <label className="mb-2 block text-sm font-semibold text-slate-700">Description</label>
+                                          <textarea value={courseEditForm.description} onChange={(event) => setCourseEditForm((current) => ({ ...current, description: event.target.value }))} rows={4} className="w-full rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" />
+                                        </div>
+                                        <div className="md:col-span-2">
+                                          <button type="submit" disabled={busyAction === `update-course-${course.id}`} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">
+                                            {busyAction === `update-course-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
+                                            Save course changes
+                                          </button>
+                                        </div>
+                                      </form>
+                                    )}
+                                  </div>
+                                )}
+                                {role === 'lecturer' && (
+                                  <div className="mt-4 flex flex-wrap gap-2">
+                                    <button onClick={() => handleDownloadReport(course.id, 'csv')} disabled={busyAction === `download-csv-${course.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{busyAction === `download-csv-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download CSV</button>
+                                    <button onClick={() => handleDownloadReport(course.id, 'pdf')} disabled={busyAction === `download-pdf-${course.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">{busyAction === `download-pdf-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download PDF</button>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      )}
+                      ))}
                     </div>
                   )) : <EmptyState title="No courses available" description={role === 'student' ? 'No active enrollments were found for your account yet.' : 'Create a course or update your search.'} />}
                 </div>

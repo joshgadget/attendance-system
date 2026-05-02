@@ -121,8 +121,8 @@ exports.updateStudentEnrollments = async (req, res) => {
 
     const { courseIds, semester, academicYear } = req.body;
 
-    if (!Array.isArray(courseIds) || courseIds.length === 0) {
-      return res.status(400).json({ success: false, message: 'courseIds must be a non-empty array' });
+    if (!Array.isArray(courseIds)) {
+      return res.status(400).json({ success: false, message: 'courseIds must be an array' });
     }
 
     if (!semester || !academicYear) {
@@ -233,6 +233,7 @@ exports.getStudents = async (req, res) => {
     const students = await User.findAll({
       where: { role: 'student', isActive: true },
       attributes: ['id', 'firstName', 'lastName', 'email', 'matricNumber', 'department', 'faculty', 'program'],
+      include: [{ model: StudentRegistry, as: 'registryRecord', required: false, attributes: ['id', 'level', 'program', 'department', 'faculty'] }],
       order: [['firstName', 'ASC'], ['lastName', 'ASC']],
     });
 
