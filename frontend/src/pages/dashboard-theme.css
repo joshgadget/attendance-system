@@ -7,6 +7,15 @@
   color: #f2f4ff;
 }
 
+.dashboard-shell--light {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 24%),
+    radial-gradient(circle at top right, rgba(250, 204, 21, 0.18), transparent 18%),
+    linear-gradient(180deg, #eef4ff 0%, #f8fbff 55%, #eef4ff 100%);
+  color: #0f172a;
+}
+
 .dashboard-frame {
   position: relative;
   min-height: 100vh;
@@ -133,6 +142,7 @@
   color: #fff;
   font-size: 1rem;
   font-weight: 700;
+  overflow: hidden;
 }
 
 .dashboard-userchip__name {
@@ -290,6 +300,24 @@
   color: white;
   font-size: 1rem;
   font-weight: 700;
+  overflow: hidden;
+}
+
+.dashboard-avatar {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.dashboard-avatar__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dashboard-avatar__fallback {
+  line-height: 1;
 }
 
 .dashboard-content {
@@ -696,6 +724,113 @@
 .dashboard-shell--app .focus\:border-blue-400:focus,
 .dashboard-shell--app .focus\:ring-blue-100:focus {
   box-shadow: 0 0 0 3px rgba(76, 130, 255, 0.18) !important;
+}
+
+.dashboard-shell--compact .dashboard-content {
+  padding-top: 14px;
+}
+
+.dashboard-shell--compact .dashboard-overview,
+.dashboard-shell--compact .dashboard-stack,
+.dashboard-shell--compact .dashboard-stat-grid {
+  gap: 16px;
+}
+
+.dashboard-shell--compact .dashboard-stat-card {
+  min-height: 156px;
+  padding: 20px 22px;
+}
+
+.dashboard-shell--compact .dashboard-chart-card,
+.dashboard-shell--compact .dashboard-feed-card,
+.dashboard-shell--compact .dashboard-upcoming-card,
+.dashboard-shell--compact .dashboard-summary-strip {
+  padding: 22px;
+}
+
+.dashboard-shell--light .dashboard-sidebar {
+  border-right-color: rgba(148, 163, 184, 0.2);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(241, 245, 249, 0.98) 100%);
+}
+
+.dashboard-shell--light .dashboard-brand__logo {
+  background: linear-gradient(160deg, rgba(37, 99, 235, 0.9), rgba(59, 130, 246, 0.92));
+}
+
+.dashboard-shell--light .dashboard-brand span,
+.dashboard-shell--light .dashboard-welcome h1,
+.dashboard-shell--light .dashboard-card__header h2,
+.dashboard-shell--light .dashboard-stat-card__label,
+.dashboard-shell--light .dashboard-stat-card__value,
+.dashboard-shell--light .dashboard-feed__title,
+.dashboard-shell--light .dashboard-upcoming__title,
+.dashboard-shell--light .dashboard-summary-strip__title,
+.dashboard-shell--light .dashboard-userchip__name {
+  color: #0f172a;
+}
+
+.dashboard-shell--light .dashboard-userchip,
+.dashboard-shell--light .dashboard-search,
+.dashboard-shell--light .dashboard-stat-card,
+.dashboard-shell--light .dashboard-chart-card,
+.dashboard-shell--light .dashboard-feed-card,
+.dashboard-shell--light .dashboard-upcoming-card,
+.dashboard-shell--light .dashboard-summary-strip,
+.dashboard-shell--light .dashboard-account-dropdown {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 18px 40px rgba(148, 163, 184, 0.14);
+}
+
+.dashboard-shell--light .dashboard-upcoming__item,
+.dashboard-shell--light .dashboard-nav__item:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.dashboard-shell--light .dashboard-topbar {
+  border-bottom-color: rgba(148, 163, 184, 0.22);
+}
+
+.dashboard-shell--light .dashboard-nav__item,
+.dashboard-shell--light .dashboard-menu-button,
+.dashboard-shell--light .dashboard-icon-button,
+.dashboard-shell--light .dashboard-account,
+.dashboard-shell--light .dashboard-userchip__meta,
+.dashboard-shell--light .dashboard-search input::placeholder,
+.dashboard-shell--light .dashboard-card__header p,
+.dashboard-shell--light .dashboard-card__meta,
+.dashboard-shell--light .dashboard-welcome p,
+.dashboard-shell--light .dashboard-stat-card__helper,
+.dashboard-shell--light .dashboard-feed__description,
+.dashboard-shell--light .dashboard-feed__time,
+.dashboard-shell--light .dashboard-upcoming__subtitle,
+.dashboard-shell--light .dashboard-upcoming__time,
+.dashboard-shell--light .dashboard-summary-strip__body {
+  color: #475569;
+}
+
+.dashboard-shell--light .dashboard-search input {
+  color: #0f172a;
+}
+
+.dashboard-shell--light .dashboard-icon-button {
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+.dashboard-shell--light .dashboard-nav__item.is-active {
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.16), rgba(255, 255, 255, 0.9));
+  box-shadow: inset 3px 0 0 #2563eb;
+  color: #0f172a;
+}
+
+.dashboard-shell--light .dashboard-account-dropdown__item {
+  color: #0f172a;
+}
+
+.dashboard-shell--light .dashboard-account-dropdown__item:hover {
+  background: rgba(37, 99, 235, 0.08);
 }
 
 @media (max-width: 1279px) {

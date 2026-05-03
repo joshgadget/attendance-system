@@ -1,4 +1,4 @@
-const { Op } = require('sequelize');
+const { Op, UniqueConstraintError } = require('sequelize');
 const { AbsenceQuery, Session, Attendance, Course, User, Building, Enrollment } = require('../models');
 const crypto = require('crypto');
 const { sendEmail } = require('../utils/mailer');
@@ -192,6 +192,10 @@ exports.markAttendance = async (req, res) => {
   try {
     const { sessionCode, session_code, latitude, longitude } = req.body;
     const resolvedSessionCode = sessionCode || session_code;
+    if (!resolvedSessionCode) {
+      return res.status(400).json({ success: false, message: 'sessionCode is required' });
+    }
+
     const session = await Session.findOne({ where: { sessionCode: resolvedSessionCode, status: 'active' } });
 
     if (!session) {
@@ -268,17 +272,31 @@ exports.markAttendance = async (req, res) => {
       }
     }
 
-    const attendance = await Attendance.create({
-      sessionId: session.id,
-      studentId: req.user.id,
-      courseId: session.courseId,
-      status,
-      markedAt: new Date(),
-      markedBy: 'self',
-      verificationMethod: 'qr',
-      deviceInfo: req.get('user-agent') || null,
-      location: latitude && longitude ? `${latitude},${longitude}` : req.ip
-    });
+    let attendance;
+    try {
+      attendance = await Attendance.create({
+        sessionId: session.id,
+        studentId: req.user.id,
+        courseId: session.courseId,
+        status,
+        markedAt: new Date(),
+        markedBy: 'self',
+        verificationMethod: 'qr',
+        deviceInfo: req.get('user-agent') || null,
+        location: latitude && longitude ? `${latitude},${longitude}` : req.ip
+      });
+    } catch (createError) {
+      if (createError instanceof UniqueConstraintError) {
+        const recordedAttendance = await Attendance.findOne({ where: { sessionId: session.id, studentId: req.user.id } });
+        return res.status(200).json({
+          success: true,
+          message: 'Attendance already recorded for this session.',
+          data: recordedAttendance,
+        });
+      }
+
+      throw createError;
+    }
 
     const duplicateAttendances = await Attendance.findAll({
       where: { sessionId: session.id, studentId: req.user.id },

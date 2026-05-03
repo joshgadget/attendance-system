@@ -9,6 +9,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import ForceResetPassword from './pages/ForceResetPassword';
 import Dashboard from './pages/Dashboard';
+import StudentCourseSelection from './pages/StudentCourseSelection';
 import { ThemeProvider } from './theme/ThemeContext';
 
 const AuthBootstrap = ({ children }) => {
@@ -60,6 +61,7 @@ const AppRoutes = () => {
       <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />
       <Route path="/force-reset" element={<PrivateRoute><ForceResetPassword /></PrivateRoute>} />
       <Route path="/dashboard" element={needsReset ? <Navigate to="/force-reset" replace /> : <PrivateRoute><Dashboard /></PrivateRoute>} />
+      <Route path="/course-selection" element={needsReset ? <Navigate to="/force-reset" replace /> : <PrivateRoute><StudentCourseSelection /></PrivateRoute>} />
       <Route path="/" element={<Navigate to={needsReset ? '/force-reset' : (isAuthenticated ? '/dashboard' : '/login')} replace />} />
       <Route path="*" element={<Navigate to={needsReset ? '/force-reset' : (isAuthenticated ? '/dashboard' : '/login')} replace />} />
     </Routes>

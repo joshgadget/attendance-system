@@ -21,7 +21,6 @@ import {
   Menu,
   MessageSquare,
   Moon,
-  Palette,
   Search,
   Send,
   ShieldCheck,
@@ -38,6 +37,7 @@ import {
 import QRCode from 'qrcode';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { logout } from '../redux/slices/authSlice';
 import { useTheme } from '../theme/ThemeContext';
@@ -484,8 +484,9 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
 };
 
 const Dashboard = () => {
-  const { isDark, theme, setTheme } = useTheme();
+  const { isDark, theme, toggleTheme } = useTheme();
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth);
   const role = user?.role || 'student';
   const tabs = TABS_BY_ROLE[role] || TABS_BY_ROLE.student;
@@ -1981,7 +1982,7 @@ const Dashboard = () => {
   }
 
   return (
-    <div className={`dashboard-shell min-h-screen ${isDark ? 'dark dashboard-shell--app text-slate-100' : 'text-slate-900'}`}>
+    <div className={`dashboard-shell min-h-screen ${isDark ? 'dark dashboard-shell--app text-slate-100' : 'dashboard-shell--light text-slate-900'} ${preferences.compactMode ? 'dashboard-shell--compact' : ''}`}>
       <QrScannerPanel isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={handleMarkAttendance} />
       <div className="dashboard-frame">
         <button
@@ -2019,7 +2020,7 @@ const Dashboard = () => {
 
           <div className="dashboard-sidebar__footer">
             <div className="dashboard-userchip">
-              <div className="dashboard-userchip__avatar">{(user?.firstName || user?.email || 'A').charAt(0).toUpperCase()}</div>
+              <Avatar person={user} photo={profilePhoto} className="dashboard-userchip__avatar" />
               <div>
                 <p className="dashboard-userchip__name">{fullName(user)}</p>
                 <p className="dashboard-userchip__meta">{role}</p>
@@ -2046,7 +2047,7 @@ const Dashboard = () => {
               </button>
               <div className={`dashboard-account-menu ${accountMenuOpen ? 'is-open' : ''}`}>
                 <button type="button" className="dashboard-account" onClick={() => setAccountMenuOpen((current) => !current)}>
-                  <div className="dashboard-account__avatar">{(user?.firstName || user?.email || 'A').charAt(0).toUpperCase()}</div>
+                  <Avatar person={user} photo={profilePhoto} className="dashboard-account__avatar" />
                   <ChevronDown className="h-4 w-4" />
                 </button>
                 <div className="dashboard-account-dropdown">
@@ -2054,11 +2055,7 @@ const Dashboard = () => {
                     <button
                       type="button"
                       className="dashboard-account-dropdown__item"
-                      onClick={() => {
-                        setActiveTab('analytics');
-                        setAccountMenuOpen(false);
-                        setSidebarOpen(false);
-                      }}
+                      onClick={() => openWorkspaceTab('analytics')}
                     >
                       <LayoutDashboard className="h-4 w-4" />
                       <span>Analytics</span>
@@ -2067,24 +2064,24 @@ const Dashboard = () => {
                   <button
                     type="button"
                     className="dashboard-account-dropdown__item"
-                    onClick={() => {
-                      setActiveTab('profile');
-                      setAccountMenuOpen(false);
-                      setSidebarOpen(false);
-                    }}
+                    onClick={() => openWorkspaceTab('settings')}
+                  >
+                    <Settings2 className="h-4 w-4" />
+                    <span>Settings</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-account-dropdown__item"
+                    onClick={() => openWorkspaceTab('profile')}
                   >
                     <UserCog className="h-4 w-4" />
-                    <span>Profile</span>
+                    <span>Profile & security</span>
                   </button>
                   {tabs.includes('help') && (
                     <button
                       type="button"
                       className="dashboard-account-dropdown__item"
-                      onClick={() => {
-                        setActiveTab('help');
-                        setAccountMenuOpen(false);
-                        setSidebarOpen(false);
-                      }}
+                      onClick={() => openWorkspaceTab('help')}
                     >
                       <CircleHelp className="h-4 w-4" />
                       <span>Help</span>
@@ -2325,6 +2322,17 @@ const Dashboard = () => {
             <div className="grid gap-8 xl:grid-cols-[0.9fr_1.1fr]">
               <Panel title="Profile summary" eyebrow="Identity">
                 <div className="space-y-4">
+                  <div className={`flex items-center gap-4 rounded-[1.5rem] border p-5 ${isDark ? 'border-slate-700 bg-slate-900/70' : 'border-slate-200 bg-slate-50/80'}`}>
+                    <Avatar person={profile || user} photo={profilePhoto} className="h-20 w-20 text-2xl" />
+                    <div>
+                      <p className={`text-lg font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{fullName(profile || user)}</p>
+                      <p className={`mt-1 text-sm ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>Profile photo, theme, and personal preferences now live in Settings.</p>
+                      <button type="button" onClick={() => openWorkspaceTab('settings')} className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-200">
+                        <Settings2 className="h-4 w-4" />
+                        Open settings
+                      </button>
+                    </div>
+                  </div>
                   <SummaryTile label="Full name" value={fullName(profile || user)} helper="Displayed throughout the system." />
                   <SummaryTile label="Email" value={profile?.email || user?.email || 'Not set'} helper="Used for login and email notifications." />
                   <SummaryTile label="Role" value={role} helper="Controls the workspace sections available to you." />
@@ -2366,6 +2374,173 @@ const Dashboard = () => {
                       </button>
                     </div>
                   </form>
+                </Panel>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'settings' && (
+            <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr]">
+              <Panel title="Personal settings" eyebrow="Workspace control">
+                <div className="space-y-5">
+                  <div className={`flex flex-col gap-5 rounded-[1.75rem] border p-5 ${isDark ? 'border-slate-700 bg-slate-900/70' : 'border-slate-200 bg-slate-50/80'} sm:flex-row sm:items-center sm:justify-between`}>
+                    <div className="flex items-center gap-4">
+                      <Avatar person={profile || user} photo={profilePhoto} className="h-24 w-24 text-3xl" />
+                      <div>
+                        <p className={`text-xl font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{fullName(profile || user)}</p>
+                        <p className={`mt-1 text-sm ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{profile?.email || user?.email || 'No email available'}</p>
+                        <p className={`mt-2 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Your photo shows in the sidebar and account menu on this device.</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handleProfilePhotoChange} />
+                      <button type="button" onClick={() => photoInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-800">
+                        <Upload className="h-4 w-4" />
+                        {profilePhoto ? 'Change photo' : 'Add photo'}
+                      </button>
+                      {profilePhoto && (
+                        <button type="button" onClick={handleRemoveProfilePhoto} className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+                          <Trash2 className="h-4 w-4" />
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <ActionTile title="Profile details" description="Use the Profile & security page to update your department, faculty, program, and password." />
+                    <ActionTile title="Account experience" description="Choose how the dashboard looks on this device and what kind of reminders you want to keep on." />
+                  </div>
+                </div>
+              </Panel>
+
+              <div className="grid gap-8">
+                <Panel title="Appearance" eyebrow="Theme">
+                  <div className="space-y-5">
+                    <div className={`rounded-[1.75rem] border p-5 ${isDark ? 'border-slate-700 bg-[linear-gradient(135deg,rgba(17,24,39,0.98),rgba(30,41,59,0.92))]' : 'border-slate-200 bg-[linear-gradient(135deg,#ffffff,#eef4ff)]'} shadow-[0_18px_40px_rgba(15,23,42,0.08)]`}>
+                      <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-blue-400">
+                            {theme === 'dark' ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5 text-amber-500" />}
+                            {theme} mode
+                          </div>
+                          <h3 className={`mt-4 text-xl font-bold tracking-tight ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Switch the workspace mood with one toggle</h3>
+                          <p className={`mt-2 max-w-xl text-sm leading-7 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>Dark keeps the dashboard cinematic and focused. Light opens it up for daytime use. Flip once and the whole workspace follows.</p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={toggleTheme}
+                          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+                          className={`group relative inline-flex w-full items-center justify-between rounded-[1.5rem] border p-2 md:w-[19rem] ${isDark ? 'border-slate-600 bg-slate-950/60' : 'border-slate-200 bg-white/90'} shadow-[0_16px_36px_rgba(15,23,42,0.12)] transition hover:scale-[1.01]`}
+                        >
+                          <span
+                            className={`absolute inset-y-2 w-[calc(50%-0.5rem)] rounded-[1.1rem] transition-transform duration-300 ${theme === 'dark' ? 'translate-x-0 bg-[linear-gradient(135deg,#1d4ed8,#312e81)]' : 'translate-x-[calc(100%+0.25rem)] bg-[linear-gradient(135deg,#f59e0b,#facc15)]'}`}
+                          />
+                          <span className={`relative z-10 flex flex-1 items-center justify-center gap-2 rounded-[1.1rem] px-4 py-3 text-sm font-semibold transition ${theme === 'dark' ? 'text-white' : isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                            <Moon className="h-4 w-4" />
+                            Dark
+                          </span>
+                          <span className={`relative z-10 flex flex-1 items-center justify-center gap-2 rounded-[1.1rem] px-4 py-3 text-sm font-semibold transition ${theme === 'light' ? 'text-slate-950' : isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                            <Sun className="h-4 w-4" />
+                            Light
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className={`rounded-[1.5rem] border p-5 transition ${theme === 'dark' ? 'border-blue-500 bg-blue-950/20 shadow-[0_14px_30px_rgba(37,99,235,0.18)]' : isDark ? 'border-slate-700 bg-slate-900/70' : 'border-slate-200 bg-slate-50/80'}`}>
+                        <div className="mb-4 flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#1d4ed8,#312e81)] text-white">
+                            <Moon className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <p className={`font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Dark theme</p>
+                            <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Focused, sleek, and easier on the eyes at night.</p>
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="h-3 rounded-full bg-slate-800/90" />
+                          <div className="grid grid-cols-[1.3fr_0.7fr] gap-3">
+                            <div className="h-20 rounded-[1.25rem] bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(30,41,59,0.94))]" />
+                            <div className="space-y-3">
+                              <div className="h-9 rounded-2xl bg-blue-600/90" />
+                              <div className="h-8 rounded-2xl bg-slate-700/90" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className={`rounded-[1.5rem] border p-5 transition ${theme === 'light' ? 'border-amber-300 bg-amber-50/80 shadow-[0_14px_30px_rgba(251,191,36,0.18)]' : isDark ? 'border-slate-700 bg-slate-900/70' : 'border-slate-200 bg-slate-50/80'}`}>
+                        <div className="mb-4 flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f59e0b,#fde047)] text-slate-900">
+                            <Sun className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <p className={`font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Light theme</p>
+                            <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Bright, airy, and great when you want more visual lift.</p>
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="h-3 rounded-full bg-slate-200" />
+                          <div className="grid grid-cols-[1.3fr_0.7fr] gap-3">
+                            <div className="h-20 rounded-[1.25rem] bg-[linear-gradient(180deg,#ffffff,#eaf2ff)]" />
+                            <div className="space-y-3">
+                              <div className="h-9 rounded-2xl bg-amber-300/90" />
+                              <div className="h-8 rounded-2xl bg-slate-200" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </Panel>
+
+                <Panel title="Preferences" eyebrow="Your experience">
+                  <div className="space-y-4">
+                    <PreferenceToggle
+                      label="Attendance and account alerts"
+                      description="Keep in-app notifications for important attendance activity and account updates."
+                      checked={preferences.emailUpdates}
+                      onChange={(value) => setPreferences((current) => ({ ...current, emailUpdates: value }))}
+                    />
+                    <PreferenceToggle
+                      label="Class reminder prompts"
+                      description="Show reminder-style cues before upcoming classes and attendance windows."
+                      checked={preferences.classReminders}
+                      onChange={(value) => setPreferences((current) => ({ ...current, classReminders: value }))}
+                    />
+                    <PreferenceToggle
+                      label="Compact dashboard layout"
+                      description="Reduce spacing a bit so more information fits comfortably on your screen."
+                      checked={preferences.compactMode}
+                      onChange={(value) => setPreferences((current) => ({ ...current, compactMode: value }))}
+                    />
+                  </div>
+                </Panel>
+
+                <Panel title="Quick links" eyebrow="Shortcuts">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <button type="button" onClick={() => openWorkspaceTab('profile')} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5 text-left transition hover:border-blue-300 hover:bg-blue-50/70 dark:border-slate-700 dark:bg-slate-900/70 dark:hover:border-blue-700 dark:hover:bg-slate-900">
+                      <div className="flex items-center gap-3">
+                        <UserCog className="h-5 w-5 text-blue-500" />
+                        <div>
+                          <p className="font-semibold text-slate-900 dark:text-slate-100">Profile & security</p>
+                          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Update names, department info, and password.</p>
+                        </div>
+                      </div>
+                    </button>
+                    <button type="button" onClick={() => openWorkspaceTab('help')} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5 text-left transition hover:border-blue-300 hover:bg-blue-50/70 dark:border-slate-700 dark:bg-slate-900/70 dark:hover:border-blue-700 dark:hover:bg-slate-900">
+                      <div className="flex items-center gap-3">
+                        <CircleHelp className="h-5 w-5 text-blue-500" />
+                        <div>
+                          <p className="font-semibold text-slate-900 dark:text-slate-100">Help & support</p>
+                          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Open support articles and contact details quickly.</p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
                 </Panel>
               </div>
             </div>
@@ -2726,6 +2901,24 @@ const Dashboard = () => {
               )}
               <Panel title={role === 'student' ? 'My semester courses' : 'Course directory'} eyebrow="Course list">
                 <div className="space-y-4">
+                  {role === 'student' && (
+                    <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">Need to add or remove semester courses?</p>
+                          <p className="mt-1 text-sm text-slate-600">Open the dedicated course-selection page to manage only the courses matched to your level, department, program, semester, and timetable.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => navigate('/course-selection')}
+                          className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-800"
+                        >
+                          <BookOpen className="h-4 w-4" />
+                          Manage courses
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {groupedCourses.length > 0 ? groupedCourses.map((departmentGroup) => (
                     <div key={`course-group-${departmentGroup.department}`} className="space-y-4">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
