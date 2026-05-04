@@ -9,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 
 const { testConnection } = require('./config/database');
 const { sequelize, setupAssociations } = require('./models');
+const { ensureSchemaGuard } = require('./utils/schemaGuard');
 const env = require('./utils/env');
 
 const app = express();
@@ -85,7 +86,11 @@ const startServer = async () => {
   try {
     setupAssociations();
     await testConnection();
+    const appliedChanges = await ensureSchemaGuard(sequelize);
     await sequelize.sync();
+    if (appliedChanges.length > 0) {
+      console.log(`Schema guard applied: ${appliedChanges.join(', ')}`);
+    }
     console.log('Database connected and synced successfully');
   } catch (error) {
     console.error('Database startup failed:', error);
