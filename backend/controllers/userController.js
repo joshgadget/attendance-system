@@ -2,6 +2,28 @@ const { Op } = require('sequelize');
 const { User, Course, Enrollment, StudentRegistry, Session, AbsenceQuery, Attendance, CourseAudience, CourseSchedule } = require('../models');
 
 const sanitizeUser = (user) => (typeof user.toSafeObject === 'function' ? user.toSafeObject() : user);
+const MAX_PROFILE_PHOTO_LENGTH = 1_500_000;
+
+const sanitizeProfilePhotoInput = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  if (!normalized.startsWith('data:image/')) {
+    const error = new Error('Profile photo must be a valid image.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (normalized.length > MAX_PROFILE_PHOTO_LENGTH) {
+    const error = new Error('Profile photo is too large. Choose a smaller image.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return normalized;
+};
 
 const ENTITY_STOP_WORDS = new Set(['OF', 'AND', 'THE', 'STUDIES', 'SCIENCES']);
 const DEPARTMENT_ALIAS_MAP = {
@@ -184,11 +206,13 @@ exports.updateMyProfile = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const allowedFields = ['firstName', 'lastName', 'department', 'faculty', 'program'];
+    const allowedFields = ['firstName', 'lastName', 'department', 'faculty', 'program', 'profilePhoto'];
     const payload = {};
     allowedFields.forEach((field) => {
       if (Object.prototype.hasOwnProperty.call(req.body, field)) {
-        payload[field] = req.body[field] || null;
+        payload[field] = field === 'profilePhoto'
+          ? sanitizeProfilePhotoInput(req.body[field])
+          : (req.body[field] || null);
       }
     });
 

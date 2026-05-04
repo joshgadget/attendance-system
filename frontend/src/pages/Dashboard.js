@@ -106,6 +106,7 @@ const normalizeSearch = (value) => String(value || '').toLowerCase();
 const includesSearch = (value, search) => normalizeSearch(value).includes(normalizeSearch(search));
 const getAvatarStorageKey = (user) => `attendance-system-avatar:${user?.id || user?.email || 'guest'}`;
 const getPreferenceStorageKey = (user) => `attendance-system-preferences:${user?.id || user?.email || 'guest'}`;
+const MAX_PROFILE_PHOTO_BYTES = 900 * 1024;
 const normalizeAcademicYearValue = (value) => {
   const raw = String(value || '').trim();
   if (!raw) {
@@ -548,6 +549,7 @@ const Dashboard = () => {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const attendanceRequestRef = useRef(false);
   const photoInputRef = useRef(null);
+  const legacyPhotoSyncRef = useRef(false);
 
   const activeSession = useMemo(() => sessions.find((session) => session.status === 'active') || null, [sessions]);
 
@@ -555,11 +557,12 @@ const Dashboard = () => {
     if (!user) {
       setProfilePhoto('');
       setPreferences({ emailUpdates: true, classReminders: true, compactMode: false });
+      legacyPhotoSyncRef.current = false;
       return;
     }
 
     const storedPhoto = window.localStorage.getItem(getAvatarStorageKey(user)) || '';
-    setProfilePhoto(storedPhoto);
+    setProfilePhoto(user?.profilePhoto || storedPhoto);
 
     try {
       const storedPreferences = JSON.parse(window.localStorage.getItem(getPreferenceStorageKey(user)) || '{}');
@@ -580,6 +583,47 @@ const Dashboard = () => {
 
     window.localStorage.setItem(getPreferenceStorageKey(user), JSON.stringify(preferences));
   }, [preferences, user]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    const serverPhoto = profile?.profilePhoto || user?.profilePhoto || '';
+    if (serverPhoto) {
+      setProfilePhoto(serverPhoto);
+      window.localStorage.setItem(getAvatarStorageKey(user), serverPhoto);
+      return;
+    }
+
+    const storedPhoto = window.localStorage.getItem(getAvatarStorageKey(user)) || '';
+    if (storedPhoto) {
+      setProfilePhoto(storedPhoto);
+    }
+  }, [profile, user]);
+
+  useEffect(() => {
+    if (!user || !profile || profile?.profilePhoto || legacyPhotoSyncRef.current) {
+      return;
+    }
+
+    const storedPhoto = window.localStorage.getItem(getAvatarStorageKey(user)) || '';
+    if (!storedPhoto) {
+      return;
+    }
+
+    legacyPhotoSyncRef.current = true;
+    api.put('/users/me/profile', { profilePhoto: storedPhoto })
+      .then((response) => {
+        const nextProfile = response.data.data || {};
+        setProfile((current) => ({ ...(current || {}), ...nextProfile }));
+        setProfilePhoto(nextProfile.profilePhoto || storedPhoto);
+        window.localStorage.setItem(getAvatarStorageKey(user), nextProfile.profilePhoto || storedPhoto);
+      })
+      .catch(() => {
+        legacyPhotoSyncRef.current = false;
+      });
+  }, [profile, user]);
 
   useEffect(() => {
     setActiveTab(tabs[0]);
@@ -666,6 +710,7 @@ const Dashboard = () => {
       setNotifications(notificationsResponse.data.data || []);
       setHelpCenter(helpResponse.data.data || { articles: [], contact: null });
       setProfile(profileResponse.data.data || null);
+      setProfilePhoto(profileResponse.data.data?.profilePhoto || '');
       setProfileForm({
         firstName: profileResponse.data.data?.firstName || '',
         lastName: profileResponse.data.data?.lastName || '',
@@ -1897,12 +1942,14 @@ const Dashboard = () => {
       return;
     }
 
-    if (file.size > 2 * 1024 * 1024) {
-      setMessage('', 'Profile photo should be 2MB or smaller.');
+    if (file.size > MAX_PROFILE_PHOTO_BYTES) {
+      setMessage('', 'Profile photo should be 900KB or smaller for reliable sync across devices.');
       return;
     }
 
     try {
+      setBusyAction('update-profile-photo');
+      setMessage();
       const nextPhoto = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result || ''));
@@ -1910,22 +1957,33 @@ const Dashboard = () => {
         reader.readAsDataURL(file);
       });
 
-      setProfilePhoto(nextPhoto);
-      if (user) {
-        window.localStorage.setItem(getAvatarStorageKey(user), nextPhoto);
-      }
+      const response = await api.put('/users/me/profile', { profilePhoto: nextPhoto });
+      const savedPhoto = response.data.data?.profilePhoto || nextPhoto;
+      setProfile((current) => ({ ...(current || {}), ...(response.data.data || {}), profilePhoto: savedPhoto }));
+      setProfilePhoto(savedPhoto);
+      if (user) window.localStorage.setItem(getAvatarStorageKey(user), savedPhoto);
       setMessage('Profile photo updated successfully.');
     } catch (fileError) {
-      setMessage('', fileError.message || 'Profile photo could not be updated.');
+      setMessage('', fileError.response?.data?.message || fileError.message || 'Profile photo could not be updated.');
+    } finally {
+      setBusyAction('');
     }
   };
 
-  const handleRemoveProfilePhoto = () => {
-    setProfilePhoto('');
-    if (user) {
-      window.localStorage.removeItem(getAvatarStorageKey(user));
+  const handleRemoveProfilePhoto = async () => {
+    try {
+      setBusyAction('update-profile-photo');
+      setMessage();
+      await api.put('/users/me/profile', { profilePhoto: null });
+      setProfile((current) => ({ ...(current || {}), profilePhoto: null }));
+      setProfilePhoto('');
+      if (user) window.localStorage.removeItem(getAvatarStorageKey(user));
+      setMessage('Profile photo removed.');
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Profile photo could not be removed.');
+    } finally {
+      setBusyAction('');
     }
-    setMessage('Profile photo removed.');
   };
 
   const handleUpdateProfile = async (event) => {
@@ -2389,18 +2447,18 @@ const Dashboard = () => {
                       <div>
                         <p className={`text-xl font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{fullName(profile || user)}</p>
                         <p className={`mt-1 text-sm ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{profile?.email || user?.email || 'No email available'}</p>
-                        <p className={`mt-2 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Your photo shows in the sidebar and account menu on this device.</p>
+                        <p className={`mt-2 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Your photo now stays with your account and should appear across phone, tablet, and laptop views after sync.</p>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-3">
                       <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handleProfilePhotoChange} />
-                      <button type="button" onClick={() => photoInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-800">
+                      <button type="button" onClick={() => photoInputRef.current?.click()} disabled={busyAction === 'update-profile-photo'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">
                         <Upload className="h-4 w-4" />
                         {profilePhoto ? 'Change photo' : 'Add photo'}
                       </button>
                       {profilePhoto && (
-                        <button type="button" onClick={handleRemoveProfilePhoto} className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
-                          <Trash2 className="h-4 w-4" />
+                        <button type="button" onClick={handleRemoveProfilePhoto} disabled={busyAction === 'update-profile-photo'} className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+                          {busyAction === 'update-profile-photo' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                           Remove
                         </button>
                       )}
