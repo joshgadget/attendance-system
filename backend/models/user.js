@@ -53,6 +53,10 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING(120),
     allowNull: true
   },
+  campus: {
+    type: DataTypes.STRING(120),
+    allowNull: true
+  },
   profilePhoto: {
     type: DataTypes.TEXT('long'),
     allowNull: true,
@@ -110,8 +114,8 @@ User.prototype.comparePassword = async function(candidatePassword) {
 
 // Method to return user data without password
 User.prototype.toSafeObject = function() {
-  const { id, firstName, lastName, email, role, matricNumber, department, faculty, program, profilePhoto, isActive, lastLogin, mustResetPassword, createdAt, updatedAt } = this.toJSON();
-  return { id, firstName, lastName, email, role, matricNumber, department, faculty, program, profilePhoto, isActive, lastLogin, mustResetPassword, createdAt, updatedAt };
+  const { id, firstName, lastName, email, role, matricNumber, department, faculty, program, campus, profilePhoto, isActive, lastLogin, mustResetPassword, createdAt, updatedAt } = this.toJSON();
+  return { id, firstName, lastName, email, role, matricNumber, department, faculty, program, campus, profilePhoto, isActive, lastLogin, mustResetPassword, createdAt, updatedAt };
 };
 
 module.exports = User;

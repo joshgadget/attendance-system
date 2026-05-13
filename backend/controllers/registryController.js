@@ -3,7 +3,7 @@ const { StudentRegistry, User } = require('../models');
 
 exports.getRegistry = async (req, res) => {
   try {
-    const { search, faculty, department, program, level, claimed } = req.query;
+    const { search, faculty, department, program, campus, level, claimed } = req.query;
     const where = {};
 
     if (search) {
@@ -14,6 +14,7 @@ exports.getRegistry = async (req, res) => {
         { department: { [Op.like]: `%${search}%` } },
         { faculty: { [Op.like]: `%${search}%` } },
         { program: { [Op.like]: `%${search}%` } },
+        { campus: { [Op.like]: `%${search}%` } },
       ];
     }
 
@@ -27,6 +28,10 @@ exports.getRegistry = async (req, res) => {
 
     if (program) {
       where.program = program;
+    }
+
+    if (campus) {
+      where.campus = campus;
     }
 
     if (level) {
@@ -54,7 +59,7 @@ exports.getRegistry = async (req, res) => {
 
 exports.createRegistryRecord = async (req, res) => {
   try {
-    const { matricNumber, firstName, lastName, otherName, faculty, department, program, level, admissionYear } = req.body;
+    const { matricNumber, firstName, lastName, otherName, faculty, department, program, campus, level, admissionYear } = req.body;
 
     if (!matricNumber || !firstName || !lastName || !faculty || !department || !program) {
       return res.status(400).json({
@@ -72,6 +77,7 @@ exports.createRegistryRecord = async (req, res) => {
         faculty,
         department,
         program,
+        campus: campus || null,
         level: level || null,
         admissionYear: admissionYear || null,
         isActive: true,
@@ -86,6 +92,7 @@ exports.createRegistryRecord = async (req, res) => {
         faculty,
         department,
         program,
+        campus: campus || null,
         level: level || null,
         admissionYear: admissionYear || null,
         isActive: true,
@@ -111,7 +118,7 @@ exports.bulkUpsertRegistry = async (req, res) => {
     }
 
     for (const record of records) {
-      const { matricNumber, firstName, lastName, faculty, department, program, otherName, level, admissionYear } = record;
+      const { matricNumber, firstName, lastName, faculty, department, program, campus, otherName, level, admissionYear } = record;
       if (!matricNumber || !firstName || !lastName || !faculty || !department || !program) {
         return res.status(400).json({
           success: false,
@@ -127,6 +134,7 @@ exports.bulkUpsertRegistry = async (req, res) => {
         faculty,
         department,
         program,
+        campus: campus || null,
         level: level || null,
         admissionYear: admissionYear || null,
         isActive: true,
@@ -164,6 +172,7 @@ exports.linkRegistryRecord = async (req, res) => {
       department: record.department,
       faculty: record.faculty,
       program: record.program,
+      campus: record.campus,
     });
 
     res.json({ success: true, message: 'Registry record linked to user', data: record });

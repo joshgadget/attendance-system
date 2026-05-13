@@ -1,6 +1,30 @@
-const { AbsenceQuery, User, Session, Course } = require('../models');
+const { Op } = require('sequelize');
+const { AbsenceQuery, User, Session, Course, Enrollment } = require('../models');
 const { sendEmail } = require('../utils/mailer');
+const { logAuditEvent } = require('../utils/auditLogger');
 const { findEnrollmentsForCourse } = require('../utils/enrollmentLookup');
+
+const getLecturerStudentIds = async (lecturerId) => {
+  const courses = await Course.findAll({
+    where: { lecturerId, isActive: true },
+    attributes: ['id'],
+  });
+
+  const courseIds = courses.map((course) => course.id);
+  if (courseIds.length === 0) {
+    return [];
+  }
+
+  const enrollments = await Enrollment.findAll({
+    where: {
+      courseId: { [Op.in]: courseIds },
+      status: 'active',
+    },
+    attributes: ['userId'],
+  });
+
+  return [...new Set(enrollments.map((entry) => entry.userId).filter(Boolean))];
+};
 
 exports.createQuery = async (req, res) => {
   try {
@@ -41,12 +65,36 @@ exports.createQuery = async (req, res) => {
       }
     }
 
+    if (!sessionId && req.user.role === 'lecturer') {
+      const lecturerStudentIds = await getLecturerStudentIds(req.user.id);
+      if (!lecturerStudentIds.includes(student.id)) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only send queries to students enrolled in your assigned courses.',
+        });
+      }
+    }
+
     const query = await AbsenceQuery.create({
       lecturerId: req.user.id,
       studentId,
       sessionId: sessionId || null,
       title,
       message
+    });
+
+    await logAuditEvent({
+      req,
+      action: 'absence_query.created',
+      targetType: 'absence_query',
+      targetId: query.id,
+      campus: student.campus || null,
+      faculty: student.faculty || null,
+      department: student.department || null,
+      metadata: {
+        sessionId: query.sessionId,
+        studentId: student.id,
+      },
     });
 
     try {
@@ -123,6 +171,14 @@ exports.respondToQuery = async (req, res) => {
     query.respondedAt = new Date();
     await query.save();
 
+    await logAuditEvent({
+      req,
+      action: 'absence_query.responded',
+      targetType: 'absence_query',
+      targetId: query.id,
+      metadata: { sessionId: query.sessionId, studentId: query.studentId },
+    });
+
     try {
       const lecturer = await User.findByPk(query.lecturerId);
       if (lecturer?.email) {
@@ -159,6 +215,14 @@ exports.closeQuery = async (req, res) => {
 
     query.status = 'closed';
     await query.save();
+
+    await logAuditEvent({
+      req,
+      action: 'absence_query.closed',
+      targetType: 'absence_query',
+      targetId: query.id,
+      metadata: { sessionId: query.sessionId, studentId: query.studentId },
+    });
 
     res.json({ success: true, message: 'Query closed', data: query });
   } catch (error) {

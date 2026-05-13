@@ -18,6 +18,10 @@ const Building = sequelize.define(
       type: DataTypes.STRING(60),
       allowNull: true,
     },
+    campus: {
+      type: DataTypes.STRING(120),
+      allowNull: true,
+    },
     latitude: {
       type: DataTypes.DECIMAL(10, 7),
       allowNull: false,

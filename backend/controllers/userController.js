@@ -135,6 +135,10 @@ const audienceMatchesRegistry = (audience, registryRecord) => {
     return false;
   }
 
+  if (audience.campus && registryRecord?.campus && !entitiesMatch(audience.campus, registryRecord.campus)) {
+    return false;
+  }
+
   if (audience.faculty && registryRecord?.faculty && !entitiesMatch(audience.faculty, registryRecord.faculty)) {
     return false;
   }
@@ -172,11 +176,38 @@ const courseMatchesRegistry = (course, registryRecord, semester, academicYear) =
   }
 
   return (
+    (!course.campus || !registryRecord?.campus || entitiesMatch(course.campus, registryRecord.campus)) &&
     (!course.faculty || !registryRecord?.faculty || entitiesMatch(course.faculty, registryRecord.faculty)) &&
     (!course.department || !registryRecord?.department || entitiesMatch(course.department, registryRecord.department, DEPARTMENT_ALIAS_MAP)) &&
     (!course.program || !registryRecord?.program || entitiesMatch(course.program, registryRecord.program, DEPARTMENT_ALIAS_MAP)) &&
     (!course.level || !registryRecord?.level || normalizeLevel(course.level) === normalizeLevel(registryRecord.level))
   );
+};
+
+const getLecturerCourseIds = async (lecturerId) => {
+  const lecturerCourses = await Course.findAll({
+    where: { lecturerId, isActive: true },
+    attributes: ['id'],
+  });
+
+  return lecturerCourses.map((course) => course.id);
+};
+
+const getLecturerStudentIds = async (lecturerId) => {
+  const courseIds = await getLecturerCourseIds(lecturerId);
+  if (courseIds.length === 0) {
+    return [];
+  }
+
+  const enrollments = await Enrollment.findAll({
+    where: {
+      courseId: { [Op.in]: courseIds },
+      status: 'active',
+    },
+    attributes: ['userId'],
+  });
+
+  return [...new Set(enrollments.map((entry) => entry.userId).filter(Boolean))];
 };
 
 exports.getMyProfile = async (req, res) => {
@@ -384,6 +415,7 @@ exports.getUsers = async (req, res) => {
         { email: { [Op.like]: `%${search}%` } },
         { matricNumber: { [Op.like]: `%${search}%` } },
         { department: { [Op.like]: `%${search}%` } },
+        { campus: { [Op.like]: `%${search}%` } },
       ];
     }
 
@@ -541,7 +573,7 @@ exports.getLecturers = async (req, res) => {
   try {
     const lecturers = await User.findAll({
       where: { role: 'lecturer', isActive: true },
-      attributes: ['id', 'firstName', 'lastName', 'email', 'department'],
+      attributes: ['id', 'firstName', 'lastName', 'email', 'department', 'campus'],
       order: [['firstName', 'ASC'], ['lastName', 'ASC']],
     });
 
@@ -553,10 +585,21 @@ exports.getLecturers = async (req, res) => {
 
 exports.getStudents = async (req, res) => {
   try {
+    const where = { role: 'student', isActive: true };
+
+    if (req.user.role === 'lecturer') {
+      const lecturerStudentIds = await getLecturerStudentIds(req.user.id);
+      if (lecturerStudentIds.length === 0) {
+        return res.json({ success: true, data: [] });
+      }
+
+      where.id = { [Op.in]: lecturerStudentIds };
+    }
+
     const students = await User.findAll({
-      where: { role: 'student', isActive: true },
-      attributes: ['id', 'firstName', 'lastName', 'email', 'matricNumber', 'department', 'faculty', 'program'],
-      include: [{ model: StudentRegistry, as: 'registryRecord', required: false, attributes: ['id', 'level', 'program', 'department', 'faculty'] }],
+      where,
+      attributes: ['id', 'firstName', 'lastName', 'email', 'matricNumber', 'department', 'faculty', 'program', 'campus'],
+      include: [{ model: StudentRegistry, as: 'registryRecord', required: false, attributes: ['id', 'level', 'program', 'department', 'faculty', 'campus'] }],
       order: [['firstName', 'ASC'], ['lastName', 'ASC']],
     });
 

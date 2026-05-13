@@ -61,6 +61,7 @@ const StudentSignup = () => {
     if (registry?.faculty) params.faculty = registry.faculty;
     if (registry?.department) params.department = registry.department;
     if (registry?.program) params.program = registry.program;
+    if (registry?.campus) params.campus = registry.campus;
     if (registry?.level) params.level = registry.level;
 
     const response = await api.get('/auth/public-courses', { params });
@@ -234,6 +235,7 @@ const StudentSignup = () => {
                       <InfoTile label="Matric Number" value={registryRecord.matricNumber} />
                       <InfoTile label="Name" value={[registryRecord.firstName, registryRecord.otherName, registryRecord.lastName].filter(Boolean).join(' ')} />
                       <InfoTile label="Program" value={registryRecord.program} />
+                      <InfoTile label="Campus" value={registryRecord.campus || 'Not set'} />
                       <InfoTile label="Faculty" value={registryRecord.faculty} />
                       <InfoTile label="Department" value={registryRecord.department} />
                       <InfoTile label="Level" value={registryRecord.level || 'Not set'} />

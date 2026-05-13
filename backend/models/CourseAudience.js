@@ -21,6 +21,10 @@ const CourseAudience = sequelize.define(
       type: DataTypes.STRING(120),
       allowNull: true,
     },
+    campus: {
+      type: DataTypes.STRING(120),
+      allowNull: true,
+    },
     department: {
       type: DataTypes.STRING(120),
       allowNull: true,

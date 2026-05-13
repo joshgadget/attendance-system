@@ -1,10 +1,15 @@
+const jwt = require('jsonwebtoken');
 const { Op, UniqueConstraintError } = require('sequelize');
 const { AbsenceQuery, Session, Attendance, Course, User, Building, Enrollment } = require('../models');
 const crypto = require('crypto');
+const authConfig = require('../config/auth');
 const { sendEmail } = require('../utils/mailer');
+const { logAuditEvent } = require('../utils/auditLogger');
 const { findEnrollmentsForCourse } = require('../utils/enrollmentLookup');
 
 const generateSessionCode = () => crypto.randomBytes(5).toString('hex').toUpperCase();
+const SESSION_SUMMARY_ATTRIBUTES = ['id', 'courseId', 'lecturerId', 'sessionCode', 'date', 'startTime', 'endTime', 'venue', 'status', 'maxAttendanceTime', 'createdAt', 'updatedAt'];
+const ATTENDANCE_PASS_TTL_SECONDS = 120;
 
 const buildEndTime = (startTime, durationMinutes) => {
   const [hours, minutes] = startTime.split(':').map(Number);
@@ -31,6 +36,53 @@ const distanceMeters = (lat1, lon1, lat2, lon2) => {
     Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return earthRadius * c;
+};
+
+const buildAttendancePassPayload = (session) => ({
+  type: 'attendance-pass',
+  sessionId: session.id,
+  sessionCode: session.sessionCode,
+  lecturerId: session.lecturerId,
+});
+
+const signAttendancePass = (session) => {
+  const token = jwt.sign(buildAttendancePassPayload(session), authConfig.jwt.secret, {
+    expiresIn: ATTENDANCE_PASS_TTL_SECONDS,
+  });
+  const decoded = jwt.decode(token);
+  return {
+    token,
+    expiresAt: decoded?.exp ? new Date(decoded.exp * 1000).toISOString() : null,
+  };
+};
+
+const verifyAttendancePass = (token, session) => {
+  if (!token) {
+    const error = new Error('Attendance key is required. Scan the lecturer QR code again and try once more.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, authConfig.jwt.secret);
+  } catch (error) {
+    const authError = new Error('Attendance key expired or invalid. Scan the lecturer QR code again.');
+    authError.statusCode = 403;
+    throw authError;
+  }
+
+  if (
+    decoded?.type !== 'attendance-pass' ||
+    Number(decoded?.sessionId) !== Number(session.id) ||
+    String(decoded?.sessionCode || '').trim().toUpperCase() !== String(session.sessionCode || '').trim().toUpperCase()
+  ) {
+    const mismatchError = new Error('Attendance key does not match this session. Scan the active QR code in class again.');
+    mismatchError.statusCode = 403;
+    throw mismatchError;
+  }
+
+  return decoded;
 };
 
 exports.createSession = async (req, res) => {
@@ -111,6 +163,25 @@ exports.createSession = async (req, res) => {
       geofenceRadiusMeters: Number(building.radiusMeters),
     });
 
+    await logAuditEvent({
+      req,
+      action: 'attendance.session.created',
+      targetType: 'session',
+      targetId: session.id,
+      campus: building.campus || course.campus || null,
+      faculty: course.faculty || null,
+      department: course.department || null,
+      metadata: {
+        courseId: course.id,
+        courseCode: course.courseCode,
+        buildingId: building.id,
+        buildingName: building.name,
+        date,
+        startTime: session.startTime,
+        endTime: session.endTime,
+      },
+    });
+
     res.status(201).json({
       success: true,
       message: 'Session created',
@@ -123,8 +194,13 @@ exports.createSession = async (req, res) => {
 
 exports.getSessions = async (req, res) => {
   try {
+    if (!['lecturer', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view attendance sessions' });
+    }
+
     const where = req.user.role === 'lecturer' ? { lecturerId: req.user.id } : {};
     const sessions = await Session.findAll({
+      attributes: SESSION_SUMMARY_ATTRIBUTES,
       where,
       include: [{ model: Course, as: 'course', attributes: ['id', 'courseCode', 'courseName'] }],
       order: [['date', 'DESC'], ['startTime', 'DESC']]
@@ -137,7 +213,12 @@ exports.getSessions = async (req, res) => {
 
 exports.getSession = async (req, res) => {
   try {
+    if (!['lecturer', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view attendance session details' });
+    }
+
     const session = await Session.findByPk(req.params.id, {
+      attributes: SESSION_SUMMARY_ATTRIBUTES,
       include: [
         { model: Course, as: 'course' },
         {
@@ -167,9 +248,12 @@ exports.getSession = async (req, res) => {
       .filter((entry) => !presentStudentIds.has(entry.userId))
       .map((entry) => entry.student);
     const markedStudents = session.attendances.length;
+    const attendancePassBundle = session.status === 'active' ? signAttendancePass(session) : null;
 
     const payload = {
       ...session.toJSON(),
+      attendancePass: attendancePassBundle?.token || null,
+      attendancePassExpiresAt: attendancePassBundle?.expiresAt || null,
       attendanceStats: {
         expectedCount: enrollments.length,
         markedCount: markedStudents,
@@ -190,7 +274,7 @@ exports.getSession = async (req, res) => {
 
 exports.markAttendance = async (req, res) => {
   try {
-    const { sessionCode, session_code, latitude, longitude } = req.body;
+    const { sessionCode, session_code, attendancePass, attendance_pass, latitude, longitude } = req.body;
     const resolvedSessionCode = sessionCode || session_code;
     if (!resolvedSessionCode) {
       return res.status(400).json({ success: false, message: 'sessionCode is required' });
@@ -202,8 +286,28 @@ exports.markAttendance = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Invalid or expired session code' });
     }
 
+    try {
+      verifyAttendancePass(attendancePass || attendance_pass, session);
+    } catch (verificationError) {
+      await logAuditEvent({
+        req,
+        action: 'attendance.mark.rejected.invalid_pass',
+        targetType: 'session',
+        targetId: session.id,
+        metadata: { sessionCode: resolvedSessionCode },
+      });
+      return res.status(verificationError.statusCode || 403).json({ success: false, message: verificationError.message });
+    }
+
     const existing = await Attendance.findOne({ where: { sessionId: session.id, studentId: req.user.id } });
     if (existing) {
+      await logAuditEvent({
+        req,
+        action: 'attendance.mark.duplicate',
+        targetType: 'attendance',
+        targetId: existing.id,
+        metadata: { sessionId: session.id, courseId: session.courseId, status: existing.status },
+      });
       return res.status(200).json({
         success: true,
         message: 'Attendance already recorded for this session.',
@@ -232,6 +336,13 @@ exports.markAttendance = async (req, res) => {
     });
 
     if (!enrollment) {
+      await logAuditEvent({
+        req,
+        action: 'attendance.mark.rejected.not_enrolled',
+        targetType: 'session',
+        targetId: session.id,
+        metadata: { courseId: session.courseId },
+      });
       return res.status(403).json({
         success: false,
         message: 'You are not registered for this course, so attendance cannot be marked.',
@@ -245,6 +356,13 @@ exports.markAttendance = async (req, res) => {
 
     if (hasGeofence(session)) {
       if (latitude === undefined || longitude === undefined) {
+        await logAuditEvent({
+          req,
+          action: 'attendance.mark.rejected.location_missing',
+          targetType: 'session',
+          targetId: session.id,
+          metadata: { courseId: session.courseId },
+        });
         return res.status(403).json({
           success: false,
           message: 'This class requires location verification. Enable location and try again.',
@@ -265,6 +383,17 @@ exports.markAttendance = async (req, res) => {
       );
 
       if (meters > Number(session.geofenceRadiusMeters)) {
+        await logAuditEvent({
+          req,
+          action: 'attendance.mark.rejected.outside_geofence',
+          targetType: 'session',
+          targetId: session.id,
+          metadata: {
+            courseId: session.courseId,
+            distanceMeters: Math.round(meters),
+            allowedRadiusMeters: Number(session.geofenceRadiusMeters),
+          },
+        });
         return res.status(403).json({
           success: false,
           message: `Outside allowed attendance zone. Distance is ${Math.round(meters)}m, max allowed is ${session.geofenceRadiusMeters}m.`,
@@ -317,6 +446,22 @@ exports.markAttendance = async (req, res) => {
         data: primaryAttendance,
       });
     }
+
+    await logAuditEvent({
+      req,
+      action: 'attendance.marked',
+      targetType: 'attendance',
+      targetId: attendance.id,
+      campus: course?.campus || null,
+      faculty: course?.faculty || null,
+      department: course?.department || null,
+      metadata: {
+        sessionId: session.id,
+        courseId: session.courseId,
+        status,
+        verificationMethod: 'qr+pass+geofence',
+      },
+    });
 
     res.status(201).json({ success: true, message: `Attendance marked as ${status}`, data: attendance });
   } catch (error) {
@@ -391,6 +536,21 @@ exports.closeSession = async (req, res) => {
         }
       }
     }
+
+    await logAuditEvent({
+      req,
+      action: 'attendance.session.closed',
+      targetType: 'session',
+      targetId: session.id,
+      campus: session.course?.campus || null,
+      faculty: session.course?.faculty || null,
+      department: session.course?.department || null,
+      metadata: {
+        courseId: session.courseId,
+        absentCount: absentEnrollments.length,
+        markedCount: attendances.length,
+      },
+    });
 
     res.json({
       success: true,

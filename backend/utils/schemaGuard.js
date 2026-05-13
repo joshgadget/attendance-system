@@ -35,6 +35,41 @@ const ensureSchemaGuard = async (sequelize) => {
     appliedChanges.push('users.profile_photo');
   }
 
+  if (await ensureColumn(queryInterface, 'users', 'campus', {
+    type: DataTypes.STRING(120),
+    allowNull: true,
+  })) {
+    appliedChanges.push('users.campus');
+  }
+
+  if (await ensureColumn(queryInterface, 'courses', 'campus', {
+    type: DataTypes.STRING(120),
+    allowNull: true,
+  })) {
+    appliedChanges.push('courses.campus');
+  }
+
+  if (await ensureColumn(queryInterface, 'buildings', 'campus', {
+    type: DataTypes.STRING(120),
+    allowNull: true,
+  })) {
+    appliedChanges.push('buildings.campus');
+  }
+
+  if (await ensureColumn(queryInterface, 'student_registry', 'campus', {
+    type: DataTypes.STRING(120),
+    allowNull: true,
+  })) {
+    appliedChanges.push('student_registry.campus');
+  }
+
+  if (await ensureColumn(queryInterface, 'course_audiences', 'campus', {
+    type: DataTypes.STRING(120),
+    allowNull: true,
+  })) {
+    appliedChanges.push('course_audiences.campus');
+  }
+
   if (await ensureIndex(queryInterface, 'attendance', 'attendance_session_student_unique', {
     unique: true,
     fields: ['sessionId', 'studentId'],

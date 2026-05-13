@@ -1,9 +1,10 @@
 const { Building } = require('../models');
 const { Op } = require('sequelize');
+const { logAuditEvent } = require('../utils/auditLogger');
 
 exports.getBuildings = async (req, res) => {
   try {
-    const { activeOnly, search } = req.query;
+    const { activeOnly, search, campus } = req.query;
     const where = {};
 
     if (activeOnly === 'true') {
@@ -14,7 +15,12 @@ exports.getBuildings = async (req, res) => {
       where[Op.or] = [
         { name: { [Op.like]: `%${search}%` } },
         { tag: { [Op.like]: `%${search}%` } },
+        { campus: { [Op.like]: `%${search}%` } },
       ];
+    }
+
+    if (campus) {
+      where.campus = campus;
     }
 
     const buildings = await Building.findAll({
@@ -30,7 +36,7 @@ exports.getBuildings = async (req, res) => {
 
 exports.createBuilding = async (req, res) => {
   try {
-    const { name, tag, latitude, longitude, radiusMeters } = req.body;
+    const { name, tag, campus, latitude, longitude, radiusMeters } = req.body;
 
     if (!name || latitude === undefined || longitude === undefined || radiusMeters === undefined) {
       return res.status(400).json({
@@ -61,10 +67,23 @@ exports.createBuilding = async (req, res) => {
     const building = await Building.create({
       name: name.trim(),
       tag: tag ? String(tag).trim() : null,
+      campus: campus ? String(campus).trim() : null,
       latitude: parsedLatitude,
       longitude: parsedLongitude,
       radiusMeters: parsedRadius,
       isActive: true,
+    });
+
+    await logAuditEvent({
+      req,
+      action: 'building.created',
+      targetType: 'building',
+      targetId: building.id,
+      campus: building.campus,
+      metadata: {
+        name: building.name,
+        radiusMeters: building.radiusMeters,
+      },
     });
 
     return res.status(201).json({ success: true, message: 'Building geofence created successfully', data: building });
@@ -83,6 +102,7 @@ exports.updateBuilding = async (req, res) => {
     const payload = {};
     if (req.body.name !== undefined) payload.name = String(req.body.name).trim();
     if (req.body.tag !== undefined) payload.tag = req.body.tag ? String(req.body.tag).trim() : null;
+    if (req.body.campus !== undefined) payload.campus = req.body.campus ? String(req.body.campus).trim() : null;
 
     if (req.body.latitude !== undefined) {
       const parsed = Number(req.body.latitude);
@@ -113,6 +133,16 @@ exports.updateBuilding = async (req, res) => {
     }
 
     await building.update(payload);
+    await logAuditEvent({
+      req,
+      action: 'building.updated',
+      targetType: 'building',
+      targetId: building.id,
+      campus: payload.campus ?? building.campus,
+      metadata: {
+        changedFields: Object.keys(payload),
+      },
+    });
     return res.json({ success: true, message: 'Building updated successfully', data: building });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -128,6 +158,15 @@ exports.deactivateBuilding = async (req, res) => {
 
     building.isActive = false;
     await building.save();
+
+    await logAuditEvent({
+      req,
+      action: 'building.deactivated',
+      targetType: 'building',
+      targetId: building.id,
+      campus: building.campus,
+      metadata: { name: building.name },
+    });
 
     return res.json({ success: true, message: 'Building deactivated successfully', data: building });
   } catch (error) {

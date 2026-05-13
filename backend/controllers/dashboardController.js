@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { User, Course, Enrollment, Session, Attendance, AbsenceQuery, StudentRegistry, CourseSchedule } = require('../models');
+const { User, Course, Enrollment, Session, Attendance, AbsenceQuery, StudentRegistry, CourseSchedule, AuditLog } = require('../models');
 
 const sortByDateDesc = (items, accessor) =>
   [...items].sort((left, right) => new Date(accessor(right)).getTime() - new Date(accessor(left)).getTime());
@@ -89,14 +89,15 @@ const buildUpcomingScheduleNotifications = (enrollments = [], scope = 'student')
 };
 
 const buildAdminAnalytics = async () => {
-  const [users, courses, sessions, attendances, queries, registryRecords, enrollments] = await Promise.all([
+  const [users, courses, sessions, attendances, queries, registryRecords, enrollments, auditLogs] = await Promise.all([
     User.findAll({ attributes: ['id', 'role', 'isActive', 'createdAt'] }),
-    Course.findAll({ attributes: ['id', 'courseCode', 'courseName', 'isActive', 'createdAt'] }),
+    Course.findAll({ attributes: ['id', 'courseCode', 'courseName', 'campus', 'faculty', 'department', 'isActive', 'createdAt'] }),
     Session.findAll({ attributes: ['id', 'courseId', 'status', 'createdAt', 'updatedAt'] }),
     Attendance.findAll({ attributes: ['id', 'courseId', 'status', 'markedAt', 'createdAt'] }),
     AbsenceQuery.findAll({ attributes: ['id', 'status', 'createdAt', 'respondedAt'] }),
-    StudentRegistry.findAll({ attributes: ['id', 'claimedByUserId', 'createdAt'] }),
+    StudentRegistry.findAll({ attributes: ['id', 'campus', 'faculty', 'department', 'claimedByUserId', 'createdAt'] }),
     Enrollment.findAll({ attributes: ['id', 'courseId', 'createdAt'] }),
+    AuditLog.findAll({ attributes: ['id', 'action', 'campus', 'department', 'createdAt'] }),
   ]);
 
   const attendanceBreakdown = ['present', 'late', 'absent', 'excused'].map((status) => ({
@@ -114,7 +115,18 @@ const buildAdminAnalytics = async () => {
     value: queries.filter((entry) => entry.status === status).length,
   }));
 
-  const courseMap = new Map(courses.map((course) => [course.id, course]));
+  const campusBreakdown = [...new Set([...courses.map((entry) => entry.campus), ...registryRecords.map((entry) => entry.campus)].filter(Boolean))]
+    .map((campus) => ({
+      label: campus,
+      value: courses.filter((entry) => entry.campus === campus && entry.isActive).length,
+    }));
+
+  const facultyBreakdown = [...new Set([...courses.map((entry) => entry.faculty), ...registryRecords.map((entry) => entry.faculty)].filter(Boolean))]
+    .map((faculty) => ({
+      label: faculty,
+      value: courses.filter((entry) => entry.faculty === faculty && entry.isActive).length,
+    }));
+
   const courseAnalytics = courses
     .filter((course) => course.isActive)
     .map((course) => {
@@ -138,6 +150,31 @@ const buildAdminAnalytics = async () => {
     .sort((left, right) => (right.sessionCount + right.enrolledCount) - (left.sessionCount + left.enrolledCount))
     .slice(0, 6);
 
+  const institutionAnalytics = [...new Set(courses.filter((entry) => entry.isActive).map((entry) => `${entry.campus || 'Unassigned campus'}::${entry.department || 'Unassigned department'}`))]
+    .map((compositeKey) => {
+      const [campus, department] = compositeKey.split('::');
+      const scopedCourses = courses.filter((entry) => (entry.campus || 'Unassigned campus') === campus && (entry.department || 'Unassigned department') === department && entry.isActive);
+      return {
+        label: `${campus} - ${department}`,
+        courseCount: scopedCourses.length,
+        sessionCount: sessions.filter((entry) => scopedCourses.some((course) => course.id === entry.courseId)).length,
+        enrolledCount: enrollments.filter((entry) => scopedCourses.some((course) => course.id === entry.courseId)).length,
+      };
+    })
+    .sort((left, right) => right.enrolledCount - left.enrolledCount)
+    .slice(0, 8);
+
+  const recentAuditTrail = auditLogs
+    .slice()
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 8)
+    .map((entry) => ({
+      label: entry.action,
+      campus: entry.campus || 'N/A',
+      department: entry.department || 'N/A',
+      createdAt: new Date(entry.createdAt).toLocaleString(),
+    }));
+
   return {
     highlightCards: [
       { label: 'Active users', value: users.filter((entry) => entry.isActive).length, helper: 'Accounts enabled across all roles' },
@@ -149,9 +186,13 @@ const buildAdminAnalytics = async () => {
       attendanceBreakdown,
       roleBreakdown,
       queryBreakdown,
+      campusBreakdown,
+      facultyBreakdown,
     },
     tables: {
       courseAnalytics,
+      institutionAnalytics,
+      recentAuditTrail,
     },
   };
 };
@@ -277,7 +318,7 @@ const buildStudentAnalytics = async (userId) => {
 };
 
 const buildAdminNotifications = async () => {
-  const [queries, sessions, registryRecords] = await Promise.all([
+  const [queries, sessions, registryRecords, rejectedAttempts] = await Promise.all([
     AbsenceQuery.findAll({
       include: [
         { model: User, as: 'student', attributes: ['firstName', 'lastName', 'matricNumber'] },
@@ -293,6 +334,15 @@ const buildAdminNotifications = async () => {
       limit: 3,
     }),
     StudentRegistry.findAll({ where: { claimedByUserId: null, isActive: true }, order: [['createdAt', 'DESC']], limit: 3 }),
+    AuditLog.findAll({
+      where: {
+        action: {
+          [Op.like]: 'attendance.mark.rejected%',
+        },
+      },
+      order: [['createdAt', 'DESC']],
+      limit: 3,
+    }),
   ]);
 
   const items = [
@@ -313,6 +363,12 @@ const buildAdminNotifications = async () => {
       description: `${record.matricNumber} is ready for student self-signup.`,
       tone: 'slate',
       createdAt: record.createdAt,
+    })),
+    ...rejectedAttempts.map((entry) => ({
+      title: 'Blocked attendance attempt',
+      description: `${entry.action.replace('attendance.mark.rejected.', '').replace(/\./g, ' ')} was recorded${entry.campus ? ` at ${entry.campus}` : ''}.`,
+      tone: 'rose',
+      createdAt: entry.createdAt,
     })),
   ];
 

@@ -40,6 +40,10 @@ const Course = sequelize.define('Course', {
     type: DataTypes.STRING(120),
     allowNull: true
   },
+  campus: {
+    type: DataTypes.STRING(120),
+    allowNull: true
+  },
   level: {
     type: DataTypes.STRING(20),
     allowNull: true

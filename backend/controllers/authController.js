@@ -15,6 +15,7 @@ const generateTokens = (user) => {
 const normalizeEmail = (email = '') => email.trim().toLowerCase();
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 const buildDisplayName = (user) => [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'there';
+const normalizeCampus = (value = '') => String(value || '').trim();
 
 const sendWelcomeEmail = async (user, context = {}) => {
   if (!user?.email) {
@@ -30,6 +31,7 @@ const sendWelcomeEmail = async (user, context = {}) => {
     context.department ? `Department: ${context.department}` : null,
     context.faculty ? `Faculty: ${context.faculty}` : null,
     context.program ? `Program: ${context.program}` : null,
+    context.campus ? `Campus: ${context.campus}` : null,
   ].filter(Boolean);
 
   await sendEmail({
@@ -195,6 +197,10 @@ const audienceMatchesRegistry = (audience, registryRecord) => {
     return false;
   }
 
+  if (audience.campus && registryRecord?.campus && !entitiesMatch(audience.campus, registryRecord.campus)) {
+    return false;
+  }
+
   if (audience.faculty && registryRecord?.faculty && !entitiesMatch(audience.faculty, registryRecord.faculty)) {
     return false;
   }
@@ -232,6 +238,7 @@ const courseMatchesRegistry = (course, registryRecord, semester, academicYear) =
   }
 
   return (
+    (!course.campus || !registryRecord?.campus || entitiesMatch(course.campus, registryRecord.campus)) &&
     (!course.faculty || !registryRecord?.faculty || entitiesMatch(course.faculty, registryRecord.faculty)) &&
     (!course.department || !registryRecord?.department || entitiesMatch(course.department, registryRecord.department, DEPARTMENT_ALIAS_MAP)) &&
     (!course.program || !registryRecord?.program || entitiesMatch(course.program, registryRecord.program, DEPARTMENT_ALIAS_MAP)) &&
@@ -241,7 +248,7 @@ const courseMatchesRegistry = (course, registryRecord, semester, academicYear) =
 
 const register = async (req, res) => {
   try {
-    const { email, password, firstName, lastName, role, department, faculty, program, matricNumber } = req.body;
+    const { email, password, firstName, lastName, role, department, faculty, program, campus, matricNumber } = req.body;
 
     if (!email || !password || !firstName || !lastName || !role) {
       return res.status(400).json({
@@ -272,6 +279,7 @@ const register = async (req, res) => {
       department,
       faculty: faculty || null,
       program: program || null,
+      campus: normalizeCampus(campus) || null,
       matricNumber: matricNumber || null,
     });
 
@@ -281,6 +289,7 @@ const register = async (req, res) => {
         department,
         faculty,
         program,
+        campus,
       });
     } catch (emailError) {
       console.warn(`Welcome email failed for ${user.email}:`, emailError.message);
@@ -319,6 +328,7 @@ const studentLookup = async (req, res) => {
         faculty: record.faculty,
         department: record.department,
         program: record.program,
+        campus: record.campus,
         level: record.level,
         admissionYear: record.admissionYear,
       },
@@ -330,7 +340,7 @@ const studentLookup = async (req, res) => {
 
 const getPublicCourses = async (req, res) => {
   try {
-    const { semester, academicYear, faculty, department, program, level } = req.query;
+    const { semester, academicYear, faculty, department, program, campus, level } = req.query;
     const where = { isActive: true };
 
     if (semester) {
@@ -345,7 +355,7 @@ const getPublicCourses = async (req, res) => {
         where: { isActive: true },
         required: false,
       }],
-      attributes: ['id', 'courseCode', 'courseName', 'semester', 'academicYear', 'faculty', 'department', 'program', 'level'],
+      attributes: ['id', 'courseCode', 'courseName', 'semester', 'academicYear', 'campus', 'faculty', 'department', 'program', 'level'],
       order: [['courseCode', 'ASC']],
     });
 
@@ -354,6 +364,7 @@ const getPublicCourses = async (req, res) => {
       faculty,
       department,
       program,
+      campus,
       level,
     }, semester, normalizedRequestedYear));
 
@@ -420,6 +431,7 @@ const studentSignup = async (req, res) => {
       department: registryRecord.department,
       faculty: registryRecord.faculty,
       program: registryRecord.program,
+      campus: registryRecord.campus,
     });
 
     await createStudentEnrollments(user.id, resolvedCourseIds, semester, normalizedAcademicYear);
@@ -433,6 +445,7 @@ const studentSignup = async (req, res) => {
         department: registryRecord.department,
         faculty: registryRecord.faculty,
         program: registryRecord.program,
+        campus: registryRecord.campus,
       });
     } catch (emailError) {
       console.warn(`Welcome email failed for ${user.email}:`, emailError.message);

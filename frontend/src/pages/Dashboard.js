@@ -43,13 +43,13 @@ import { logout } from '../redux/slices/authSlice';
 import { useTheme } from '../theme/ThemeContext';
 import './dashboard-theme.css';
 
-const initialUserForm = { firstName: '', lastName: '', email: '', password: '', role: 'student', department: '', faculty: '', program: '', matricNumber: '' };
-const initialCourseForm = { courseCode: '', courseName: '', description: '', semester: 'rain', academicYear: '', lecturerId: '', faculty: '', department: '', program: '', level: '' };
-const initialRegistryForm = { matricNumber: '', firstName: '', lastName: '', otherName: '', faculty: '', department: '', program: '', level: '', admissionYear: '' };
+const initialUserForm = { firstName: '', lastName: '', email: '', password: '', role: 'student', department: '', faculty: '', program: '', campus: '', matricNumber: '' };
+const initialCourseForm = { courseCode: '', courseName: '', description: '', semester: 'rain', academicYear: '', lecturerId: '', faculty: '', department: '', program: '', campus: '', level: '' };
+const initialRegistryForm = { matricNumber: '', firstName: '', lastName: '', otherName: '', faculty: '', department: '', program: '', campus: '', level: '', admissionYear: '' };
 const initialSessionForm = { courseId: '', date: '', startTime: '', durationMinutes: '120', venue: '', maxAttendanceTime: '15', buildingId: '' };
-const initialBuildingForm = { name: '', tag: '', latitude: '', longitude: '', radiusMeters: '80' };
+const initialBuildingForm = { name: '', tag: '', campus: '', latitude: '', longitude: '', radiusMeters: '80' };
 const initialQueryForm = { studentId: '', sessionId: '', title: '', message: '' };
-const initialAttendanceForm = { sessionCode: '', useLocation: true };
+const initialAttendanceForm = { sessionCode: '', attendancePass: '', useLocation: true };
 const TABS_BY_ROLE = {
   admin: ['overview', 'analytics', 'users', 'registry', 'courses', 'reports', 'notifications', 'help'],
   lecturer: ['overview', 'analytics', 'courses', 'sessions', 'queries', 'reports', 'notifications', 'help'],
@@ -164,12 +164,16 @@ const getCurrentLocation = () =>
     );
   });
 
-const extractSessionCode = (decodedText) => {
+const extractAttendancePayload = (decodedText) => {
+  const fallback = { sessionCode: '', attendancePass: '' };
   try {
     const parsedUrl = new URL(decodedText);
     const directCode = parsedUrl.searchParams.get('sessionCode');
     if (directCode) {
-      return directCode.trim().toUpperCase();
+      return {
+        sessionCode: directCode.trim().toUpperCase(),
+        attendancePass: (parsedUrl.searchParams.get('attendancePass') || '').trim(),
+      };
     }
   } catch (error) {
     // not a full absolute URL, keep trying other formats
@@ -180,15 +184,21 @@ const extractSessionCode = (decodedText) => {
     const params = new URLSearchParams(queryString);
     const queryCode = params.get('sessionCode');
     if (queryCode) {
-      return queryCode.trim().toUpperCase();
+      return {
+        sessionCode: queryCode.trim().toUpperCase(),
+        attendancePass: (params.get('attendancePass') || '').trim(),
+      };
     }
   }
 
   try {
     const parsed = JSON.parse(decodedText);
-    return (parsed.sessionCode || decodedText).trim().toUpperCase();
+    return {
+      sessionCode: String(parsed.sessionCode || '').trim().toUpperCase(),
+      attendancePass: String(parsed.attendancePass || '').trim(),
+    };
   } catch (error) {
-    return decodedText.trim().toUpperCase();
+    return { ...fallback, sessionCode: decodedText.trim().toUpperCase() };
   }
 };
 
@@ -317,10 +327,10 @@ const MetricList = ({ items, emptyMessage }) => {
 
   return (
     <div className="space-y-4">
-      {items.map((item) => {
+      {items.map((item, index) => {
         const values = Object.entries(item).filter(([key]) => !['courseId', 'courseLabel', 'label'].includes(key));
         return (
-          <div key={item.courseId || item.label} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/70">
+          <div key={item.courseId || `${item.label}-${index}`} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/70">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <p className="font-semibold text-slate-900 dark:text-slate-100">{item.courseLabel || item.label}</p>
@@ -436,16 +446,16 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
         }
 
         scanHandledRef.current = true;
-        const code = extractSessionCode(decodedText);
-        if (!code) {
+        const payload = extractAttendancePayload(decodedText);
+        if (!payload.sessionCode) {
           scanHandledRef.current = false;
-          setScannerError('The scanned QR code does not contain a valid attendance session code.');
+          setScannerError('The scanned QR code does not contain a valid attendance session.');
           return;
         }
 
         try {
           await stopScanner();
-          await onDetected(code);
+          await onDetected(payload);
         } finally {
           cancelled = true;
           await stopScanner();
@@ -681,7 +691,11 @@ const Dashboard = () => {
     setSessionDetail(detail);
 
     if (detail?.sessionCode) {
-      const dataUrl = await QRCode.toDataURL(detail.sessionCode, {
+      const qrPayload = JSON.stringify({
+        sessionCode: detail.sessionCode,
+        attendancePass: detail.attendancePass || '',
+      });
+      const dataUrl = await QRCode.toDataURL(qrPayload, {
         width: 320,
         margin: 2,
         color: { dark: '#0f172a', light: '#ffffff' },
@@ -689,6 +703,18 @@ const Dashboard = () => {
       setQrDataUrl(dataUrl);
     }
   }, []);
+
+  useEffect(() => {
+    if (role !== 'lecturer' || !sessionDetail?.id || sessionDetail?.status !== 'active') {
+      return undefined;
+    }
+
+    const refreshInterval = window.setInterval(() => {
+      loadSessionDetail(sessionDetail.id).catch(() => null);
+    }, 45000);
+
+    return () => window.clearInterval(refreshInterval);
+  }, [loadSessionDetail, role, sessionDetail?.id, sessionDetail?.status]);
 
   const loadData = useCallback(async (spin = false) => {
     try {
@@ -855,7 +881,7 @@ const Dashboard = () => {
       setBusyAction('');
     }
   };
-
+ 
   const handleStartCourseEdit = (course) => {
     setEditingCourseId(String(course.id));
     setCourseEditForm({
@@ -903,6 +929,7 @@ const Dashboard = () => {
       await api.post('/buildings', {
         name: buildingForm.name,
         tag: buildingForm.tag,
+        campus: buildingForm.campus,
         latitude: buildingForm.latitude,
         longitude: buildingForm.longitude,
         radiusMeters: buildingForm.radiusMeters,
@@ -1409,15 +1436,24 @@ const Dashboard = () => {
     }
   };
 
-  const handleMarkAttendance = useCallback(async (overrideCode) => {
+  const handleMarkAttendance = useCallback(async (overridePayload) => {
     if (attendanceRequestRef.current) {
       return false;
     }
 
     try {
-      const sessionCode = String(overrideCode || attendanceForm.sessionCode || '').trim().toUpperCase();
+      const resolvedPayload = typeof overridePayload === 'string'
+        ? { sessionCode: overridePayload, attendancePass: '' }
+        : (overridePayload || {});
+      const sessionCode = String(resolvedPayload.sessionCode || attendanceForm.sessionCode || '').trim().toUpperCase();
+      const attendancePass = String(resolvedPayload.attendancePass || attendanceForm.attendancePass || '').trim();
       if (!sessionCode) {
         setMessage('', 'Enter or scan a valid session code before marking attendance.');
+        return false;
+      }
+
+      if (!attendancePass) {
+        setMessage('', 'Attendance key is missing. Scan the lecturer QR code or enter both the session code and attendance key.');
         return false;
       }
 
@@ -1427,6 +1463,7 @@ const Dashboard = () => {
       const location = attendanceForm.useLocation ? await getCurrentLocation() : null;
       const response = await api.post('/attendance/mark', {
         sessionCode,
+        attendancePass,
         latitude: location?.latitude,
         longitude: location?.longitude,
       });
@@ -1441,7 +1478,7 @@ const Dashboard = () => {
       attendanceRequestRef.current = false;
       setBusyAction('');
     }
-  }, [attendanceForm.sessionCode, attendanceForm.useLocation, loadData]);
+  }, [attendanceForm.attendancePass, attendanceForm.sessionCode, attendanceForm.useLocation, loadData]);
 
   const handleDeactivateUser = async (userId) => {
     try {
@@ -1801,6 +1838,14 @@ const Dashboard = () => {
   const analyticsBreakdowns = useMemo(() => {
     const charts = analytics?.charts || {};
     return Object.entries(charts).map(([key, values]) => ({
+      key,
+      title: key.replace(/([A-Z])/g, ' $1').replace(/^./, (value) => value.toUpperCase()),
+      values: values || [],
+    }));
+  }, [analytics]);
+  const analyticsTables = useMemo(() => {
+    const tables = analytics?.tables || {};
+    return Object.entries(tables).map(([key, values]) => ({
       key,
       title: key.replace(/([A-Z])/g, ' $1').replace(/^./, (value) => value.toUpperCase()),
       values: values || [],
@@ -2325,9 +2370,17 @@ const Dashboard = () => {
                   </div>
                 </Panel>
 
-                <Panel title="Top performance table" eyebrow="Operational detail">
-                  <MetricList items={analytics?.tables?.courseAnalytics || []} emptyMessage="No course analytics are available yet for this role." />
-                </Panel>
+                <div className="grid gap-8">
+                  {analyticsTables.length > 0 ? analyticsTables.map((table) => (
+                    <Panel key={table.key} title={table.title} eyebrow="Operational detail">
+                      <MetricList items={table.values} emptyMessage={`No ${table.title.toLowerCase()} data is available yet for this role.`} />
+                    </Panel>
+                  )) : (
+                    <Panel title="Operational detail" eyebrow="Operational detail">
+                      <EmptyState title="No detailed tables yet" description="Detailed institutional and course analytics will appear here when data is available." />
+                    </Panel>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -2641,6 +2694,7 @@ const Dashboard = () => {
                     <Input label="Department" value={userForm.department} onChange={(value) => setUserForm((current) => ({ ...current, department: value }))} />
                     <Input label="Faculty" value={userForm.faculty} onChange={(value) => setUserForm((current) => ({ ...current, faculty: value }))} />
                     <Input label="Program" value={userForm.program} onChange={(value) => setUserForm((current) => ({ ...current, program: value }))} />
+                    <Input label="Campus" value={userForm.campus} onChange={(value) => setUserForm((current) => ({ ...current, campus: value }))} />
                     {userForm.role === 'student' && <Input label="Matric number" value={userForm.matricNumber} onChange={(value) => setUserForm((current) => ({ ...current, matricNumber: value }))} />}
                     <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-user'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-user' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}Create user</button></div>
                   </form>
@@ -2773,6 +2827,7 @@ const Dashboard = () => {
                     <Input label="Faculty" value={registryForm.faculty} onChange={(value) => setRegistryForm((current) => ({ ...current, faculty: value }))} />
                     <Input label="Department" value={registryForm.department} onChange={(value) => setRegistryForm((current) => ({ ...current, department: value }))} />
                     <Input label="Program" value={registryForm.program} onChange={(value) => setRegistryForm((current) => ({ ...current, program: value }))} />
+                    <Input label="Campus" value={registryForm.campus} onChange={(value) => setRegistryForm((current) => ({ ...current, campus: value }))} />
                     <Input label="Level" value={registryForm.level} onChange={(value) => setRegistryForm((current) => ({ ...current, level: value }))} />
                     <Input label="Admission year" value={registryForm.admissionYear} onChange={(value) => setRegistryForm((current) => ({ ...current, admissionYear: value }))} />
                     <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-registry'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-registry' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}Save registry record</button></div>
@@ -2839,6 +2894,7 @@ const Dashboard = () => {
                           <Input label="Faculty" value={courseForm.faculty} onChange={(value) => setCourseForm((current) => ({ ...current, faculty: value }))} />
                           <Input label="Department" value={courseForm.department} onChange={(value) => setCourseForm((current) => ({ ...current, department: value }))} />
                           <Input label="Program" value={courseForm.program} onChange={(value) => setCourseForm((current) => ({ ...current, program: value }))} />
+                          <Input label="Campus" value={courseForm.campus} onChange={(value) => setCourseForm((current) => ({ ...current, campus: value }))} />
                           <Input label="Level" value={courseForm.level} onChange={(value) => setCourseForm((current) => ({ ...current, level: value }))} />
                           <Select label="Assign lecturer" value={courseForm.lecturerId} onChange={(value) => setCourseForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Choose lecturer' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
                         <div className="md:col-span-2"><label className="mb-2 block text-sm font-semibold text-slate-700">Description</label><textarea value={courseForm.description} onChange={(event) => setCourseForm((current) => ({ ...current, description: event.target.value }))} rows={4} className="w-full rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /></div>
@@ -2875,6 +2931,7 @@ const Dashboard = () => {
                       <form onSubmit={handleCreateBuilding} className="grid gap-4 md:grid-cols-2">
                         <Input label="Building name" value={buildingForm.name} onChange={(value) => setBuildingForm((current) => ({ ...current, name: value }))} />
                         <Input label="Tag (optional)" value={buildingForm.tag} onChange={(value) => setBuildingForm((current) => ({ ...current, tag: value }))} />
+                        <Input label="Campus" value={buildingForm.campus} onChange={(value) => setBuildingForm((current) => ({ ...current, campus: value }))} />
                         <Input label="Latitude" value={buildingForm.latitude} onChange={(value) => setBuildingForm((current) => ({ ...current, latitude: value }))} />
                         <Input label="Longitude" value={buildingForm.longitude} onChange={(value) => setBuildingForm((current) => ({ ...current, longitude: value }))} />
                         <Input label="Radius (meters)" type="number" value={buildingForm.radiusMeters} onChange={(value) => setBuildingForm((current) => ({ ...current, radiusMeters: value }))} />
@@ -2892,6 +2949,7 @@ const Dashboard = () => {
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <div>
                                 <p className="font-semibold text-slate-900">{building.name} {building.tag ? `(${building.tag})` : ''}</p>
+                                <p className="mt-1 text-sm text-slate-500">Campus: {building.campus || 'Not set'}</p>
                                 <p className="mt-1 text-sm text-slate-500">Center: {building.latitude}, {building.longitude}</p>
                                 <p className="mt-1 text-sm text-slate-500">Radius: {building.radiusMeters}m</p>
                               </div>
@@ -2997,6 +3055,7 @@ const Dashboard = () => {
                                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">{course.courseCode}</p>
                                     <p className="mt-2 text-lg font-bold text-slate-950">{course.courseName}</p>
                                     <p className="mt-2 text-sm text-slate-500">{course.semester} semester | {course.academicYear}</p>
+                                    {course.campus && <p className="mt-1 text-sm text-slate-500">Campus: {course.campus}</p>}
                                     <p className="mt-1 text-sm text-slate-500">Lecturer: {fullName(course.lecturer)}</p>
                                     {course.enrollment && <p className="mt-1 text-sm text-slate-500">Enrollment status: {course.enrollment.status}</p>}
                                     {course.schedules?.length > 0 && (
@@ -3044,6 +3103,7 @@ const Dashboard = () => {
                                         <Input label="Faculty" value={courseEditForm.faculty} onChange={(value) => setCourseEditForm((current) => ({ ...current, faculty: value }))} />
                                         <Input label="Department" value={courseEditForm.department} onChange={(value) => setCourseEditForm((current) => ({ ...current, department: value }))} />
                                         <Input label="Program" value={courseEditForm.program} onChange={(value) => setCourseEditForm((current) => ({ ...current, program: value }))} />
+                                        <Input label="Campus" value={courseEditForm.campus} onChange={(value) => setCourseEditForm((current) => ({ ...current, campus: value }))} />
                                         <Input label="Level" value={courseEditForm.level} onChange={(value) => setCourseEditForm((current) => ({ ...current, level: value }))} />
                                         <Select label="Assign lecturer" value={courseEditForm.lecturerId} onChange={(value) => setCourseEditForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Choose lecturer' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
                                         <div className="md:col-span-2">
@@ -3099,6 +3159,7 @@ const Dashboard = () => {
                       <div className="grid gap-4 md:grid-cols-2">
                         <SummaryTile label="Course" value={sessionDetail.course?.courseCode || 'Not set'} helper={sessionDetail.course?.courseName || 'No course linked'} />
                         <SummaryTile label="Session code" value={sessionDetail.sessionCode} helper={`${formatDate(sessionDetail.date)} at ${formatTime(sessionDetail.startTime)}`} />
+                        <SummaryTile label="Attendance key" value={sessionDetail.attendancePass ? 'Live QR secured' : 'Unavailable'} helper={sessionDetail.attendancePassExpiresAt ? `Current key expires ${formatDateTime(sessionDetail.attendancePassExpiresAt)}` : 'Students must scan the active in-app QR.'} />
                         <SummaryTile label="Expected students" value={sessionDetail.attendanceStats?.expectedCount || 0} helper="Active enrolled students for this course" />
                         <SummaryTile label="Marked attendance" value={sessionDetail.attendanceStats?.markedCount || 0} helper="Students already present or late" />
                         <SummaryTile label="Present on time" value={sessionDetail.attendanceStats?.presentCount || 0} helper="Students marked within the attendance window" />
@@ -3109,7 +3170,7 @@ const Dashboard = () => {
                           Geofence active: center {sessionDetail.geofenceLatitude}, {sessionDetail.geofenceLongitude} with {sessionDetail.geofenceRadiusMeters}m radius.
                         </div>
                       )}
-                      {qrDataUrl && <div className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-5"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Scannable QR</p><p className="mt-2 text-sm leading-7 text-slate-600">Students must sign in to the app and use the in-app QR scanner. Outside-app scanning no longer auto-marks attendance.</p><p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Fallback code: {sessionDetail.sessionCode}</p></div><div className="rounded-[1.5rem] border border-white bg-white p-4 shadow-sm"><img src={qrDataUrl} alt="Session QR code" className="h-44 w-44" /></div></div></div>}
+                      {qrDataUrl && <div className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-5"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Scannable QR</p><p className="mt-2 text-sm leading-7 text-slate-600">Students must sign in to the app and use the in-app QR scanner. Each QR carries a short-lived attendance key, so copied session codes alone no longer work.</p><p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Fallback pair: {sessionDetail.sessionCode} + current attendance key</p></div><div className="rounded-[1.5rem] border border-white bg-white p-4 shadow-sm"><img src={qrDataUrl} alt="Session QR code" className="h-44 w-44" /></div></div></div>}
                       <div className="flex flex-wrap gap-3">
                         {sessionDetail.status === 'active' && <button onClick={() => handleCloseSession(sessionDetail.id)} disabled={busyAction === `close-session-${sessionDetail.id}`} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">{busyAction === `close-session-${sessionDetail.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Close session and auto-send queries</button>}
                         <button onClick={() => { setQueryForm((current) => ({ ...current, sessionId: String(sessionDetail.id) })); setActiveTab('queries'); }} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100"><Bell className="h-4 w-4" />Open query composer</button>
@@ -3148,9 +3209,10 @@ const Dashboard = () => {
               <div className="grid gap-8">
                 <Panel title="Mark attendance" eyebrow="Student check-in">
                   <div className="space-y-5">
-                    <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-5"><p className="text-sm leading-7 text-slate-600">Use the QR scanner for the smoothest flow, or enter the session code manually if your camera is unavailable.</p></div>
+                    <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-5"><p className="text-sm leading-7 text-slate-600">Use the QR scanner for the smoothest flow. Manual marking now requires both the session code and the lecturer&apos;s current attendance key.</p></div>
                     <div className="grid gap-4">
                       <Input label="Session code" value={attendanceForm.sessionCode} onChange={(value) => setAttendanceForm((current) => ({ ...current, sessionCode: value.toUpperCase() }))} />
+                      <Input label="Attendance key" value={attendanceForm.attendancePass} onChange={(value) => setAttendanceForm((current) => ({ ...current, attendancePass: value }))} />
                       <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700"><input type="checkbox" checked={attendanceForm.useLocation} onChange={(event) => setAttendanceForm((current) => ({ ...current, useLocation: event.target.checked }))} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />Include device location when available for stronger attendance verification.</label>
                     </div>
                     <div className="flex flex-wrap gap-3">

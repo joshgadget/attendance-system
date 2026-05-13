@@ -38,6 +38,10 @@ const StudentRegistry = sequelize.define(
       type: DataTypes.STRING(120),
       allowNull: false,
     },
+    campus: {
+      type: DataTypes.STRING(120),
+      allowNull: true,
+    },
     level: {
       type: DataTypes.STRING(20),
       allowNull: true,

@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const { PDFParse } = require('pdf-parse');
 const { Course, CourseSchedule, CourseAudience, Enrollment, User, StudentRegistry } = require('../models');
+const { logAuditEvent } = require('../utils/auditLogger');
 
 const normalizeDayOfWeek = (value = '') => {
   const normalized = String(value).trim().toLowerCase();
@@ -58,6 +59,7 @@ const courseCodePattern = /(?:OOU-)?([A-Z]{2,4})\s?(\d{3})(?:\s*-\s*PR|\s*PR)?(?
 
 const normalizeText = (value = '') => String(value || '').trim();
 const normalizeUpper = (value = '') => normalizeText(value).toUpperCase();
+const normalizeCampus = (value = '') => normalizeText(value);
 const normalizeLevel = (value = '') => {
   const digits = String(value || '').replace(/\D/g, '');
   if (!digits) {
@@ -211,6 +213,7 @@ const buildCourseLookup = async () => {
 const upsertCourseAudience = async (courseId, audience = {}) => {
   const payload = {
     courseId,
+    campus: normalizeCampus(audience.campus) || null,
     faculty: normalizeText(audience.faculty) || null,
     department: normalizeUpper(audience.department) || null,
     program: normalizeText(audience.program) || null,
@@ -218,13 +221,14 @@ const upsertCourseAudience = async (courseId, audience = {}) => {
     isActive: audience.isActive !== false,
   };
 
-  if (!payload.department && !payload.program && !payload.level && !payload.faculty) {
+  if (!payload.department && !payload.program && !payload.level && !payload.faculty && !payload.campus) {
     return null;
   }
 
   const [record] = await CourseAudience.findOrCreate({
     where: {
       courseId: payload.courseId,
+      campus: payload.campus,
       faculty: payload.faculty,
       department: payload.department,
       program: payload.program,
@@ -258,6 +262,9 @@ const syncClaimedStudentEnrollments = async (courses = []) => {
     audiences.forEach((audience) => {
       registryRecords.forEach((record) => {
         if (audience.faculty && normalizeUpper(record.faculty) !== normalizeUpper(audience.faculty)) {
+          return;
+        }
+        if (audience.campus && normalizeUpper(record.campus) !== normalizeUpper(audience.campus)) {
           return;
         }
         if (audience.department && normalizeUpper(record.department) !== normalizeUpper(audience.department)) {
@@ -301,7 +308,7 @@ const syncClaimedStudentEnrollments = async (courses = []) => {
 };
 
 const courseInclude = [
-  { model: User, as: 'lecturer', attributes: ['id', 'firstName', 'lastName', 'email', 'department'] },
+  { model: User, as: 'lecturer', attributes: ['id', 'firstName', 'lastName', 'email', 'department', 'campus'] },
   { model: CourseSchedule, as: 'schedules', where: { isActive: true }, required: false, order: [['dayOfWeek', 'ASC'], ['startTime', 'ASC']] },
   { model: CourseAudience, as: 'audiences', where: { isActive: true }, required: false },
 ];
@@ -327,7 +334,7 @@ const findLecturer = async ({ lecturerId, lecturerEmail }) => {
 const resolveFallbackLecturer = async (preferredUserId) => {
   if (preferredUserId) {
     const preferredUser = await User.findByPk(Number(preferredUserId));
-    if (preferredUser?.isActive) {
+    if (preferredUser?.isActive && preferredUser.role === 'lecturer') {
       return preferredUser;
     }
   }
@@ -353,7 +360,7 @@ const resolveFallbackLecturer = async (preferredUserId) => {
 
 exports.createCourse = async (req, res) => {
   try {
-    const { courseCode, courseName, description, semester, academicYear, lecturerId, faculty, department, program, level } = req.body;
+    const { courseCode, courseName, description, semester, academicYear, lecturerId, faculty, department, program, campus, level } = req.body;
     const normalizedAcademicYear = buildAcademicYear(academicYear);
 
     if (!courseCode || !courseName || !semester || !normalizedAcademicYear || !lecturerId) {
@@ -381,6 +388,7 @@ exports.createCourse = async (req, res) => {
       semester,
       academicYear: normalizedAcademicYear,
       lecturerId,
+      campus: normalizeCampus(campus) || null,
       faculty: faculty || null,
       department: department || null,
       program: program || null,
@@ -388,7 +396,22 @@ exports.createCourse = async (req, res) => {
       isActive: true,
     });
 
-    await upsertCourseAudience(course.id, { faculty, department, program, level });
+    await upsertCourseAudience(course.id, { campus, faculty, department, program, level });
+    await logAuditEvent({
+      req,
+      action: 'course.created',
+      targetType: 'course',
+      targetId: course.id,
+      campus: course.campus,
+      faculty: course.faculty,
+      department: course.department,
+      metadata: {
+        courseCode: course.courseCode,
+        semester: course.semester,
+        academicYear: course.academicYear,
+        lecturerId: course.lecturerId,
+      },
+    });
 
     const created = await Course.findByPk(course.id, { include: courseInclude });
     res.status(201).json({ success: true, message: 'Course created successfully', data: created });
@@ -452,6 +475,7 @@ exports.bulkUpsertCourses = async (req, res) => {
           semester,
           academicYear,
           lecturerId: lecturer?.id || fallbackLecturer.id,
+          campus: normalizeCampus(entry.campus) || null,
           faculty: entry.faculty || null,
           department: normalizeUpper(entry.department) || null,
           program: entry.program || null,
@@ -469,6 +493,7 @@ exports.bulkUpsertCourses = async (req, res) => {
           semester,
           academicYear,
           lecturerId: lecturer?.id || course.lecturerId || fallbackLecturer.id,
+          campus: normalizeCampus(entry.campus) || null,
           faculty: entry.faculty || null,
           department: normalizeUpper(entry.department) || null,
           program: entry.program || null,
@@ -478,6 +503,7 @@ exports.bulkUpsertCourses = async (req, res) => {
       }
 
       await upsertCourseAudience(course.id, {
+        campus: entry.campus || null,
         faculty: entry.faculty || null,
         department: entry.department || null,
         program: entry.program || null,
@@ -486,6 +512,14 @@ exports.bulkUpsertCourses = async (req, res) => {
 
       results.push({ courseCode, action: created ? 'created' : 'updated', courseId: course.id });
     }
+
+    await logAuditEvent({
+      req,
+      action: 'course.catalog.bulk_upsert',
+      targetType: 'course_catalog',
+      targetId: 'bulk',
+      metadata: { count: results.length },
+    });
 
     res.json({ success: true, message: 'Course catalog imported successfully', data: { count: results.length, results } });
   } catch (error) {
@@ -560,7 +594,7 @@ exports.bulkUpsertSchedules = async (req, res) => {
 
 exports.importTimetablePdf = async (req, res) => {
   try {
-    const { fileName, base64Data, semester, academicYear, faculty, autoAssignClaimedStudents = true } = req.body;
+    const { fileName, base64Data, semester, academicYear, faculty, campus, autoAssignClaimedStudents = true } = req.body;
 
     if (!base64Data) {
       return res.status(400).json({ success: false, message: 'base64Data is required for timetable PDF import' });
@@ -575,6 +609,7 @@ exports.importTimetablePdf = async (req, res) => {
     const extractedSemester = String(semester || metadata.semester || '').toLowerCase();
     const extractedAcademicYear = buildAcademicYear(academicYear || metadata.academicYear || '');
     const extractedFaculty = normalizeText(faculty || metadata.faculty || '');
+    const extractedCampus = normalizeCampus(campus);
 
     if (!extractedSemester || !extractedAcademicYear) {
       return res.status(400).json({
@@ -623,6 +658,7 @@ exports.importTimetablePdf = async (req, res) => {
             semester: extractedSemester,
             academicYear: extractedAcademicYear,
             lecturerId: fallbackLecturer.id,
+            campus: extractedCampus || null,
             faculty: extractedFaculty || null,
             department: null,
             program: null,
@@ -635,6 +671,7 @@ exports.importTimetablePdf = async (req, res) => {
             semester: extractedSemester,
             academicYear: extractedAcademicYear,
             lecturerId: course.lecturerId || fallbackLecturer.id,
+            campus: course.campus || extractedCampus || null,
             faculty: course.faculty || extractedFaculty || null,
             isActive: true,
           });
@@ -642,6 +679,7 @@ exports.importTimetablePdf = async (req, res) => {
 
         touchedCourseIds.add(course.id);
         const audience = await upsertCourseAudience(course.id, {
+          campus: extractedCampus || null,
           faculty: extractedFaculty || null,
           department: offering.department,
           level,
@@ -659,6 +697,22 @@ exports.importTimetablePdf = async (req, res) => {
 
     const syncedEnrollments = autoAssignClaimedStudents ? await syncClaimedStudentEnrollments(touchedCourses) : 0;
 
+    await logAuditEvent({
+      req,
+      action: 'course.timetable.imported',
+      targetType: 'timetable_pdf',
+      targetId: fileName || 'pdf-import',
+      campus: extractedCampus || null,
+      faculty: extractedFaculty || null,
+      metadata: {
+        semester: extractedSemester,
+        academicYear: extractedAcademicYear,
+        courseCount: touchedCourses.length,
+        audienceCount,
+        syncedEnrollments,
+      },
+    });
+
     res.json({
       success: true,
       message: 'Timetable PDF imported successfully',
@@ -666,6 +720,7 @@ exports.importTimetablePdf = async (req, res) => {
         fileName: fileName || null,
         semester: extractedSemester,
         academicYear: extractedAcademicYear,
+        campus: extractedCampus || null,
         faculty: extractedFaculty || null,
         departments: touchedDepartments,
         courseCount: touchedCourses.length,
@@ -680,7 +735,7 @@ exports.importTimetablePdf = async (req, res) => {
 
 exports.getCourses = async (req, res) => {
   try {
-    const { search, activeOnly } = req.query;
+    const { search, activeOnly, campus } = req.query;
     const where = {};
 
     if (req.user.role === 'lecturer') {
@@ -689,6 +744,10 @@ exports.getCourses = async (req, res) => {
 
     if (activeOnly === 'true') {
       where.isActive = true;
+    }
+
+    if (campus) {
+      where.campus = campus;
     }
 
     if (search) {
@@ -787,7 +846,7 @@ exports.getCourseSchedules = async (req, res) => {
     const include = [{
       model: Course,
       as: 'course',
-      attributes: ['id', 'courseCode', 'courseName', 'lecturerId', 'faculty', 'department', 'program', 'level', 'semester', 'academicYear'],
+      attributes: ['id', 'courseCode', 'courseName', 'lecturerId', 'campus', 'faculty', 'department', 'program', 'level', 'semester', 'academicYear'],
     }];
 
     const schedules = await CourseSchedule.findAll({
@@ -913,6 +972,9 @@ exports.updateCourse = async (req, res) => {
     if (payload.academicYear) {
       payload.academicYear = buildAcademicYear(payload.academicYear);
     }
+    if (Object.prototype.hasOwnProperty.call(payload, 'campus')) {
+      payload.campus = normalizeCampus(payload.campus) || null;
+    }
     if (payload.lecturerId) {
       const lecturer = await User.findByPk(payload.lecturerId);
       if (!lecturer || lecturer.role !== 'lecturer') {
@@ -922,10 +984,23 @@ exports.updateCourse = async (req, res) => {
 
     await course.update(payload);
     await upsertCourseAudience(course.id, {
+      campus: payload.campus ?? course.campus,
       faculty: payload.faculty ?? course.faculty,
       department: payload.department ?? course.department,
       program: payload.program ?? course.program,
       level: payload.level ?? course.level,
+    });
+    await logAuditEvent({
+      req,
+      action: 'course.updated',
+      targetType: 'course',
+      targetId: course.id,
+      campus: course.campus,
+      faculty: course.faculty,
+      department: course.department,
+      metadata: {
+        changedFields: Object.keys(payload),
+      },
     });
 
     const updatedCourse = await Course.findByPk(course.id, {
@@ -950,6 +1025,16 @@ exports.deactivateCourse = async (req, res) => {
 
     await CourseSchedule.update({ isActive: false }, { where: { courseId: course.id } });
     await CourseAudience.update({ isActive: false }, { where: { courseId: course.id } });
+    await logAuditEvent({
+      req,
+      action: 'course.archived',
+      targetType: 'course',
+      targetId: course.id,
+      campus: course.campus,
+      faculty: course.faculty,
+      department: course.department,
+      metadata: { courseCode: course.courseCode },
+    });
 
     res.json({ success: true, message: 'Course archived successfully', data: course });
   } catch (error) {

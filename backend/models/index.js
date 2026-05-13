@@ -11,6 +11,7 @@ const Enrollment = require('./Enrollment');
 const Building = require('./Building');
 const CourseSchedule = require('./CourseSchedule');
 const CourseAudience = require('./CourseAudience');
+const AuditLog = require('./AuditLog');
 
 // Setup associations function
 const setupAssociations = () => {
@@ -69,6 +70,10 @@ const setupAssociations = () => {
   // Session -> AbsenceQuery
   Session.hasMany(AbsenceQuery, { foreignKey: 'sessionId', as: 'queries' });
   AbsenceQuery.belongsTo(Session, { foreignKey: 'sessionId', as: 'session' });
+
+  // User -> AuditLog
+  User.hasMany(AuditLog, { foreignKey: 'actorId', as: 'auditLogs' });
+  AuditLog.belongsTo(User, { foreignKey: 'actorId', as: 'actor' });
 };
 
 // Sync all models with database
@@ -94,6 +99,7 @@ module.exports = {
   Building,
   CourseSchedule,
   CourseAudience,
+  AuditLog,
   setupAssociations,
   syncDatabase
 };
