@@ -42,6 +42,35 @@ const ensureSchemaGuard = async (sequelize) => {
     appliedChanges.push('users.campus');
   }
 
+  if (await ensureColumn(queryInterface, 'users', 'failed_login_attempts', {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0,
+  })) {
+    appliedChanges.push('users.failed_login_attempts');
+  }
+
+  if (await ensureColumn(queryInterface, 'users', 'locked_until', {
+    type: DataTypes.DATE,
+    allowNull: true,
+  })) {
+    appliedChanges.push('users.locked_until');
+  }
+
+  if (await ensureColumn(queryInterface, 'users', 'last_known_device_hash', {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+  })) {
+    appliedChanges.push('users.last_known_device_hash');
+  }
+
+  if (await ensureColumn(queryInterface, 'users', 'last_known_ip', {
+    type: DataTypes.STRING(120),
+    allowNull: true,
+  })) {
+    appliedChanges.push('users.last_known_ip');
+  }
+
   if (await ensureColumn(queryInterface, 'courses', 'campus', {
     type: DataTypes.STRING(120),
     allowNull: true,
@@ -70,11 +99,39 @@ const ensureSchemaGuard = async (sequelize) => {
     appliedChanges.push('course_audiences.campus');
   }
 
+  if (await ensureColumn(queryInterface, 'attendance', 'locationAccuracy', {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  })) {
+    appliedChanges.push('attendance.locationAccuracy');
+  }
+
+  if (await ensureColumn(queryInterface, 'attendance', 'distanceFromClass', {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  })) {
+    appliedChanges.push('attendance.distanceFromClass');
+  }
+
+  if (await ensureColumn(queryInterface, 'attendance', 'deviceFlagged', {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  })) {
+    appliedChanges.push('attendance.deviceFlagged');
+  }
+
   if (await ensureIndex(queryInterface, 'attendance', 'attendance_session_student_unique', {
     unique: true,
     fields: ['sessionId', 'studentId'],
   })) {
     appliedChanges.push('attendance(sessionId, studentId) unique index');
+  }
+
+  if (await ensureIndex(queryInterface, 'attendance', 'attendance_device_flagged_idx', {
+    fields: ['deviceFlagged'],
+  })) {
+    appliedChanges.push('attendance(deviceFlagged) index');
   }
 
   return appliedChanges;

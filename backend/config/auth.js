@@ -6,7 +6,7 @@ module.exports = {
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRE || '7d'
   },
   bcrypt: {
-    saltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12
+    saltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS, 10) || 12
   },
   roles: {
     ADMIN: 'admin',

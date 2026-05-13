@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const attendanceController = require('../controllers/attendanceController');
 const authMiddleware = require('../middleware/authMiddleware');
+const { attendanceRateLimiter } = require('../middleware/securityMiddleware');
 
 // Simple role check middleware
 const requireRole = (role) => {
@@ -36,7 +37,7 @@ router.post('/sessions', requireRole('lecturer'), attendanceController.createSes
 router.get('/sessions', requireAnyRole('lecturer', 'admin'), attendanceController.getSessions);
 router.get('/sessions/:id', requireAnyRole('lecturer', 'admin'), attendanceController.getSession);
 router.put('/sessions/:id/close', requireRole('lecturer'), attendanceController.closeSession);
-router.post('/mark', requireRole('student'), attendanceController.markAttendance);
+router.post('/mark', requireRole('student'), attendanceRateLimiter, attendanceController.markAttendance);
 router.get('/history', requireRole('student'), attendanceController.getStudentHistory);
 
 module.exports = router;

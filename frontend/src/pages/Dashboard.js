@@ -158,7 +158,7 @@ const getCurrentLocation = () =>
     }
 
     navigator.geolocation.getCurrentPosition(
-      (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
+      (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy }),
       () => resolve(null),
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
     );
@@ -1466,6 +1466,7 @@ const Dashboard = () => {
         attendancePass,
         latitude: location?.latitude,
         longitude: location?.longitude,
+        accuracy: location?.accuracy,
       });
       setAttendanceForm(initialAttendanceForm);
       setMessage(response.data?.message || 'Attendance marked successfully.');

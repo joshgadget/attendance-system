@@ -51,9 +51,21 @@ const Attendance = sequelize.define('Attendance', {
     type: DataTypes.STRING(255),
     allowNull: true
   },
+  locationAccuracy: {
+    type: DataTypes.FLOAT,
+    allowNull: true
+  },
+  distanceFromClass: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
   deviceInfo: {
     type: DataTypes.STRING(255),
     allowNull: true
+  },
+  deviceFlagged: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
   },
   notes: {
     type: DataTypes.TEXT,
@@ -66,6 +78,9 @@ const Attendance = sequelize.define('Attendance', {
     {
       unique: true,
       fields: ['sessionId', 'studentId'],
+    },
+    {
+      fields: ['deviceFlagged'],
     },
   ],
 });

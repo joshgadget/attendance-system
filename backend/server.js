@@ -8,7 +8,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 
 const { testConnection } = require('./config/database');
-const { sequelize, setupAssociations } = require('./models');
+const { sequelize, setupAssociations, Building } = require('./models');
 const { ensureSchemaGuard } = require('./utils/schemaGuard');
 const env = require('./utils/env');
 
@@ -89,6 +89,10 @@ const startServer = async () => {
     await testConnection();
     const appliedChanges = await ensureSchemaGuard(sequelize);
     await sequelize.sync();
+    if (process.env.SEED_OOU_BUILDINGS === 'true' && typeof Building.seedOOU === 'function') {
+      await Building.seedOOU();
+      console.log('OOU building seed completed');
+    }
     if (appliedChanges.length > 0) {
       console.log(`Schema guard applied: ${appliedChanges.join(', ')}`);
     }

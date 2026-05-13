@@ -16,6 +16,7 @@ const normalizeEmail = (email = '') => email.trim().toLowerCase();
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 const buildDisplayName = (user) => [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'there';
 const normalizeCampus = (value = '') => String(value || '').trim();
+const resolveRequestIp = (req) => req.ip || req.get?.('x-forwarded-for') || req.connection?.remoteAddress || null;
 
 const sendWelcomeEmail = async (user, context = {}) => {
   if (!user?.email) {
@@ -477,7 +478,34 @@ const login = async (req, res) => {
 
     const user = await User.findOne({ where: { email: normalizeEmail(email) } });
 
-    if (!user || !(await user.comparePassword(password))) {
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password',
+      });
+    }
+
+    if (typeof user.isLocked === 'function' && user.isLocked()) {
+      const minutesLeft = Math.max(1, Math.ceil((new Date(user.lockedUntil).getTime() - Date.now()) / 60000));
+      return res.status(403).json({
+        success: false,
+        message: `Account locked due to repeated failed login attempts. Try again in ${minutesLeft} minute(s).`,
+      });
+    }
+
+    const passwordMatches = await user.comparePassword(password);
+    if (!passwordMatches) {
+      if (typeof user.recordFailedLogin === 'function') {
+        await user.recordFailedLogin();
+        const remainingAttempts = Math.max(0, 5 - Number(user.failedLoginAttempts || 0));
+        return res.status(401).json({
+          success: false,
+          message: remainingAttempts > 0
+            ? `Invalid email or password. ${remainingAttempts} attempt(s) remaining before lockout.`
+            : 'Account has been locked due to too many failed attempts.',
+        });
+      }
+
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password',
@@ -488,7 +516,11 @@ const login = async (req, res) => {
       return res.status(403).json({ success: false, message: 'This account has been deactivated' });
     }
 
+    if (typeof user.clearFailedLogins === 'function') {
+      await user.clearFailedLogins();
+    }
     user.lastLogin = new Date();
+    user.lastKnownIp = resolveRequestIp(req);
     await user.save();
 
     res.status(200).json({
@@ -604,6 +636,8 @@ const resetPassword = async (req, res) => {
     user.password = password;
     user.resetPasswordToken = null;
     user.resetPasswordExpires = null;
+    user.failedLoginAttempts = 0;
+    user.lockedUntil = null;
     await user.save();
 
     return res.json({ success: true, message: 'Password reset successful' });

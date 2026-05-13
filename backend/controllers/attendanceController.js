@@ -38,6 +38,18 @@ const distanceMeters = (lat1, lon1, lat2, lon2) => {
   return earthRadius * c;
 };
 
+const isInsideNigeriaBounds = (latitude, longitude) =>
+  latitude >= 4.0 &&
+  latitude <= 14.0 &&
+  longitude >= 2.5 &&
+  longitude <= 15.0;
+
+const buildDeviceFingerprint = (req) => crypto
+  .createHash('sha256')
+  .update(req.get('user-agent') || 'unknown-device')
+  .digest('hex')
+  .slice(0, 32);
+
 const buildAttendancePassPayload = (session) => ({
   type: 'attendance-pass',
   sessionId: session.id,
@@ -274,7 +286,7 @@ exports.getSession = async (req, res) => {
 
 exports.markAttendance = async (req, res) => {
   try {
-    const { sessionCode, session_code, attendancePass, attendance_pass, latitude, longitude } = req.body;
+    const { sessionCode, session_code, attendancePass, attendance_pass, latitude, longitude, accuracy } = req.body;
     const resolvedSessionCode = sessionCode || session_code;
     if (!resolvedSessionCode) {
       return res.status(400).json({ success: false, message: 'sessionCode is required' });
@@ -350,56 +362,111 @@ exports.markAttendance = async (req, res) => {
     }
 
     const sessionStart = new Date(`${session.date}T${session.startTime}`);
+    const sessionEnd = new Date(`${session.date}T${session.endTime}`);
     const now = new Date();
+    const earliestMarkTime = new Date(sessionStart.getTime() - (5 * 60 * 1000));
+    const closingDeadline = new Date(sessionEnd.getTime() + (15 * 60 * 1000));
+
+    if (now < earliestMarkTime) {
+      return res.status(403).json({
+        success: false,
+        message: `This session has not opened yet. Attendance opens shortly before ${session.startTime}.`,
+      });
+    }
+
+    if (now > closingDeadline) {
+      return res.status(403).json({
+        success: false,
+        message: 'The attendance window for this session has closed.',
+      });
+    }
+
     const diffMinutes = Math.floor((now - sessionStart) / (1000 * 60));
     const status = diffMinutes > session.maxAttendanceTime ? 'late' : 'present';
 
-    if (hasGeofence(session)) {
-      if (latitude === undefined || longitude === undefined) {
-        await logAuditEvent({
-          req,
-          action: 'attendance.mark.rejected.location_missing',
-          targetType: 'session',
-          targetId: session.id,
-          metadata: { courseId: session.courseId },
-        });
-        return res.status(403).json({
-          success: false,
-          message: 'This class requires location verification. Enable location and try again.',
-        });
-      }
-
-      const parsedLatitude = Number(latitude);
-      const parsedLongitude = Number(longitude);
-      if (Number.isNaN(parsedLatitude) || Number.isNaN(parsedLongitude)) {
-        return res.status(400).json({ success: false, message: 'Invalid location coordinates supplied' });
-      }
-
-      const meters = distanceMeters(
-        parsedLatitude,
-        parsedLongitude,
-        Number(session.geofenceLatitude),
-        Number(session.geofenceLongitude)
-      );
-
-      if (meters > Number(session.geofenceRadiusMeters)) {
-        await logAuditEvent({
-          req,
-          action: 'attendance.mark.rejected.outside_geofence',
-          targetType: 'session',
-          targetId: session.id,
-          metadata: {
-            courseId: session.courseId,
-            distanceMeters: Math.round(meters),
-            allowedRadiusMeters: Number(session.geofenceRadiusMeters),
-          },
-        });
-        return res.status(403).json({
-          success: false,
-          message: `Outside allowed attendance zone. Distance is ${Math.round(meters)}m, max allowed is ${session.geofenceRadiusMeters}m.`,
-        });
-      }
+    if (!hasGeofence(session)) {
+      return res.status(403).json({
+        success: false,
+        message: 'This session has no verified building geofence. Contact your lecturer to re-create the session properly.',
+      });
     }
+
+    if (latitude === undefined || longitude === undefined) {
+      await logAuditEvent({
+        req,
+        action: 'attendance.mark.rejected.location_missing',
+        targetType: 'session',
+        targetId: session.id,
+        metadata: { courseId: session.courseId },
+      });
+      return res.status(403).json({
+        success: false,
+        message: 'This class requires location verification. Enable location and try again.',
+      });
+    }
+
+    const parsedLatitude = Number(latitude);
+    const parsedLongitude = Number(longitude);
+    const parsedAccuracy = accuracy === undefined || accuracy === null || accuracy === ''
+      ? null
+      : Number(accuracy);
+
+    if (Number.isNaN(parsedLatitude) || Number.isNaN(parsedLongitude)) {
+      return res.status(400).json({ success: false, message: 'Invalid location coordinates supplied' });
+    }
+
+    if (!isInsideNigeriaBounds(parsedLatitude, parsedLongitude)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your GPS coordinates appear to be outside Nigeria. Attendance cannot be marked.',
+      });
+    }
+
+    if (parsedAccuracy !== null && (Number.isNaN(parsedAccuracy) || parsedAccuracy <= 0 || parsedAccuracy > 100)) {
+      return res.status(403).json({
+        success: false,
+        message: `Your GPS accuracy is too low${Number.isNaN(parsedAccuracy) ? '' : ` (${Math.round(parsedAccuracy)}m)`}. Move to an open area and try again.`,
+      });
+    }
+
+    const meters = distanceMeters(
+      parsedLatitude,
+      parsedLongitude,
+      Number(session.geofenceLatitude),
+      Number(session.geofenceLongitude)
+    );
+
+    if (meters > Number(session.geofenceRadiusMeters)) {
+      await logAuditEvent({
+        req,
+        action: 'attendance.mark.rejected.outside_geofence',
+        targetType: 'session',
+        targetId: session.id,
+        metadata: {
+          courseId: session.courseId,
+          distanceMeters: Math.round(meters),
+          allowedRadiusMeters: Number(session.geofenceRadiusMeters),
+          locationAccuracy: parsedAccuracy,
+        },
+      });
+      return res.status(403).json({
+        success: false,
+        message: `Outside allowed attendance zone. Distance is ${Math.round(meters)}m, max allowed is ${session.geofenceRadiusMeters}m.`,
+      });
+    }
+
+    const student = await User.findByPk(req.user.id, {
+      attributes: ['id', 'lastKnownDeviceHash', 'lastKnownIp'],
+    });
+    const deviceHash = buildDeviceFingerprint(req);
+    const currentIp = req.ip || req.get('x-forwarded-for') || req.connection?.remoteAddress || null;
+    const deviceFlagged = Boolean(
+      student &&
+      student.lastKnownDeviceHash &&
+      student.lastKnownIp &&
+      student.lastKnownDeviceHash !== deviceHash &&
+      student.lastKnownIp !== currentIp
+    );
 
     let attendance;
     try {
@@ -412,7 +479,10 @@ exports.markAttendance = async (req, res) => {
         markedBy: 'self',
         verificationMethod: 'qr',
         deviceInfo: req.get('user-agent') || null,
-        location: latitude && longitude ? `${latitude},${longitude}` : req.ip
+        location: `${parsedLatitude},${parsedLongitude}`,
+        locationAccuracy: parsedAccuracy,
+        distanceFromClass: Math.round(meters),
+        deviceFlagged,
       });
     } catch (createError) {
       if (createError instanceof UniqueConstraintError) {
@@ -447,6 +517,12 @@ exports.markAttendance = async (req, res) => {
       });
     }
 
+    if (student) {
+      student.lastKnownDeviceHash = deviceHash;
+      student.lastKnownIp = currentIp;
+      await student.save();
+    }
+
     await logAuditEvent({
       req,
       action: 'attendance.marked',
@@ -460,6 +536,9 @@ exports.markAttendance = async (req, res) => {
         courseId: session.courseId,
         status,
         verificationMethod: 'qr+pass+geofence',
+        locationAccuracy: parsedAccuracy,
+        distanceFromClass: Math.round(meters),
+        deviceFlagged,
       },
     });
 

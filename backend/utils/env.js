@@ -20,4 +20,6 @@ module.exports = {
   corsOrigins: parseOrigins(process.env.CORS_ORIGIN),
   rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
   rateLimitMaxRequests: Number(process.env.RATE_LIMIT_MAX_REQUESTS || 100),
+  attendanceRateLimitWindowMs: Number(process.env.ATTENDANCE_RATE_LIMIT_WINDOW_MS || 60 * 1000),
+  attendanceRateLimitMaxRequests: Number(process.env.ATTENDANCE_RATE_LIMIT_MAX_REQUESTS || 5),
 };
