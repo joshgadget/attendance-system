@@ -151,6 +151,7 @@ const getCourseLevelLabel = (course) => {
 };
 
 const getAttendanceKeyForCourse = (course) => String(course?.courseCode || '').trim().toUpperCase();
+const buildAttendanceQrPayload = (sessionCode, attendanceKey) => `ATD|${String(sessionCode || '').trim().toUpperCase()}|${String(attendanceKey || '').trim().toUpperCase()}`;
 
 const getCurrentLocation = () =>
   new Promise((resolve) => {
@@ -168,8 +169,18 @@ const getCurrentLocation = () =>
 
 const extractAttendancePayload = (decodedText) => {
   const fallback = { sessionCode: '', attendancePass: '' };
+  const compactText = String(decodedText || '').trim();
+
+  if (compactText.toUpperCase().startsWith('ATD|')) {
+    const [, sessionCode = '', attendanceKey = ''] = compactText.split('|');
+    return {
+      sessionCode: String(sessionCode || '').trim().toUpperCase(),
+      attendancePass: String(attendanceKey || '').trim().toUpperCase(),
+    };
+  }
+
   try {
-    const parsedUrl = new URL(decodedText);
+    const parsedUrl = new URL(compactText);
     const directCode = parsedUrl.searchParams.get('sessionCode') || parsedUrl.searchParams.get('s');
     if (directCode) {
       return {
@@ -181,8 +192,8 @@ const extractAttendancePayload = (decodedText) => {
     // not a full absolute URL, keep trying other formats
   }
 
-  if (decodedText.includes('sessionCode=') || decodedText.includes('s=')) {
-    const queryString = decodedText.includes('?') ? decodedText.slice(decodedText.indexOf('?') + 1) : decodedText;
+  if (compactText.includes('sessionCode=') || compactText.includes('s=')) {
+    const queryString = compactText.includes('?') ? compactText.slice(compactText.indexOf('?') + 1) : compactText;
     const params = new URLSearchParams(queryString);
     const queryCode = params.get('sessionCode') || params.get('s');
     if (queryCode) {
@@ -194,13 +205,13 @@ const extractAttendancePayload = (decodedText) => {
   }
 
   try {
-    const parsed = JSON.parse(decodedText);
+    const parsed = JSON.parse(compactText);
     return {
       sessionCode: String(parsed.sessionCode || '').trim().toUpperCase(),
       attendancePass: String(parsed.attendancePass || parsed.attendanceKey || '').trim().toUpperCase(),
     };
   } catch (error) {
-    return { ...fallback, sessionCode: decodedText.trim().toUpperCase() };
+    return { ...fallback, sessionCode: compactText.toUpperCase() };
   }
 };
 
@@ -699,12 +710,15 @@ const Dashboard = () => {
     setSessionDetail(detail);
 
     if (detail?.sessionCode) {
-      const qrPayload = `attendance://mark?s=${encodeURIComponent(detail.sessionCode)}&p=${encodeURIComponent(detail.attendancePass || '')}&k=${encodeURIComponent(detail.attendanceKey || getAttendanceKeyForCourse(detail.course) || '')}`;
+      const qrPayload = buildAttendanceQrPayload(
+        detail.sessionCode,
+        detail.attendanceKey || getAttendanceKeyForCourse(detail.course) || ''
+      );
       const dataUrl = await QRCode.toDataURL(qrPayload, {
-        width: 320,
-        margin: 2,
-        errorCorrectionLevel: 'M',
-      color: { dark: '#0f172a', light: '#ffffff' },
+        width: 420,
+        margin: 1,
+        errorCorrectionLevel: 'L',
+        color: { dark: '#0f172a', light: '#ffffff' },
       });
       setQrDataUrl(dataUrl);
     }
