@@ -170,25 +170,25 @@ const extractAttendancePayload = (decodedText) => {
   const fallback = { sessionCode: '', attendancePass: '' };
   try {
     const parsedUrl = new URL(decodedText);
-    const directCode = parsedUrl.searchParams.get('sessionCode');
+    const directCode = parsedUrl.searchParams.get('sessionCode') || parsedUrl.searchParams.get('s');
     if (directCode) {
       return {
         sessionCode: directCode.trim().toUpperCase(),
-        attendancePass: (parsedUrl.searchParams.get('attendancePass') || '').trim(),
+        attendancePass: (parsedUrl.searchParams.get('attendancePass') || parsedUrl.searchParams.get('p') || parsedUrl.searchParams.get('attendanceKey') || parsedUrl.searchParams.get('k') || '').trim().toUpperCase(),
       };
     }
   } catch (error) {
     // not a full absolute URL, keep trying other formats
   }
 
-  if (decodedText.includes('sessionCode=')) {
+  if (decodedText.includes('sessionCode=') || decodedText.includes('s=')) {
     const queryString = decodedText.includes('?') ? decodedText.slice(decodedText.indexOf('?') + 1) : decodedText;
     const params = new URLSearchParams(queryString);
-    const queryCode = params.get('sessionCode');
+    const queryCode = params.get('sessionCode') || params.get('s');
     if (queryCode) {
       return {
         sessionCode: queryCode.trim().toUpperCase(),
-        attendancePass: (params.get('attendancePass') || '').trim(),
+        attendancePass: (params.get('attendancePass') || params.get('p') || params.get('attendanceKey') || params.get('k') || '').trim().toUpperCase(),
       };
     }
   }
@@ -197,7 +197,7 @@ const extractAttendancePayload = (decodedText) => {
     const parsed = JSON.parse(decodedText);
     return {
       sessionCode: String(parsed.sessionCode || '').trim().toUpperCase(),
-      attendancePass: String(parsed.attendancePass || '').trim(),
+      attendancePass: String(parsed.attendancePass || parsed.attendanceKey || '').trim().toUpperCase(),
     };
   } catch (error) {
     return { ...fallback, sessionCode: decodedText.trim().toUpperCase() };
@@ -457,11 +457,17 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
 
         try {
           await stopScanner();
-          await onDetected(payload);
+          const marked = await onDetected(payload);
+          if (marked) {
+            cancelled = true;
+            await stopScanner();
+            onClose();
+            return;
+          }
         } finally {
-          cancelled = true;
-          await stopScanner();
-          onClose();
+          if (!cancelled) {
+            onClose();
+          }
         }
       },
       () => {}
@@ -693,15 +699,12 @@ const Dashboard = () => {
     setSessionDetail(detail);
 
     if (detail?.sessionCode) {
-      const qrPayload = JSON.stringify({
-        sessionCode: detail.sessionCode,
-        attendancePass: detail.attendancePass || '',
-      });
+      const qrPayload = `attendance://mark?s=${encodeURIComponent(detail.sessionCode)}&p=${encodeURIComponent(detail.attendancePass || '')}&k=${encodeURIComponent(detail.attendanceKey || getAttendanceKeyForCourse(detail.course) || '')}`;
       const dataUrl = await QRCode.toDataURL(qrPayload, {
-        width: 360,
+        width: 320,
         margin: 2,
         errorCorrectionLevel: 'M',
-        color: { dark: '#0f172a', light: '#ffffff' },
+      color: { dark: '#0f172a', light: '#ffffff' },
       });
       setQrDataUrl(dataUrl);
     }

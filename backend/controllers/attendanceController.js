@@ -51,10 +51,10 @@ const buildDeviceFingerprint = (req) => crypto
   .slice(0, 32);
 
 const buildAttendancePassPayload = (session) => ({
-  type: 'attendance-pass',
-  sessionId: session.id,
-  sessionCode: session.sessionCode,
-  lecturerId: session.lecturerId,
+  t: 'a',
+  sid: session.id,
+  sc: session.sessionCode,
+  lid: session.lecturerId,
 });
 
 const signAttendancePass = (session) => {
@@ -93,9 +93,9 @@ const verifyAttendancePass = (token, session, courseCode = '') => {
   }
 
   if (
-    decoded?.type !== 'attendance-pass' ||
-    Number(decoded?.sessionId) !== Number(session.id) ||
-    String(decoded?.sessionCode || '').trim().toUpperCase() !== String(session.sessionCode || '').trim().toUpperCase()
+    decoded?.t !== 'a' ||
+    Number(decoded?.sid) !== Number(session.id) ||
+    String(decoded?.sc || '').trim().toUpperCase() !== String(session.sessionCode || '').trim().toUpperCase()
   ) {
     const mismatchError = new Error('Attendance key does not match this session. Scan the active QR code in class again.');
     mismatchError.statusCode = 403;
