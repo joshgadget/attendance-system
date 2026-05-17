@@ -68,11 +68,19 @@ const signAttendancePass = (session) => {
   };
 };
 
-const verifyAttendancePass = (token, session) => {
+const getCourseAttendanceKey = (courseCode = '') => String(courseCode || '').trim().toUpperCase();
+
+const verifyAttendancePass = (token, session, courseCode = '') => {
   if (!token) {
-    const error = new Error('Attendance key is required. Scan the lecturer QR code again and try once more.');
+    const error = new Error('Attendance key is required. Scan the lecturer QR code again or enter the course short code for this class.');
     error.statusCode = 403;
     throw error;
+  }
+
+  const normalizedToken = String(token || '').trim().toUpperCase();
+  const normalizedCourseCode = getCourseAttendanceKey(courseCode);
+  if (normalizedCourseCode && normalizedToken === normalizedCourseCode) {
+    return { type: 'course-code-fallback' };
   }
 
   let decoded;
@@ -264,6 +272,7 @@ exports.getSession = async (req, res) => {
 
     const payload = {
       ...session.toJSON(),
+      attendanceKey: getCourseAttendanceKey(session.course?.courseCode),
       attendancePass: attendancePassBundle?.token || null,
       attendancePassExpiresAt: attendancePassBundle?.expiresAt || null,
       attendanceStats: {
@@ -298,8 +307,10 @@ exports.markAttendance = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Invalid or expired session code' });
     }
 
+    const course = await Course.findByPk(session.courseId, { attributes: ['id', 'courseCode', 'semester', 'academicYear', 'campus', 'faculty', 'department'] });
+
     try {
-      verifyAttendancePass(attendancePass || attendance_pass, session);
+      verifyAttendancePass(attendancePass || attendance_pass, session, course?.courseCode || '');
     } catch (verificationError) {
       await logAuditEvent({
         req,
@@ -327,7 +338,6 @@ exports.markAttendance = async (req, res) => {
       });
     }
 
-    const course = await Course.findByPk(session.courseId, { attributes: ['id', 'semester', 'academicYear'] });
     const enrollment = await Enrollment.findOne({
       where: {
         userId: req.user.id,

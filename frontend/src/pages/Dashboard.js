@@ -150,6 +150,8 @@ const getCourseLevelLabel = (course) => {
   return digits ? `${digits} LEVEL` : rawLevel.toUpperCase();
 };
 
+const getAttendanceKeyForCourse = (course) => String(course?.courseCode || '').trim().toUpperCase();
+
 const getCurrentLocation = () =>
   new Promise((resolve) => {
     if (!navigator.geolocation) {
@@ -696,8 +698,9 @@ const Dashboard = () => {
         attendancePass: detail.attendancePass || '',
       });
       const dataUrl = await QRCode.toDataURL(qrPayload, {
-        width: 320,
+        width: 360,
         margin: 2,
+        errorCorrectionLevel: 'M',
         color: { dark: '#0f172a', light: '#ffffff' },
       });
       setQrDataUrl(dataUrl);
@@ -1453,7 +1456,7 @@ const Dashboard = () => {
       }
 
       if (!attendancePass) {
-        setMessage('', 'Attendance key is missing. Scan the lecturer QR code or enter both the session code and attendance key.');
+        setMessage('', 'Attendance key is missing. Scan the lecturer QR code or enter the session code with the course short code.');
         return false;
       }
 
@@ -3160,7 +3163,7 @@ const Dashboard = () => {
                       <div className="grid gap-4 md:grid-cols-2">
                         <SummaryTile label="Course" value={sessionDetail.course?.courseCode || 'Not set'} helper={sessionDetail.course?.courseName || 'No course linked'} />
                         <SummaryTile label="Session code" value={sessionDetail.sessionCode} helper={`${formatDate(sessionDetail.date)} at ${formatTime(sessionDetail.startTime)}`} />
-                        <SummaryTile label="Attendance key" value={sessionDetail.attendancePass ? 'Live QR secured' : 'Unavailable'} helper={sessionDetail.attendancePassExpiresAt ? `Current key expires ${formatDateTime(sessionDetail.attendancePassExpiresAt)}` : 'Students must scan the active in-app QR.'} />
+                        <SummaryTile label="Attendance key" value={sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'Unavailable'} helper={sessionDetail.attendancePassExpiresAt ? `Manual fallback uses the course short code. Live QR refreshes until ${formatDateTime(sessionDetail.attendancePassExpiresAt)}.` : 'Manual fallback uses the course short code for this class.'} />
                         <SummaryTile label="Expected students" value={sessionDetail.attendanceStats?.expectedCount || 0} helper="Active enrolled students for this course" />
                         <SummaryTile label="Marked attendance" value={sessionDetail.attendanceStats?.markedCount || 0} helper="Students already present or late" />
                         <SummaryTile label="Present on time" value={sessionDetail.attendanceStats?.presentCount || 0} helper="Students marked within the attendance window" />
@@ -3171,7 +3174,7 @@ const Dashboard = () => {
                           Geofence active: center {sessionDetail.geofenceLatitude}, {sessionDetail.geofenceLongitude} with {sessionDetail.geofenceRadiusMeters}m radius.
                         </div>
                       )}
-                      {qrDataUrl && <div className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-5"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Scannable QR</p><p className="mt-2 text-sm leading-7 text-slate-600">Students must sign in to the app and use the in-app QR scanner. Each QR carries a short-lived attendance key, so copied session codes alone no longer work.</p><p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Fallback pair: {sessionDetail.sessionCode} + current attendance key</p></div><div className="rounded-[1.5rem] border border-white bg-white p-4 shadow-sm"><img src={qrDataUrl} alt="Session QR code" className="h-44 w-44" /></div></div></div>}
+                      {qrDataUrl && <div className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-5"><div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between"><div className="max-w-2xl"><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Scannable QR</p><p className="mt-2 text-sm leading-7 text-slate-600">Students should sign in to the app and use the in-app QR scanner. The QR stays live for active attendance and the manual fallback key is the course short code for this class.</p><p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Fallback pair: {sessionDetail.sessionCode} + {sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'COURSE CODE'}</p></div><div className="shrink-0 self-center rounded-[1.75rem] border border-white bg-white p-4 shadow-sm"><img src={qrDataUrl} alt="Session QR code" className="block h-52 w-52 shrink-0 rounded-[1.25rem] object-contain sm:h-56 sm:w-56" /></div></div></div>}
                       <div className="flex flex-wrap gap-3">
                         {sessionDetail.status === 'active' && <button onClick={() => handleCloseSession(sessionDetail.id)} disabled={busyAction === `close-session-${sessionDetail.id}`} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">{busyAction === `close-session-${sessionDetail.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Close session and auto-send queries</button>}
                         <button onClick={() => { setQueryForm((current) => ({ ...current, sessionId: String(sessionDetail.id) })); setActiveTab('queries'); }} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100"><Bell className="h-4 w-4" />Open query composer</button>
@@ -3210,10 +3213,10 @@ const Dashboard = () => {
               <div className="grid gap-8">
                 <Panel title="Mark attendance" eyebrow="Student check-in">
                   <div className="space-y-5">
-                    <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-5"><p className="text-sm leading-7 text-slate-600">Use the QR scanner for the smoothest flow. Manual marking now requires both the session code and the lecturer&apos;s current attendance key.</p></div>
+                    <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-5"><p className="text-sm leading-7 text-slate-600">Use the QR scanner for the smoothest flow. If you need to mark manually, enter the session code together with the course short code shown by your lecturer.</p></div>
                     <div className="grid gap-4">
                       <Input label="Session code" value={attendanceForm.sessionCode} onChange={(value) => setAttendanceForm((current) => ({ ...current, sessionCode: value.toUpperCase() }))} />
-                      <Input label="Attendance key" value={attendanceForm.attendancePass} onChange={(value) => setAttendanceForm((current) => ({ ...current, attendancePass: value }))} />
+                      <Input label="Attendance key (course short code)" value={attendanceForm.attendancePass} onChange={(value) => setAttendanceForm((current) => ({ ...current, attendancePass: value.toUpperCase() }))} />
                       <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700"><input type="checkbox" checked={attendanceForm.useLocation} onChange={(event) => setAttendanceForm((current) => ({ ...current, useLocation: event.target.checked }))} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />Include device location when available for stronger attendance verification.</label>
                     </div>
                     <div className="flex flex-wrap gap-3">
