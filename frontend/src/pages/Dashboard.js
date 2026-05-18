@@ -425,11 +425,13 @@ const Select = ({ label, value, onChange, options }) => {
 const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
   const { isDark } = useTheme();
   const [scannerError, setScannerError] = useState('');
+  const [scannerStatus, setScannerStatus] = useState('');
   const scanHandledRef = useRef(false);
 
   useEffect(() => {
     if (!isOpen) {
       setScannerError('');
+      setScannerStatus('');
       scanHandledRef.current = false;
       return undefined;
     }
@@ -467,15 +469,19 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
         }
 
         try {
+          setScannerError('');
+          setScannerStatus('QR captured. Verifying attendance...');
           await stopScanner();
-          const marked = await onDetected(payload);
-          if (marked) {
+          const result = await onDetected(payload);
+          if (result?.success) {
             cancelled = true;
             await stopScanner();
             onClose();
             return;
           }
+          setScannerError(result?.message || 'Attendance could not be marked after scanning. Review the message above and try again.');
         } finally {
+          setScannerStatus('');
           if (!cancelled) {
             onClose();
           }
@@ -507,6 +513,7 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
           <button onClick={onClose} className={`rounded-2xl border px-4 py-2 text-sm font-semibold ${isDark ? 'border-slate-700 text-slate-300' : 'border-slate-200 text-slate-600'}`}>Close</button>
         </div>
         <div id="attendance-qr-reader" className="overflow-hidden rounded-[1.5rem] border border-blue-100" />
+        {scannerStatus && <p className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${isDark ? 'border-blue-800 bg-blue-950/60 text-blue-200' : 'border-blue-200 bg-blue-50 text-blue-700'}`}>{scannerStatus}</p>}
         {scannerError && <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{scannerError}</p>}
       </div>
     </div>
@@ -696,6 +703,11 @@ const Dashboard = () => {
   const setMessage = (nextSuccess = '', nextError = '') => {
     setSuccess(nextSuccess);
     setError(nextError);
+    if (nextSuccess || nextError) {
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    }
   };
 
   const loadSessionDetail = useCallback(async (sessionId) => {
@@ -1458,7 +1470,7 @@ const Dashboard = () => {
 
   const handleMarkAttendance = useCallback(async (overridePayload) => {
     if (attendanceRequestRef.current) {
-      return false;
+      return { success: false, message: 'Attendance is already being processed. Please wait a moment.' };
     }
 
     try {
@@ -1467,14 +1479,23 @@ const Dashboard = () => {
         : (overridePayload || {});
       const sessionCode = String(resolvedPayload.sessionCode || attendanceForm.sessionCode || '').trim().toUpperCase();
       const attendancePass = String(resolvedPayload.attendancePass || attendanceForm.attendancePass || '').trim();
+      if (resolvedPayload.sessionCode || resolvedPayload.attendancePass) {
+        setAttendanceForm((current) => ({
+          ...current,
+          sessionCode: sessionCode || current.sessionCode,
+          attendancePass: attendancePass || current.attendancePass,
+        }));
+      }
       if (!sessionCode) {
-        setMessage('', 'Enter or scan a valid session code before marking attendance.');
-        return false;
+        const message = 'Enter or scan a valid session code before marking attendance.';
+        setMessage('', message);
+        return { success: false, message };
       }
 
       if (!attendancePass) {
-        setMessage('', 'Attendance key is missing. Scan the lecturer QR code or enter the session code with the course short code.');
-        return false;
+        const message = 'Attendance key is missing. Scan the lecturer QR code or enter the session code with the course short code.';
+        setMessage('', message);
+        return { success: false, message };
       }
 
       attendanceRequestRef.current = true;
@@ -1489,12 +1510,14 @@ const Dashboard = () => {
         accuracy: location?.accuracy,
       });
       setAttendanceForm(initialAttendanceForm);
-      setMessage(response.data?.message || 'Attendance marked successfully.');
+      const message = response.data?.message || 'Attendance marked successfully.';
+      setMessage(message);
       await loadData(true);
-      return true;
+      return { success: true, message };
     } catch (actionError) {
-      setMessage('', actionError.response?.data?.message || 'Attendance could not be marked.');
-      return false;
+      const message = actionError.response?.data?.message || 'Attendance could not be marked.';
+      setMessage('', message);
+      return { success: false, message };
     } finally {
       attendanceRequestRef.current = false;
       setBusyAction('');
