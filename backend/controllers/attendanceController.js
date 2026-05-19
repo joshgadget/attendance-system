@@ -10,6 +10,7 @@ const { findEnrollmentsForCourse } = require('../utils/enrollmentLookup');
 const generateSessionCode = () => crypto.randomBytes(5).toString('hex').toUpperCase();
 const SESSION_SUMMARY_ATTRIBUTES = ['id', 'courseId', 'lecturerId', 'sessionCode', 'date', 'startTime', 'endTime', 'venue', 'status', 'maxAttendanceTime', 'createdAt', 'updatedAt'];
 const ATTENDANCE_PASS_TTL_SECONDS = 120;
+const APP_TIMEZONE = 'Africa/Lagos';
 
 const buildEndTime = (startTime, durationMinutes) => {
   const [hours, minutes] = startTime.split(':').map(Number);
@@ -36,6 +37,33 @@ const distanceMeters = (lat1, lon1, lat2, lon2) => {
     Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return earthRadius * c;
+};
+
+const toDateKey = (value) => String(value || '').slice(0, 10);
+
+const parseClockMinutes = (timeValue) => {
+  const [hours = '0', minutes = '0'] = String(timeValue || '00:00:00').split(':');
+  return (Number(hours) * 60) + Number(minutes);
+};
+
+const getCurrentLagosTimeParts = () => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: APP_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+
+  const parts = Object.fromEntries(formatter.formatToParts(new Date()).map((part) => [part.type, part.value]));
+  return {
+    dateKey: `${parts.year}-${parts.month}-${parts.day}`,
+    minutes: (Number(parts.hour) * 60) + Number(parts.minute),
+    timeLabel: `${parts.hour}:${parts.minute}:${parts.second}`,
+  };
 };
 
 const isInsideNigeriaBounds = (latitude, longitude) =>
@@ -371,27 +399,28 @@ exports.markAttendance = async (req, res) => {
       });
     }
 
-    const sessionStart = new Date(`${session.date}T${session.startTime}`);
-    const sessionEnd = new Date(`${session.date}T${session.endTime}`);
-    const now = new Date();
-    const earliestMarkTime = new Date(sessionStart.getTime() - (5 * 60 * 1000));
-    const closingDeadline = new Date(sessionEnd.getTime() + (15 * 60 * 1000));
+    const sessionDateKey = toDateKey(session.date);
+    const startMinutes = parseClockMinutes(session.startTime);
+    const endMinutes = parseClockMinutes(session.endTime);
+    const earliestMarkMinutes = startMinutes - 5;
+    const closingDeadlineMinutes = endMinutes + 15;
+    const lagosNow = getCurrentLagosTimeParts();
 
-    if (now < earliestMarkTime) {
+    if (lagosNow.dateKey < sessionDateKey || (lagosNow.dateKey === sessionDateKey && lagosNow.minutes < earliestMarkMinutes)) {
       return res.status(403).json({
         success: false,
         message: `This session has not opened yet. Attendance opens shortly before ${session.startTime}.`,
       });
     }
 
-    if (now > closingDeadline) {
+    if (lagosNow.dateKey > sessionDateKey || (lagosNow.dateKey === sessionDateKey && lagosNow.minutes > closingDeadlineMinutes)) {
       return res.status(403).json({
         success: false,
         message: 'The attendance window for this session has closed.',
       });
     }
 
-    const diffMinutes = Math.floor((now - sessionStart) / (1000 * 60));
+    const diffMinutes = lagosNow.minutes - startMinutes;
     const status = diffMinutes > session.maxAttendanceTime ? 'late' : 'present';
 
     if (!hasGeofence(session)) {
