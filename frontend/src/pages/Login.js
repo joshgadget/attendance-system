@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, GraduationCap, ArrowRight } from 'lucide-react';
 import { login } from '../redux/slices/authSlice';
@@ -11,8 +11,10 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const dispatch = useDispatch();
+  const location = useLocation();
   const { loading, error } = useSelector((state) => state.auth);
   const { isDark } = useTheme();
+  const isAttendanceEntry = useMemo(() => new URLSearchParams(location.search).get('next') === 'attendance', [location.search]);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -55,6 +57,12 @@ const Login = () => {
           <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className={`mb-8 text-center ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
             Smart attendance tracking for modern education
           </motion.p>
+
+          {isAttendanceEntry && (
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className={`mb-6 rounded-2xl border px-4 py-4 text-center text-sm ${isDark ? 'border-emerald-800 bg-emerald-950/40 text-emerald-200' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+              Sign in to continue to the attendance page. Your scanned class details will be ready as soon as you enter the app.
+            </motion.div>
+          )}
 
           {error && (
             <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-center text-sm text-red-600">

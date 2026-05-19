@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import store from './redux/store';
 import { fetchCurrentUser } from './redux/slices/authSlice';
@@ -11,6 +11,26 @@ import ForceResetPassword from './pages/ForceResetPassword';
 import Dashboard from './pages/Dashboard';
 import StudentCourseSelection from './pages/StudentCourseSelection';
 import { ThemeProvider } from './theme/ThemeContext';
+
+const PENDING_ATTENDANCE_STORAGE_KEY = 'attendance-system-pending-entry';
+
+const storePendingAttendanceEntry = (location) => {
+  const params = new URLSearchParams(location.search);
+  const sessionCode = (params.get('sessionCode') || params.get('s') || '').trim().toUpperCase();
+  const attendancePass = (params.get('attendanceKey') || params.get('k') || params.get('attendancePass') || params.get('p') || '').trim().toUpperCase();
+
+  if (!sessionCode) {
+    return false;
+  }
+
+  window.localStorage.setItem(PENDING_ATTENDANCE_STORAGE_KEY, JSON.stringify({
+    sessionCode,
+    attendancePass,
+    sourcePath: `${location.pathname}${location.search}`,
+    savedAt: new Date().toISOString(),
+  }));
+  return true;
+};
 
 const AuthBootstrap = ({ children }) => {
   const dispatch = useDispatch();
@@ -48,6 +68,23 @@ const PublicRoute = ({ children }) => {
   return isAuthenticated ? <Navigate to="/dashboard" replace /> : children;
 };
 
+const AttendanceEntryRoute = () => {
+  const location = useLocation();
+  const { isAuthenticated, user } = useSelector((state) => state.auth);
+  const needsReset = isAuthenticated && user?.mustResetPassword;
+  const hasPendingEntry = storePendingAttendanceEntry(location);
+
+  if (!hasPendingEntry) {
+    return <Navigate to={needsReset ? '/force-reset' : (isAuthenticated ? '/dashboard' : '/login')} replace />;
+  }
+
+  if (needsReset) {
+    return <Navigate to="/force-reset" replace />;
+  }
+
+  return <Navigate to={isAuthenticated ? '/dashboard?tab=attendance' : '/login?next=attendance'} replace />;
+};
+
 const AppRoutes = () => {
   const { isAuthenticated } = useSelector((state) => state.auth);
   const { user } = useSelector((state) => state.auth);
@@ -56,6 +93,7 @@ const AppRoutes = () => {
   return (
     <Routes>
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+      <Route path="/attendance-entry" element={<AttendanceEntryRoute />} />
       <Route path="/signup" element={<PublicRoute><StudentSignup /></PublicRoute>} />
       <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
       <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />

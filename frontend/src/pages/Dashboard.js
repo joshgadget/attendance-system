@@ -37,7 +37,7 @@ import {
 import QRCode from 'qrcode';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { logout } from '../redux/slices/authSlice';
 import { useTheme } from '../theme/ThemeContext';
@@ -151,7 +151,7 @@ const getCourseLevelLabel = (course) => {
 };
 
 const getAttendanceKeyForCourse = (course) => String(course?.courseCode || '').trim().toUpperCase();
-const buildAttendanceQrPayload = (sessionCode, attendanceKey) => `ATD|${String(sessionCode || '').trim().toUpperCase()}|${String(attendanceKey || '').trim().toUpperCase()}`;
+const PENDING_ATTENDANCE_STORAGE_KEY = 'attendance-system-pending-entry';
 
 const getCurrentLocation = () =>
   new Promise((resolve) => {
@@ -524,6 +524,7 @@ const Dashboard = () => {
   const { isDark, theme, toggleTheme } = useTheme();
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useSelector((state) => state.auth);
   const role = user?.role || 'student';
   const tabs = TABS_BY_ROLE[role] || TABS_BY_ROLE.student;
@@ -565,6 +566,7 @@ const Dashboard = () => {
   const [lecturerRosterFileName, setLecturerRosterFileName] = useState('');
   const [lecturerRosterCourseId, setLecturerRosterCourseId] = useState('');
   const [responseDrafts, setResponseDrafts] = useState({});
+  const [attendanceEntrySource, setAttendanceEntrySource] = useState('');
   const [registryFilters, setRegistryFilters] = useState({ faculty: '', department: '', program: '', level: '', claimed: '' });
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [studentEditForm, setStudentEditForm] = useState({ firstName: '', lastName: '', matricNumber: '', department: '', faculty: '', program: '' });
@@ -666,6 +668,47 @@ const Dashboard = () => {
   }, [tabs]);
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const requestedTab = params.get('tab');
+    if (requestedTab && tabs.includes(requestedTab) && requestedTab !== activeTab) {
+      setActiveTab(requestedTab);
+    }
+  }, [activeTab, location.search, tabs]);
+
+  useEffect(() => {
+    if (role !== 'student') {
+      return;
+    }
+
+    const rawPendingEntry = window.localStorage.getItem(PENDING_ATTENDANCE_STORAGE_KEY);
+    if (!rawPendingEntry) {
+      return;
+    }
+
+    try {
+      const pendingEntry = JSON.parse(rawPendingEntry);
+      const sessionCode = String(pendingEntry?.sessionCode || '').trim().toUpperCase();
+      const attendancePass = String(pendingEntry?.attendancePass || '').trim().toUpperCase();
+      if (!sessionCode) {
+        window.localStorage.removeItem(PENDING_ATTENDANCE_STORAGE_KEY);
+        return;
+      }
+
+      setAttendanceForm((current) => ({
+        ...current,
+        sessionCode,
+        attendancePass,
+      }));
+      setAttendanceEntrySource(String(pendingEntry?.sourcePath || 'QR link'));
+      setActiveTab('attendance');
+      window.localStorage.removeItem(PENDING_ATTENDANCE_STORAGE_KEY);
+      setMessage('Attendance link loaded. Review the details below and tap "Mark with code" to complete attendance.');
+    } catch (error) {
+      window.localStorage.removeItem(PENDING_ATTENDANCE_STORAGE_KEY);
+    }
+  }, [role]);
+
+  useEffect(() => {
     setAccountMenuOpen(false);
     setSidebarOpen(false);
   }, [activeTab]);
@@ -722,10 +765,8 @@ const Dashboard = () => {
     setSessionDetail(detail);
 
     if (detail?.sessionCode) {
-      const qrPayload = buildAttendanceQrPayload(
-        detail.sessionCode,
-        detail.attendanceKey || getAttendanceKeyForCourse(detail.course) || ''
-      );
+      const attendanceKey = detail.attendanceKey || getAttendanceKeyForCourse(detail.course) || '';
+      const qrPayload = `${window.location.origin}${window.location.pathname}#/attendance-entry?sessionCode=${encodeURIComponent(detail.sessionCode)}&attendanceKey=${encodeURIComponent(attendanceKey)}`;
       const dataUrl = await QRCode.toDataURL(qrPayload, {
         width: 420,
         margin: 1,
@@ -1510,6 +1551,7 @@ const Dashboard = () => {
         accuracy: location?.accuracy,
       });
       setAttendanceForm(initialAttendanceForm);
+      setAttendanceEntrySource('');
       const message = response.data?.message || 'Attendance marked successfully.';
       setMessage(message);
       await loadData(true);
@@ -3214,7 +3256,7 @@ const Dashboard = () => {
                           Geofence active: center {sessionDetail.geofenceLatitude}, {sessionDetail.geofenceLongitude} with {sessionDetail.geofenceRadiusMeters}m radius.
                         </div>
                       )}
-                      {qrDataUrl && <div className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-5"><div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between"><div className="max-w-2xl"><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Scannable QR</p><p className="mt-2 text-sm leading-7 text-slate-600">Students should sign in to the app and use the in-app QR scanner. The QR stays live for active attendance and the manual fallback key is the course short code for this class.</p><p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Fallback pair: {sessionDetail.sessionCode} + {sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'COURSE CODE'}</p></div><div className="shrink-0 self-center rounded-[1.75rem] border border-white bg-white p-4 shadow-sm"><img src={qrDataUrl} alt="Session QR code" className="block h-52 w-52 shrink-0 rounded-[1.25rem] object-contain sm:h-56 sm:w-56" /></div></div></div>}
+                      {qrDataUrl && <div className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-5"><div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between"><div className="max-w-2xl"><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Scannable QR</p><p className="mt-2 text-sm leading-7 text-slate-600">Students can scan this with their normal phone camera. The link opens the app, takes them to attendance, and fills in the session details for this class.</p><p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Fallback pair: {sessionDetail.sessionCode} + {sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'COURSE CODE'}</p></div><div className="shrink-0 self-center rounded-[1.75rem] border border-white bg-white p-4 shadow-sm"><img src={qrDataUrl} alt="Session QR code" className="block h-52 w-52 shrink-0 rounded-[1.25rem] object-contain sm:h-56 sm:w-56" /></div></div></div>}
                       <div className="flex flex-wrap gap-3">
                         {sessionDetail.status === 'active' && <button onClick={() => handleCloseSession(sessionDetail.id)} disabled={busyAction === `close-session-${sessionDetail.id}`} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">{busyAction === `close-session-${sessionDetail.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Close session and auto-send queries</button>}
                         <button onClick={() => { setQueryForm((current) => ({ ...current, sessionId: String(sessionDetail.id) })); setActiveTab('queries'); }} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100"><Bell className="h-4 w-4" />Open query composer</button>
@@ -3253,6 +3295,7 @@ const Dashboard = () => {
               <div className="grid gap-8">
                 <Panel title="Mark attendance" eyebrow="Student check-in">
                   <div className="space-y-5">
+                    {attendanceEntrySource && <div className="rounded-[1.5rem] border border-emerald-200 bg-emerald-50/80 px-5 py-4 text-sm text-emerald-800">Attendance details were loaded from {attendanceEntrySource}. Confirm the session code and tap <span className="font-semibold">Mark with code</span>.</div>}
                     <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-5"><p className="text-sm leading-7 text-slate-600">Use the QR scanner for the smoothest flow. If you need to mark manually, enter the session code together with the course short code shown by your lecturer.</p></div>
                     <div className="grid gap-4">
                       <Input label="Session code" value={attendanceForm.sessionCode} onChange={(value) => setAttendanceForm((current) => ({ ...current, sessionCode: value.toUpperCase() }))} />
