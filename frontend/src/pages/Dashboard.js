@@ -170,6 +170,17 @@ const getCurrentLocation = () =>
 const extractAttendancePayload = (decodedText) => {
   const fallback = { sessionCode: '', attendancePass: '' };
   const compactText = String(decodedText || '').trim();
+  const readAttendanceParams = (params) => {
+    const sessionCode = (params.get('sessionCode') || params.get('s') || '').trim().toUpperCase();
+    if (!sessionCode) {
+      return null;
+    }
+
+    return {
+      sessionCode,
+      attendancePass: (params.get('attendancePass') || params.get('p') || params.get('attendanceKey') || params.get('k') || '').trim().toUpperCase(),
+    };
+  };
 
   if (compactText.toUpperCase().startsWith('ATD|')) {
     const [, sessionCode = '', attendanceKey = ''] = compactText.split('|');
@@ -181,12 +192,18 @@ const extractAttendancePayload = (decodedText) => {
 
   try {
     const parsedUrl = new URL(compactText);
-    const directCode = parsedUrl.searchParams.get('sessionCode') || parsedUrl.searchParams.get('s');
-    if (directCode) {
-      return {
-        sessionCode: directCode.trim().toUpperCase(),
-        attendancePass: (parsedUrl.searchParams.get('attendancePass') || parsedUrl.searchParams.get('p') || parsedUrl.searchParams.get('attendanceKey') || parsedUrl.searchParams.get('k') || '').trim().toUpperCase(),
-      };
+    const directParams = readAttendanceParams(parsedUrl.searchParams);
+    if (directParams) {
+      return directParams;
+    }
+
+    const hashQueryIndex = parsedUrl.hash.indexOf('?');
+    if (hashQueryIndex >= 0) {
+      const hashParams = new URLSearchParams(parsedUrl.hash.slice(hashQueryIndex + 1));
+      const hashPayload = readAttendanceParams(hashParams);
+      if (hashPayload) {
+        return hashPayload;
+      }
     }
   } catch (error) {
     // not a full absolute URL, keep trying other formats
@@ -195,12 +212,9 @@ const extractAttendancePayload = (decodedText) => {
   if (compactText.includes('sessionCode=') || compactText.includes('s=')) {
     const queryString = compactText.includes('?') ? compactText.slice(compactText.indexOf('?') + 1) : compactText;
     const params = new URLSearchParams(queryString);
-    const queryCode = params.get('sessionCode') || params.get('s');
-    if (queryCode) {
-      return {
-        sessionCode: queryCode.trim().toUpperCase(),
-        attendancePass: (params.get('attendancePass') || params.get('p') || params.get('attendanceKey') || params.get('k') || '').trim().toUpperCase(),
-      };
+    const queryPayload = readAttendanceParams(params);
+    if (queryPayload) {
+      return queryPayload;
     }
   }
 
