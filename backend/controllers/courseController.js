@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const { PDFParse } = require('pdf-parse');
 const { Course, CourseSchedule, CourseAudience, Enrollment, User, StudentRegistry } = require('../models');
 const { logAuditEvent } = require('../utils/auditLogger');
+const { normalizeInstitutionText, normalizeInstitutionPayload, normalizeAcademicYear, normalizeLevel } = require('../utils/institutionNormalizer');
 
 const normalizeDayOfWeek = (value = '') => {
   const normalized = String(value).trim().toLowerCase();
@@ -57,25 +58,9 @@ const dayMap = {
 
 const courseCodePattern = /(?:OOU-)?([A-Z]{2,4})\s?(\d{3})(?:\s*-\s*PR|\s*PR)?(?:\((?:NEW|OLD)\))?/gi;
 
-const normalizeText = (value = '') => String(value || '').trim();
+const normalizeText = (value = '', field = 'generic') => normalizeInstitutionText(value, field);
 const normalizeUpper = (value = '') => normalizeText(value).toUpperCase();
-const normalizeCampus = (value = '') => normalizeText(value);
-const normalizeLevel = (value = '') => {
-  const digits = String(value || '').replace(/\D/g, '');
-  if (!digits) {
-    return '';
-  }
-
-  if (digits.length === 1) {
-    return `${digits}00`;
-  }
-
-  if (digits.length >= 3) {
-    return `${digits[0]}00`;
-  }
-
-  return digits;
-};
+const normalizeCampus = (value = '') => normalizeInstitutionText(value, 'campus');
 
 const normalizeCourseCode = (value = '') => {
   const cleaned = normalizeUpper(value)
@@ -104,14 +89,7 @@ const deriveLevelFromCourseCode = (courseCode = '') => {
   return `${match[1][0]}00`;
 };
 
-const buildAcademicYear = (value = '') => {
-  const years = String(value || '').match(/\d{4}/g);
-  if (!years || years.length < 2) {
-    return normalizeText(value);
-  }
-
-  return `${years[0].slice(-2)}/${years[1].slice(-2)}`;
-};
+const buildAcademicYear = (value = '') => normalizeAcademicYear(value);
 
 const extractCourseCodes = (value = '') => {
   const found = new Set();
@@ -131,7 +109,7 @@ const parsePdfTimetableMetadata = (text = '') => {
   const titleMatch = text.match(/TIMETABLE FOR\s+(\d{4})\s*-\s*(\d{4})\s+(RAIN|HARMATTAN)\s+SEMESTER/i);
 
   return {
-    faculty: facultyMatch ? normalizeText(facultyMatch[1]).replace(/\s+/g, ' ') : '',
+    faculty: facultyMatch ? normalizeInstitutionText(facultyMatch[1], 'faculty') : '',
     academicYear: titleMatch ? `${titleMatch[1].slice(-2)}/${titleMatch[2].slice(-2)}` : '',
     semester: titleMatch ? String(titleMatch[3]).toLowerCase() : '',
   };
@@ -214,9 +192,9 @@ const upsertCourseAudience = async (courseId, audience = {}) => {
   const payload = {
     courseId,
     campus: normalizeCampus(audience.campus) || null,
-    faculty: normalizeText(audience.faculty) || null,
-    department: normalizeUpper(audience.department) || null,
-    program: normalizeText(audience.program) || null,
+    faculty: normalizeInstitutionText(audience.faculty, 'faculty') || null,
+    department: normalizeInstitutionText(audience.department, 'department').toUpperCase() || null,
+    program: normalizeInstitutionText(audience.program, 'program') || null,
     level: normalizeLevel(audience.level) || null,
     isActive: audience.isActive !== false,
   };
@@ -360,7 +338,16 @@ const resolveFallbackLecturer = async (preferredUserId) => {
 
 exports.createCourse = async (req, res) => {
   try {
-    const { courseCode, courseName, description, semester, academicYear, lecturerId, faculty, department, program, campus, level } = req.body;
+    const { courseCode, courseName, description, semester, lecturerId } = req.body;
+    const normalizedStructure = normalizeInstitutionPayload(req.body, {
+      academicYear: 'academicYear',
+      faculty: 'faculty',
+      department: 'department',
+      program: 'program',
+      campus: 'campus',
+      level: 'level',
+    });
+    const { academicYear, faculty, department, program, campus, level } = normalizedStructure;
     const normalizedAcademicYear = buildAcademicYear(academicYear);
 
     if (!courseCode || !courseName || !semester || !normalizedAcademicYear || !lecturerId) {
@@ -384,15 +371,15 @@ exports.createCourse = async (req, res) => {
     const course = await Course.create({
       courseCode: normalizedCode || courseCode,
       courseName,
-      description,
+      description: String(description || '').trim() || null,
       semester,
       academicYear: normalizedAcademicYear,
       lecturerId,
       campus: normalizeCampus(campus) || null,
-      faculty: faculty || null,
-      department: department || null,
-      program: program || null,
-      level: level || null,
+      faculty: normalizeInstitutionText(faculty, 'faculty') || null,
+      department: normalizeInstitutionText(department, 'department') || null,
+      program: normalizeInstitutionText(program, 'program') || null,
+      level: normalizeLevel(level) || null,
       isActive: true,
     });
 
@@ -443,7 +430,15 @@ exports.bulkUpsertCourses = async (req, res) => {
       const courseCode = normalizeCourseCode(entry.courseCode || '');
       const courseName = String(entry.courseName || '').trim();
       const semester = String(entry.semester || '').trim().toLowerCase();
-      const academicYear = buildAcademicYear(entry.academicYear || '');
+      const normalizedEntry = normalizeInstitutionPayload(entry, {
+        academicYear: 'academicYear',
+        faculty: 'faculty',
+        department: 'department',
+        program: 'program',
+        campus: 'campus',
+        level: 'level',
+      });
+      const academicYear = buildAcademicYear(normalizedEntry.academicYear || '');
 
       if (!courseCode || !courseName || !semester || !academicYear) {
         return res.status(400).json({
@@ -471,15 +466,15 @@ exports.bulkUpsertCourses = async (req, res) => {
         course = await Course.create({
           courseCode,
           courseName,
-          description: entry.description || null,
+          description: String(entry.description || '').trim() || null,
           semester,
           academicYear,
           lecturerId: lecturer?.id || fallbackLecturer.id,
-          campus: normalizeCampus(entry.campus) || null,
-          faculty: entry.faculty || null,
-          department: normalizeUpper(entry.department) || null,
-          program: entry.program || null,
-          level: normalizeLevel(entry.level) || null,
+          campus: normalizeCampus(normalizedEntry.campus) || null,
+          faculty: normalizedEntry.faculty || null,
+          department: normalizeUpper(normalizedEntry.department) || null,
+          program: normalizedEntry.program || null,
+          level: normalizeLevel(normalizedEntry.level) || null,
           isActive: true,
         });
         existingCourseLookup.set(lookupKey, course);
@@ -489,25 +484,25 @@ exports.bulkUpsertCourses = async (req, res) => {
       if (!created) {
         await course.update({
           courseName,
-          description: entry.description || null,
+          description: String(entry.description || '').trim() || null,
           semester,
           academicYear,
           lecturerId: lecturer?.id || course.lecturerId || fallbackLecturer.id,
-          campus: normalizeCampus(entry.campus) || null,
-          faculty: entry.faculty || null,
-          department: normalizeUpper(entry.department) || null,
-          program: entry.program || null,
-          level: normalizeLevel(entry.level) || null,
+          campus: normalizeCampus(normalizedEntry.campus) || null,
+          faculty: normalizedEntry.faculty || null,
+          department: normalizeUpper(normalizedEntry.department) || null,
+          program: normalizedEntry.program || null,
+          level: normalizeLevel(normalizedEntry.level) || null,
           isActive: true,
         });
       }
 
       await upsertCourseAudience(course.id, {
-        campus: entry.campus || null,
-        faculty: entry.faculty || null,
-        department: entry.department || null,
-        program: entry.program || null,
-        level: entry.level || null,
+        campus: normalizedEntry.campus || null,
+        faculty: normalizedEntry.faculty || null,
+        department: normalizedEntry.department || null,
+        program: normalizedEntry.program || null,
+        level: normalizedEntry.level || null,
       });
 
       results.push({ courseCode, action: created ? 'created' : 'updated', courseId: course.id });
@@ -968,7 +963,17 @@ exports.updateCourse = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Course not found' });
     }
 
-    const payload = { ...req.body };
+    const payload = {
+      ...req.body,
+      ...normalizeInstitutionPayload(req.body, {
+        academicYear: 'academicYear',
+        faculty: 'faculty',
+        department: 'department',
+        program: 'program',
+        campus: 'campus',
+        level: 'level',
+      }),
+    };
     if (payload.academicYear) {
       payload.academicYear = buildAcademicYear(payload.academicYear);
     }

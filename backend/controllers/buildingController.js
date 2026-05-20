@@ -1,6 +1,7 @@
 const { Building } = require('../models');
 const { Op } = require('sequelize');
 const { logAuditEvent } = require('../utils/auditLogger');
+const { normalizeInstitutionText } = require('../utils/institutionNormalizer');
 
 exports.getBuildings = async (req, res) => {
   try {
@@ -20,7 +21,7 @@ exports.getBuildings = async (req, res) => {
     }
 
     if (campus) {
-      where.campus = campus;
+      where.campus = normalizeInstitutionText(campus, 'campus');
     }
 
     const buildings = await Building.findAll({
@@ -67,7 +68,7 @@ exports.createBuilding = async (req, res) => {
     const building = await Building.create({
       name: name.trim(),
       tag: tag ? String(tag).trim() : null,
-      campus: campus ? String(campus).trim() : null,
+      campus: normalizeInstitutionText(campus, 'campus') || null,
       latitude: parsedLatitude,
       longitude: parsedLongitude,
       radiusMeters: parsedRadius,
@@ -102,7 +103,7 @@ exports.updateBuilding = async (req, res) => {
     const payload = {};
     if (req.body.name !== undefined) payload.name = String(req.body.name).trim();
     if (req.body.tag !== undefined) payload.tag = req.body.tag ? String(req.body.tag).trim() : null;
-    if (req.body.campus !== undefined) payload.campus = req.body.campus ? String(req.body.campus).trim() : null;
+    if (req.body.campus !== undefined) payload.campus = normalizeInstitutionText(req.body.campus, 'campus') || null;
 
     if (req.body.latitude !== undefined) {
       const parsed = Number(req.body.latitude);

@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
 const { StudentRegistry, User } = require('../models');
+const { normalizeInstitutionPayload, normalizeInstitutionText } = require('../utils/institutionNormalizer');
 
 exports.getRegistry = async (req, res) => {
   try {
@@ -19,23 +20,23 @@ exports.getRegistry = async (req, res) => {
     }
 
     if (faculty) {
-      where.faculty = faculty;
+      where.faculty = normalizeInstitutionText(faculty, 'faculty');
     }
 
     if (department) {
-      where.department = department;
+      where.department = normalizeInstitutionText(department, 'department');
     }
 
     if (program) {
-      where.program = program;
+      where.program = normalizeInstitutionText(program, 'program');
     }
 
     if (campus) {
-      where.campus = campus;
+      where.campus = normalizeInstitutionText(campus, 'campus');
     }
 
     if (level) {
-      where.level = level;
+      where.level = normalizeInstitutionText(level, 'level');
     }
 
     if (claimed === 'true') {
@@ -59,7 +60,15 @@ exports.getRegistry = async (req, res) => {
 
 exports.createRegistryRecord = async (req, res) => {
   try {
-    const { matricNumber, firstName, lastName, otherName, faculty, department, program, campus, level, admissionYear } = req.body;
+    const { matricNumber, firstName, lastName, otherName, admissionYear } = req.body;
+    const normalizedStructure = normalizeInstitutionPayload(req.body, {
+      faculty: 'faculty',
+      department: 'department',
+      program: 'program',
+      campus: 'campus',
+      level: 'level',
+    });
+    const { faculty, department, program, campus, level } = normalizedStructure;
 
     if (!matricNumber || !firstName || !lastName || !faculty || !department || !program) {
       return res.status(400).json({
@@ -118,7 +127,15 @@ exports.bulkUpsertRegistry = async (req, res) => {
     }
 
     for (const record of records) {
-      const { matricNumber, firstName, lastName, faculty, department, program, campus, otherName, level, admissionYear } = record;
+      const { matricNumber, firstName, lastName, otherName, admissionYear } = record;
+      const normalizedStructure = normalizeInstitutionPayload(record, {
+        faculty: 'faculty',
+        department: 'department',
+        program: 'program',
+        campus: 'campus',
+        level: 'level',
+      });
+      const { faculty, department, program, campus, level } = normalizedStructure;
       if (!matricNumber || !firstName || !lastName || !faculty || !department || !program) {
         return res.status(400).json({
           success: false,

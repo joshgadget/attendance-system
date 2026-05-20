@@ -4,6 +4,7 @@ const { Op } = require('sequelize');
 const { Enrollment, Course, CourseAudience, StudentRegistry, User } = require('../models');
 const authConfig = require('../config/auth');
 const { sendEmail } = require('../utils/mailer');
+const { normalizeInstitutionPayload, normalizeInstitutionText } = require('../utils/institutionNormalizer');
 
 const generateTokens = (user) => {
   const payload = { id: user.id, email: user.email, role: user.role };
@@ -15,7 +16,7 @@ const generateTokens = (user) => {
 const normalizeEmail = (email = '') => email.trim().toLowerCase();
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 const buildDisplayName = (user) => [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'there';
-const normalizeCampus = (value = '') => String(value || '').trim();
+const normalizeCampus = (value = '') => normalizeInstitutionText(value, 'campus');
 const resolveRequestIp = (req) => req.ip || req.get?.('x-forwarded-for') || req.connection?.remoteAddress || null;
 
 const sendWelcomeEmail = async (user, context = {}) => {
@@ -249,7 +250,14 @@ const courseMatchesRegistry = (course, registryRecord, semester, academicYear) =
 
 const register = async (req, res) => {
   try {
-    const { email, password, firstName, lastName, role, department, faculty, program, campus, matricNumber } = req.body;
+    const { email, password, firstName, lastName, role, matricNumber } = req.body;
+    const normalizedStructure = normalizeInstitutionPayload(req.body, {
+      department: 'department',
+      faculty: 'faculty',
+      program: 'program',
+      campus: 'campus',
+    });
+    const { department, faculty, program, campus } = normalizedStructure;
 
     if (!email || !password || !firstName || !lastName || !role) {
       return res.status(400).json({
@@ -362,10 +370,10 @@ const getPublicCourses = async (req, res) => {
 
     const normalizedRequestedYear = normalizeAcademicYearInput(academicYear);
     const filteredCourses = courses.filter((course) => courseMatchesRegistry(course, {
-      faculty,
-      department,
-      program,
-      campus,
+      faculty: normalizeInstitutionText(faculty, 'faculty'),
+      department: normalizeInstitutionText(department, 'department'),
+      program: normalizeInstitutionText(program, 'program'),
+      campus: normalizeInstitutionText(campus, 'campus'),
       level,
     }, semester, normalizedRequestedYear));
 

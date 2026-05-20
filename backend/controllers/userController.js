@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
 const { User, Course, Enrollment, StudentRegistry, Session, AbsenceQuery, Attendance, CourseAudience, CourseSchedule } = require('../models');
+const { normalizeInstitutionPayload } = require('../utils/institutionNormalizer');
 
 const sanitizeUser = (user) => (typeof user.toSafeObject === 'function' ? user.toSafeObject() : user);
 const MAX_PROFILE_PHOTO_LENGTH = 1_500_000;
@@ -246,6 +247,12 @@ exports.updateMyProfile = async (req, res) => {
           : (req.body[field] || null);
       }
     });
+
+    Object.assign(payload, normalizeInstitutionPayload(payload, {
+      department: 'department',
+      faculty: 'faculty',
+      program: 'program',
+    }));
 
     await user.update(payload);
     res.json({ success: true, message: 'Profile updated successfully', data: sanitizeUser(user) });
@@ -519,7 +526,15 @@ exports.updateUser = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const payload = { ...req.body };
+    const payload = {
+      ...req.body,
+      ...normalizeInstitutionPayload(req.body, {
+        department: 'department',
+        faculty: 'faculty',
+        program: 'program',
+        campus: 'campus',
+      }),
+    };
     delete payload.password;
     delete payload.email;
 
