@@ -15,7 +15,7 @@ const sequelize = new Sequelize(
       ? {
           ssl: {
             require: true,
-            rejectUnauthorized:false,
+            rejectUnauthorized:true,
           },
         }
       : {},
