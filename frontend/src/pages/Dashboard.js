@@ -152,6 +152,23 @@ const getCourseLevelLabel = (course) => {
 
 const getAttendanceKeyForCourse = (course) => String(course?.courseCode || '').trim().toUpperCase();
 const PENDING_ATTENDANCE_STORAGE_KEY = 'attendance-system-pending-entry';
+const DEFAULT_LEVEL_OPTIONS = ['100', '200', '300', '400', '500', '600'];
+
+const collectUniqueValues = (...collections) => {
+  const values = new Set();
+  collections.flat().forEach((value) => {
+    const normalized = String(value || '').trim();
+    if (normalized) {
+      values.add(normalized);
+    }
+  });
+  return Array.from(values).sort((left, right) => left.localeCompare(right));
+};
+
+const buildSelectOptions = (values, emptyLabel, extraValues = []) => [
+  { value: '', label: emptyLabel },
+  ...collectUniqueValues(values, extraValues).map((value) => ({ value, label: value })),
+];
 
 const getCurrentLocation = () =>
   new Promise((resolve) => {
@@ -1863,6 +1880,62 @@ const Dashboard = () => {
       level: unique(registry.map((entry) => entry.level)),
     };
   }, [registry]);
+  const adminMetadataOptions = useMemo(() => {
+    const faculties = collectUniqueValues(
+      users.map((entry) => entry.faculty),
+      students.map((entry) => entry.faculty),
+      registry.map((entry) => entry.faculty),
+      courses.map((entry) => entry.faculty)
+    );
+    const departments = collectUniqueValues(
+      users.map((entry) => entry.department),
+      students.map((entry) => entry.department),
+      registry.map((entry) => entry.department),
+      courses.map((entry) => entry.department)
+    );
+    const programs = collectUniqueValues(
+      users.map((entry) => entry.program),
+      students.map((entry) => entry.program),
+      registry.map((entry) => entry.program),
+      courses.map((entry) => entry.program)
+    );
+    const campuses = collectUniqueValues(
+      users.map((entry) => entry.campus),
+      students.map((entry) => entry.campus),
+      registry.map((entry) => entry.campus),
+      courses.map((entry) => entry.campus),
+      buildings.map((entry) => entry.campus)
+    );
+    const levels = collectUniqueValues(
+      registry.map((entry) => entry.level),
+      courses.map((entry) => entry.level),
+      DEFAULT_LEVEL_OPTIONS
+    );
+    const academicYears = collectUniqueValues(
+      courses.map((entry) => normalizeAcademicYearValue(entry.academicYear)),
+      enrollmentForm.academicYear,
+      courseForm.academicYear,
+      courseEditForm.academicYear
+    );
+
+    return {
+      faculties,
+      departments,
+      programs,
+      campuses,
+      levels,
+      academicYears,
+    };
+  }, [
+    buildings,
+    courseEditForm.academicYear,
+    courseForm.academicYear,
+    courses,
+    enrollmentForm.academicYear,
+    registry,
+    students,
+    users,
+  ]);
 
   const filteredRegistry = useMemo(() => {
     return registry.filter((entry) => {
@@ -2791,10 +2864,10 @@ const Dashboard = () => {
                     <Input label="Email" type="email" value={userForm.email} onChange={(value) => setUserForm((current) => ({ ...current, email: value }))} />
                     <Input label="Password" type="password" value={userForm.password} onChange={(value) => setUserForm((current) => ({ ...current, password: value }))} />
                     <Select label="Role" value={userForm.role} onChange={(value) => setUserForm((current) => ({ ...current, role: value }))} options={[{ value: 'student', label: 'Student' }, { value: 'lecturer', label: 'Lecturer' }, { value: 'admin', label: 'Admin' }]} />
-                    <Input label="Department" value={userForm.department} onChange={(value) => setUserForm((current) => ({ ...current, department: value }))} />
-                    <Input label="Faculty" value={userForm.faculty} onChange={(value) => setUserForm((current) => ({ ...current, faculty: value }))} />
-                    <Input label="Program" value={userForm.program} onChange={(value) => setUserForm((current) => ({ ...current, program: value }))} />
-                    <Input label="Campus" value={userForm.campus} onChange={(value) => setUserForm((current) => ({ ...current, campus: value }))} />
+                    <Select label="Department" value={userForm.department} onChange={(value) => setUserForm((current) => ({ ...current, department: value }))} options={buildSelectOptions(adminMetadataOptions.departments, 'Choose department', userForm.department)} />
+                    <Select label="Faculty" value={userForm.faculty} onChange={(value) => setUserForm((current) => ({ ...current, faculty: value }))} options={buildSelectOptions(adminMetadataOptions.faculties, 'Choose faculty', userForm.faculty)} />
+                    <Select label="Program" value={userForm.program} onChange={(value) => setUserForm((current) => ({ ...current, program: value }))} options={buildSelectOptions(adminMetadataOptions.programs, 'Choose program', userForm.program)} />
+                    <Select label="Campus" value={userForm.campus} onChange={(value) => setUserForm((current) => ({ ...current, campus: value }))} options={buildSelectOptions(adminMetadataOptions.campuses, 'Choose campus', userForm.campus)} />
                     {userForm.role === 'student' && <Input label="Matric number" value={userForm.matricNumber} onChange={(value) => setUserForm((current) => ({ ...current, matricNumber: value }))} />}
                     <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-user'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-user' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}Create user</button></div>
                   </form>
@@ -2812,9 +2885,9 @@ const Dashboard = () => {
                       <Input label="First name" value={studentEditForm.firstName} onChange={(value) => setStudentEditForm((current) => ({ ...current, firstName: value }))} />
                       <Input label="Last name" value={studentEditForm.lastName} onChange={(value) => setStudentEditForm((current) => ({ ...current, lastName: value }))} />
                       <Input label="Matric number" value={studentEditForm.matricNumber} onChange={(value) => setStudentEditForm((current) => ({ ...current, matricNumber: value }))} />
-                      <Input label="Department" value={studentEditForm.department} onChange={(value) => setStudentEditForm((current) => ({ ...current, department: value }))} />
-                      <Input label="Faculty" value={studentEditForm.faculty} onChange={(value) => setStudentEditForm((current) => ({ ...current, faculty: value }))} />
-                      <Input label="Program" value={studentEditForm.program} onChange={(value) => setStudentEditForm((current) => ({ ...current, program: value }))} />
+                      <Select label="Department" value={studentEditForm.department} onChange={(value) => setStudentEditForm((current) => ({ ...current, department: value }))} options={buildSelectOptions(adminMetadataOptions.departments, 'Choose department', studentEditForm.department)} />
+                      <Select label="Faculty" value={studentEditForm.faculty} onChange={(value) => setStudentEditForm((current) => ({ ...current, faculty: value }))} options={buildSelectOptions(adminMetadataOptions.faculties, 'Choose faculty', studentEditForm.faculty)} />
+                      <Select label="Program" value={studentEditForm.program} onChange={(value) => setStudentEditForm((current) => ({ ...current, program: value }))} options={buildSelectOptions(adminMetadataOptions.programs, 'Choose program', studentEditForm.program)} />
                       <div className="md:col-span-2">
                         <button type="submit" disabled={busyAction === 'update-student-profile'} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">{busyAction === 'update-student-profile' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}Update profile</button>
                       </div>
@@ -2924,11 +2997,11 @@ const Dashboard = () => {
                     <Input label="First name" value={registryForm.firstName} onChange={(value) => setRegistryForm((current) => ({ ...current, firstName: value }))} />
                     <Input label="Last name" value={registryForm.lastName} onChange={(value) => setRegistryForm((current) => ({ ...current, lastName: value }))} />
                     <Input label="Other name" value={registryForm.otherName} onChange={(value) => setRegistryForm((current) => ({ ...current, otherName: value }))} />
-                    <Input label="Faculty" value={registryForm.faculty} onChange={(value) => setRegistryForm((current) => ({ ...current, faculty: value }))} />
-                    <Input label="Department" value={registryForm.department} onChange={(value) => setRegistryForm((current) => ({ ...current, department: value }))} />
-                    <Input label="Program" value={registryForm.program} onChange={(value) => setRegistryForm((current) => ({ ...current, program: value }))} />
-                    <Input label="Campus" value={registryForm.campus} onChange={(value) => setRegistryForm((current) => ({ ...current, campus: value }))} />
-                    <Input label="Level" value={registryForm.level} onChange={(value) => setRegistryForm((current) => ({ ...current, level: value }))} />
+                    <Select label="Faculty" value={registryForm.faculty} onChange={(value) => setRegistryForm((current) => ({ ...current, faculty: value }))} options={buildSelectOptions(adminMetadataOptions.faculties, 'Choose faculty', registryForm.faculty)} />
+                    <Select label="Department" value={registryForm.department} onChange={(value) => setRegistryForm((current) => ({ ...current, department: value }))} options={buildSelectOptions(adminMetadataOptions.departments, 'Choose department', registryForm.department)} />
+                    <Select label="Program" value={registryForm.program} onChange={(value) => setRegistryForm((current) => ({ ...current, program: value }))} options={buildSelectOptions(adminMetadataOptions.programs, 'Choose program', registryForm.program)} />
+                    <Select label="Campus" value={registryForm.campus} onChange={(value) => setRegistryForm((current) => ({ ...current, campus: value }))} options={buildSelectOptions(adminMetadataOptions.campuses, 'Choose campus', registryForm.campus)} />
+                    <Select label="Level" value={registryForm.level} onChange={(value) => setRegistryForm((current) => ({ ...current, level: value }))} options={buildSelectOptions(adminMetadataOptions.levels, 'Choose level', registryForm.level)} />
                     <Input label="Admission year" value={registryForm.admissionYear} onChange={(value) => setRegistryForm((current) => ({ ...current, admissionYear: value }))} />
                     <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-registry'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-registry' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}Save registry record</button></div>
                   </form>
@@ -2990,12 +3063,12 @@ const Dashboard = () => {
                           <Input label="Course code" value={courseForm.courseCode} onChange={(value) => setCourseForm((current) => ({ ...current, courseCode: value.toUpperCase() }))} />
                           <Input label="Course name" value={courseForm.courseName} onChange={(value) => setCourseForm((current) => ({ ...current, courseName: value }))} />
                           <Select label="Semester" value={courseForm.semester} onChange={(value) => setCourseForm((current) => ({ ...current, semester: value }))} options={[{ value: 'rain', label: 'Rain' }, { value: 'harmattan', label: 'Harmattan' }]} />
-                          <Input label="Academic year" value={courseForm.academicYear} onChange={(value) => setCourseForm((current) => ({ ...current, academicYear: value }))} />
-                          <Input label="Faculty" value={courseForm.faculty} onChange={(value) => setCourseForm((current) => ({ ...current, faculty: value }))} />
-                          <Input label="Department" value={courseForm.department} onChange={(value) => setCourseForm((current) => ({ ...current, department: value }))} />
-                          <Input label="Program" value={courseForm.program} onChange={(value) => setCourseForm((current) => ({ ...current, program: value }))} />
-                          <Input label="Campus" value={courseForm.campus} onChange={(value) => setCourseForm((current) => ({ ...current, campus: value }))} />
-                          <Input label="Level" value={courseForm.level} onChange={(value) => setCourseForm((current) => ({ ...current, level: value }))} />
+                          <Select label="Academic year" value={courseForm.academicYear} onChange={(value) => setCourseForm((current) => ({ ...current, academicYear: value }))} options={buildSelectOptions(adminMetadataOptions.academicYears, 'Choose academic year', courseForm.academicYear)} />
+                          <Select label="Faculty" value={courseForm.faculty} onChange={(value) => setCourseForm((current) => ({ ...current, faculty: value }))} options={buildSelectOptions(adminMetadataOptions.faculties, 'Choose faculty', courseForm.faculty)} />
+                          <Select label="Department" value={courseForm.department} onChange={(value) => setCourseForm((current) => ({ ...current, department: value }))} options={buildSelectOptions(adminMetadataOptions.departments, 'Choose department', courseForm.department)} />
+                          <Select label="Program" value={courseForm.program} onChange={(value) => setCourseForm((current) => ({ ...current, program: value }))} options={buildSelectOptions(adminMetadataOptions.programs, 'Choose program', courseForm.program)} />
+                          <Select label="Campus" value={courseForm.campus} onChange={(value) => setCourseForm((current) => ({ ...current, campus: value }))} options={buildSelectOptions(adminMetadataOptions.campuses, 'Choose campus', courseForm.campus)} />
+                          <Select label="Level" value={courseForm.level} onChange={(value) => setCourseForm((current) => ({ ...current, level: value }))} options={buildSelectOptions(adminMetadataOptions.levels, 'Choose level', courseForm.level)} />
                           <Select label="Assign lecturer" value={courseForm.lecturerId} onChange={(value) => setCourseForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Choose lecturer' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
                         <div className="md:col-span-2"><label className="mb-2 block text-sm font-semibold text-slate-700">Description</label><textarea value={courseForm.description} onChange={(event) => setCourseForm((current) => ({ ...current, description: event.target.value }))} rows={4} className="w-full rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /></div>
                         <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-course'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-course' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}Create course</button></div>
@@ -3031,7 +3104,7 @@ const Dashboard = () => {
                       <form onSubmit={handleCreateBuilding} className="grid gap-4 md:grid-cols-2">
                         <Input label="Building name" value={buildingForm.name} onChange={(value) => setBuildingForm((current) => ({ ...current, name: value }))} />
                         <Input label="Tag (optional)" value={buildingForm.tag} onChange={(value) => setBuildingForm((current) => ({ ...current, tag: value }))} />
-                        <Input label="Campus" value={buildingForm.campus} onChange={(value) => setBuildingForm((current) => ({ ...current, campus: value }))} />
+                        <Select label="Campus" value={buildingForm.campus} onChange={(value) => setBuildingForm((current) => ({ ...current, campus: value }))} options={buildSelectOptions(adminMetadataOptions.campuses, 'Choose campus', buildingForm.campus)} />
                         <Input label="Latitude" value={buildingForm.latitude} onChange={(value) => setBuildingForm((current) => ({ ...current, latitude: value }))} />
                         <Input label="Longitude" value={buildingForm.longitude} onChange={(value) => setBuildingForm((current) => ({ ...current, longitude: value }))} />
                         <Input label="Radius (meters)" type="number" value={buildingForm.radiusMeters} onChange={(value) => setBuildingForm((current) => ({ ...current, radiusMeters: value }))} />
@@ -3199,12 +3272,12 @@ const Dashboard = () => {
                                         <Input label="Course code" value={courseEditForm.courseCode} onChange={(value) => setCourseEditForm((current) => ({ ...current, courseCode: value.toUpperCase() }))} />
                                         <Input label="Course name" value={courseEditForm.courseName} onChange={(value) => setCourseEditForm((current) => ({ ...current, courseName: value }))} />
                                         <Select label="Semester" value={courseEditForm.semester} onChange={(value) => setCourseEditForm((current) => ({ ...current, semester: value }))} options={[{ value: 'rain', label: 'Rain' }, { value: 'harmattan', label: 'Harmattan' }]} />
-                                        <Input label="Academic year" value={courseEditForm.academicYear} onChange={(value) => setCourseEditForm((current) => ({ ...current, academicYear: value }))} />
-                                        <Input label="Faculty" value={courseEditForm.faculty} onChange={(value) => setCourseEditForm((current) => ({ ...current, faculty: value }))} />
-                                        <Input label="Department" value={courseEditForm.department} onChange={(value) => setCourseEditForm((current) => ({ ...current, department: value }))} />
-                                        <Input label="Program" value={courseEditForm.program} onChange={(value) => setCourseEditForm((current) => ({ ...current, program: value }))} />
-                                        <Input label="Campus" value={courseEditForm.campus} onChange={(value) => setCourseEditForm((current) => ({ ...current, campus: value }))} />
-                                        <Input label="Level" value={courseEditForm.level} onChange={(value) => setCourseEditForm((current) => ({ ...current, level: value }))} />
+                                        <Select label="Academic year" value={courseEditForm.academicYear} onChange={(value) => setCourseEditForm((current) => ({ ...current, academicYear: value }))} options={buildSelectOptions(adminMetadataOptions.academicYears, 'Choose academic year', courseEditForm.academicYear)} />
+                                        <Select label="Faculty" value={courseEditForm.faculty} onChange={(value) => setCourseEditForm((current) => ({ ...current, faculty: value }))} options={buildSelectOptions(adminMetadataOptions.faculties, 'Choose faculty', courseEditForm.faculty)} />
+                                        <Select label="Department" value={courseEditForm.department} onChange={(value) => setCourseEditForm((current) => ({ ...current, department: value }))} options={buildSelectOptions(adminMetadataOptions.departments, 'Choose department', courseEditForm.department)} />
+                                        <Select label="Program" value={courseEditForm.program} onChange={(value) => setCourseEditForm((current) => ({ ...current, program: value }))} options={buildSelectOptions(adminMetadataOptions.programs, 'Choose program', courseEditForm.program)} />
+                                        <Select label="Campus" value={courseEditForm.campus} onChange={(value) => setCourseEditForm((current) => ({ ...current, campus: value }))} options={buildSelectOptions(adminMetadataOptions.campuses, 'Choose campus', courseEditForm.campus)} />
+                                        <Select label="Level" value={courseEditForm.level} onChange={(value) => setCourseEditForm((current) => ({ ...current, level: value }))} options={buildSelectOptions(adminMetadataOptions.levels, 'Choose level', courseEditForm.level)} />
                                         <Select label="Assign lecturer" value={courseEditForm.lecturerId} onChange={(value) => setCourseEditForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Choose lecturer' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
                                         <div className="md:col-span-2">
                                           <label className="mb-2 block text-sm font-semibold text-slate-700">Description</label>
