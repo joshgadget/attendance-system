@@ -2,6 +2,7 @@ const { Sequelize } = require('sequelize');
 const logger = require('../utils/logger');
 
 const useSsl = process.env.DB_SSL !== 'false';
+const rejectUnauthorized = process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false';
 
 const sequelize = new Sequelize(
   process.env.DB_NAME,
@@ -15,7 +16,7 @@ const sequelize = new Sequelize(
       ? {
           ssl: {
             require: true,
-            rejectUnauthorized:true,
+            rejectUnauthorized,
           },
         }
       : {},
