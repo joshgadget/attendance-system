@@ -125,9 +125,90 @@ const normalizeAcademicYearValue = (value) => {
   return `${startYear}/${endYear}`;
 };
 
+const titleCaseInstitutionText = (value) => String(value || '')
+  .toLowerCase()
+  .split(' ')
+  .filter(Boolean)
+  .map((word) => {
+    if (['oou', 'ui', 'futa', 'csc', 'get', 'gst', 'mth'].includes(word)) {
+      return word.toUpperCase();
+    }
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  })
+  .join(' ');
+
+const normalizeInstitutionText = (value, field = 'generic') => {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return '';
+  }
+
+  const collapsed = raw
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const lower = collapsed.toLowerCase();
+  const noisePatterns = [
+    'timetable',
+    'teaching',
+    'rain timetable',
+    'harmattan timetable',
+    'imported from timetable pdf',
+    '.pdf',
+    'final 25',
+    'final teaching',
+  ];
+
+  if (noisePatterns.some((pattern) => lower.includes(pattern))) {
+    if (field === 'faculty' && lower.includes('engineering')) {
+      return 'College of Engineering and Environmental Studies';
+    }
+    return '';
+  }
+
+  if (field === 'level') {
+    const digits = lower.match(/\d+/)?.[0];
+    return digits ? digits : collapsed.toUpperCase();
+  }
+
+  if (field === 'academicYear') {
+    return normalizeAcademicYearValue(collapsed);
+  }
+
+  const aliasChecks = [
+    {
+      match: ['engineering', 'environmental'],
+      value: 'College of Engineering and Environmental Studies',
+    },
+  ];
+
+  const aliased = aliasChecks.find((entry) => entry.match.every((token) => lower.includes(token)))?.value;
+  if (aliased) {
+    return aliased;
+  }
+
+  if (field === 'campus') {
+    return titleCaseInstitutionText(collapsed);
+  }
+
+  return titleCaseInstitutionText(collapsed);
+};
+
+const normalizeInstitutionPayload = (payload, fieldMap) => Object.fromEntries(
+  Object.entries(payload).map(([key, value]) => {
+    const field = fieldMap[key];
+    if (!field) {
+      return [key, value];
+    }
+    return [key, normalizeInstitutionText(value, field)];
+  })
+);
+
 const getCourseDepartmentLabel = (course) => {
   const primaryAudience = course?.audiences?.find((entry) => entry?.isActive !== false) || null;
-  const department = String(course?.department || primaryAudience?.department || '').trim();
+  const department = normalizeInstitutionText(course?.department || primaryAudience?.department || '', 'department');
   if (department) {
     return department;
   }
@@ -141,7 +222,7 @@ const getCourseDepartmentLabel = (course) => {
 };
 
 const getCourseLevelLabel = (course) => {
-  const rawLevel = String(course?.level || course?.audiences?.find((entry) => entry?.isActive !== false)?.level || '').trim();
+  const rawLevel = normalizeInstitutionText(course?.level || course?.audiences?.find((entry) => entry?.isActive !== false)?.level || '', 'level');
   if (!rawLevel) {
     return 'UNSPECIFIED LEVEL';
   }
@@ -959,7 +1040,12 @@ const Dashboard = () => {
     try {
       setBusyAction('create-user');
       setMessage();
-      await api.post('/auth/register', userForm);
+      await api.post('/auth/register', normalizeInstitutionPayload(userForm, {
+        faculty: 'faculty',
+        department: 'department',
+        program: 'program',
+        campus: 'campus',
+      }));
       setUserForm(initialUserForm);
       setMessage('User account created successfully.');
       await loadData(true);
@@ -975,7 +1061,14 @@ const Dashboard = () => {
     try {
       setBusyAction('create-course');
       setMessage();
-      await api.post('/courses', courseForm);
+      await api.post('/courses', normalizeInstitutionPayload(courseForm, {
+        academicYear: 'academicYear',
+        faculty: 'faculty',
+        department: 'department',
+        program: 'program',
+        campus: 'campus',
+        level: 'level',
+      }));
       setCourseForm(initialCourseForm);
       setMessage('Course created successfully.');
       await loadData(true);
@@ -1013,7 +1106,14 @@ const Dashboard = () => {
     try {
       setBusyAction(`update-course-${courseId}`);
       setMessage();
-      await api.put(`/courses/${courseId}`, courseEditForm);
+      await api.put(`/courses/${courseId}`, normalizeInstitutionPayload(courseEditForm, {
+        academicYear: 'academicYear',
+        faculty: 'faculty',
+        department: 'department',
+        program: 'program',
+        campus: 'campus',
+        level: 'level',
+      }));
       setMessage('Course updated successfully.');
       setEditingCourseId('');
       setCourseEditForm(initialCourseForm);
@@ -1033,7 +1133,7 @@ const Dashboard = () => {
       await api.post('/buildings', {
         name: buildingForm.name,
         tag: buildingForm.tag,
-        campus: buildingForm.campus,
+        campus: normalizeInstitutionText(buildingForm.campus, 'campus'),
         latitude: buildingForm.latitude,
         longitude: buildingForm.longitude,
         radiusMeters: buildingForm.radiusMeters,
@@ -1132,7 +1232,13 @@ const Dashboard = () => {
     try {
       setBusyAction('create-registry');
       setMessage();
-      await api.post('/registry', registryForm);
+      await api.post('/registry', normalizeInstitutionPayload(registryForm, {
+        faculty: 'faculty',
+        department: 'department',
+        program: 'program',
+        campus: 'campus',
+        level: 'level',
+      }));
       setRegistryForm(initialRegistryForm);
       setMessage('Student registry record saved successfully.');
       await loadData(true);
@@ -1872,43 +1978,43 @@ const Dashboard = () => {
   }, [courses, enrollmentForm.academicYear, enrollmentForm.semester, selectedStudent]);
 
   const registryFilterOptions = useMemo(() => {
-    const unique = (values) => [...new Set(values.filter(Boolean))].sort();
+    const unique = (values, field) => [...new Set(values.map((value) => normalizeInstitutionText(value, field)).filter(Boolean))].sort();
     return {
-      faculty: unique(registry.map((entry) => entry.faculty)),
-      department: unique(registry.map((entry) => entry.department)),
-      program: unique(registry.map((entry) => entry.program)),
-      level: unique(registry.map((entry) => entry.level)),
+      faculty: unique(registry.map((entry) => entry.faculty), 'faculty'),
+      department: unique(registry.map((entry) => entry.department), 'department'),
+      program: unique(registry.map((entry) => entry.program), 'program'),
+      level: unique(registry.map((entry) => entry.level), 'level'),
     };
   }, [registry]);
   const adminMetadataOptions = useMemo(() => {
     const faculties = collectUniqueValues(
-      users.map((entry) => entry.faculty),
-      students.map((entry) => entry.faculty),
-      registry.map((entry) => entry.faculty),
-      courses.map((entry) => entry.faculty)
+      users.map((entry) => normalizeInstitutionText(entry.faculty, 'faculty')),
+      students.map((entry) => normalizeInstitutionText(entry.faculty, 'faculty')),
+      registry.map((entry) => normalizeInstitutionText(entry.faculty, 'faculty')),
+      courses.map((entry) => normalizeInstitutionText(entry.faculty, 'faculty'))
     );
     const departments = collectUniqueValues(
-      users.map((entry) => entry.department),
-      students.map((entry) => entry.department),
-      registry.map((entry) => entry.department),
-      courses.map((entry) => entry.department)
+      users.map((entry) => normalizeInstitutionText(entry.department, 'department')),
+      students.map((entry) => normalizeInstitutionText(entry.department, 'department')),
+      registry.map((entry) => normalizeInstitutionText(entry.department, 'department')),
+      courses.map((entry) => normalizeInstitutionText(entry.department, 'department'))
     );
     const programs = collectUniqueValues(
-      users.map((entry) => entry.program),
-      students.map((entry) => entry.program),
-      registry.map((entry) => entry.program),
-      courses.map((entry) => entry.program)
+      users.map((entry) => normalizeInstitutionText(entry.program, 'program')),
+      students.map((entry) => normalizeInstitutionText(entry.program, 'program')),
+      registry.map((entry) => normalizeInstitutionText(entry.program, 'program')),
+      courses.map((entry) => normalizeInstitutionText(entry.program, 'program'))
     );
     const campuses = collectUniqueValues(
-      users.map((entry) => entry.campus),
-      students.map((entry) => entry.campus),
-      registry.map((entry) => entry.campus),
-      courses.map((entry) => entry.campus),
-      buildings.map((entry) => entry.campus)
+      users.map((entry) => normalizeInstitutionText(entry.campus, 'campus')),
+      students.map((entry) => normalizeInstitutionText(entry.campus, 'campus')),
+      registry.map((entry) => normalizeInstitutionText(entry.campus, 'campus')),
+      courses.map((entry) => normalizeInstitutionText(entry.campus, 'campus')),
+      buildings.map((entry) => normalizeInstitutionText(entry.campus, 'campus'))
     );
     const levels = collectUniqueValues(
-      registry.map((entry) => entry.level),
-      courses.map((entry) => entry.level),
+      registry.map((entry) => normalizeInstitutionText(entry.level, 'level')),
+      courses.map((entry) => normalizeInstitutionText(entry.level, 'level')),
       DEFAULT_LEVEL_OPTIONS
     );
     const academicYears = collectUniqueValues(
