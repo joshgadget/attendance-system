@@ -27,8 +27,11 @@ export const ThemeProvider = ({ children }) => {
   const [theme, setThemeState] = useState(getInitialTheme);
 
   useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.documentElement.classList.toggle('light', theme === 'light');
     document.documentElement.classList.toggle('theme-dark', theme === 'dark');
     document.documentElement.classList.toggle('theme-light', theme === 'light');
+    document.documentElement.dataset.theme = theme;
     window.localStorage.setItem(STORAGE_KEY, theme);
   }, [theme]);
 

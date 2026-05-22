@@ -901,6 +901,7 @@
 .dashboard-shell--light .dashboard-feed-card,
 .dashboard-shell--light .dashboard-upcoming-card,
 .dashboard-shell--light .dashboard-summary-strip,
+.dashboard-shell--light .dashboard-panel,
 .dashboard-shell--light .dashboard-account-dropdown {
   border-color: rgba(148, 163, 184, 0.22);
   background: rgba(255, 255, 255, 0.9);

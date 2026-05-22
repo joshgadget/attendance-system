@@ -573,6 +573,7 @@ const ActionButton = ({ children, variant = 'primary', className = '', ...props 
   const styles = {
     primary: 'bg-blue-700 text-white hover:bg-blue-800',
     secondary: 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800',
+    contrast: 'border border-slate-200 bg-white text-slate-900 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800',
     soft: 'border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-slate-700 dark:bg-blue-950/30 dark:text-blue-200 dark:hover:bg-blue-950/50',
     danger: 'border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 dark:border-rose-900/50 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-950/30',
     warning: 'border border-amber-200 bg-white text-amber-700 hover:bg-amber-50 dark:border-amber-900/50 dark:bg-slate-900 dark:text-amber-300 dark:hover:bg-amber-950/30',
@@ -2799,10 +2800,10 @@ const Dashboard = () => {
                       <Input label="Confirm new password" type="password" value={passwordForm.confirmPassword} onChange={(value) => setPasswordForm((current) => ({ ...current, confirmPassword: value }))} />
                     </div>
                     <div className="md:col-span-2">
-                      <button type="submit" disabled={busyAction === 'change-password'} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
+                      <ActionButton type="submit" disabled={busyAction === 'change-password'} variant="contrast">
                         {busyAction === 'change-password' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
                         Change password
-                      </button>
+                      </ActionButton>
                     </div>
                   </form>
                 </Panel>
@@ -3036,7 +3037,7 @@ const Dashboard = () => {
                       <Select label="Faculty" value={studentEditForm.faculty} onChange={(value) => setStudentEditForm((current) => ({ ...current, faculty: value }))} options={buildSelectOptions(adminMetadataOptions.faculties, 'Choose faculty', studentEditForm.faculty)} />
                       <Select label="Program" value={studentEditForm.program} onChange={(value) => setStudentEditForm((current) => ({ ...current, program: value }))} options={buildSelectOptions(adminMetadataOptions.programs, 'Choose program', studentEditForm.program)} />
                       <div className="md:col-span-2">
-                        <button type="submit" disabled={busyAction === 'update-student-profile'} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">{busyAction === 'update-student-profile' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}Update profile</button>
+                        <ActionButton type="submit" disabled={busyAction === 'update-student-profile'} variant="contrast">{busyAction === 'update-student-profile' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}Update profile</ActionButton>
                       </div>
                     </form>
 
@@ -3169,7 +3170,7 @@ const Dashboard = () => {
                     <div className="grid gap-4">
                       <Select label="Registry record" value={linkForm.registryId} onChange={(value) => setLinkForm((current) => ({ ...current, registryId: value }))} options={[{ value: '', label: 'Choose registry record' }, ...registry.map((record) => ({ value: record.id, label: `${record.matricNumber} - ${[record.firstName, record.lastName].filter(Boolean).join(' ')}` }))]} />
                       <Select label="User account" value={linkForm.userId} onChange={(value) => setLinkForm((current) => ({ ...current, userId: value }))} options={[{ value: '', label: 'Choose user' }, ...users.map((entry) => ({ value: entry.id, label: `${fullName(entry)} (${entry.email})` }))]} />
-                      <button onClick={handleLinkRegistry} disabled={busyAction === 'link-registry'} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">{busyAction === 'link-registry' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}Link record</button>
+                      <ActionButton onClick={handleLinkRegistry} disabled={busyAction === 'link-registry'} variant="contrast">{busyAction === 'link-registry' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}Link record</ActionButton>
                     </div>
                   </Panel>
                 </div>
@@ -3487,7 +3488,7 @@ const Dashboard = () => {
                       )}
                       {qrDataUrl && <div className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-5"><div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between"><div className="max-w-2xl"><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Scannable QR</p><p className="mt-2 text-sm leading-7 text-slate-600">Students can scan this with their normal phone camera. The link opens the app, takes them to attendance, and fills in the session details for this class.</p><p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Fallback pair: {sessionDetail.sessionCode} + {sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'COURSE CODE'}</p></div><div className="shrink-0 self-center rounded-[1.75rem] border border-white bg-white p-4 shadow-sm"><img src={qrDataUrl} alt="Session QR code" className="block h-52 w-52 shrink-0 rounded-[1.25rem] object-contain sm:h-56 sm:w-56" /></div></div></div>}
                       <div className="flex flex-wrap gap-3">
-                        {sessionDetail.status === 'active' && <button onClick={() => handleCloseSession(sessionDetail.id)} disabled={busyAction === `close-session-${sessionDetail.id}`} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">{busyAction === `close-session-${sessionDetail.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Close session and auto-send queries</button>}
+                        {sessionDetail.status === 'active' && <ActionButton onClick={() => handleCloseSession(sessionDetail.id)} disabled={busyAction === `close-session-${sessionDetail.id}`} variant="contrast">{busyAction === `close-session-${sessionDetail.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Close session and auto-send queries</ActionButton>}
                         <button onClick={() => { setQueryForm((current) => ({ ...current, sessionId: String(sessionDetail.id) })); setActiveTab('queries'); }} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100"><Bell className="h-4 w-4" />Open query composer</button>
                       </div>
                     </div>
