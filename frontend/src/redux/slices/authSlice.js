@@ -54,6 +54,7 @@ const parseStoredUser = (rawValue) => {
 const storedToken = readStorage('token');
 const storedRefreshToken = readStorage('refreshToken');
 const storedUser = readStorage('user');
+const parsedStoredUser = parseStoredUser(storedUser);
 
 const persistSession = (user, tokens = {}) => {
   if (tokens.accessToken) {
@@ -98,8 +99,21 @@ export const fetchCurrentUser = createAsyncThunk(
       persistSession(user);
       return user;
     } catch (error) {
-      clearSession();
-      return rejectWithValue(error.userMessage || error.response?.data?.message || 'Session expired');
+      const status = error.response?.status;
+      if (status === 401 || status === 403) {
+        clearSession();
+        return rejectWithValue({
+          message: error.userMessage || error.response?.data?.message || 'Session expired',
+          shouldLogout: true,
+          isBootstrapFailure: true,
+        });
+      }
+
+      return rejectWithValue({
+        message: error.userMessage || error.response?.data?.message || 'Unable to refresh your session right now.',
+        shouldLogout: false,
+        isBootstrapFailure: true,
+      });
     }
   }
 );
@@ -107,13 +121,13 @@ export const fetchCurrentUser = createAsyncThunk(
 const authSlice = createSlice({
   name: 'auth',
   initialState: {
-    user: parseStoredUser(storedUser),
+    user: parsedStoredUser,
     token: storedToken,
     refreshToken: storedRefreshToken,
     isAuthenticated: Boolean(storedToken),
     loading: false,
     error: null,
-    bootstrapped: false,
+    bootstrapped: Boolean(parsedStoredUser) || !storedToken,
   },
   reducers: {
     hydrateSession: (state, action) => {
@@ -153,8 +167,12 @@ const authSlice = createSlice({
         state.bootstrapped = true;
       })
       .addCase(login.rejected, (state, action) => {
+        clearSession();
         state.loading = false;
         state.error = action.payload;
+        state.user = null;
+        state.token = null;
+        state.refreshToken = null;
         state.isAuthenticated = false;
         state.bootstrapped = true;
       })
@@ -169,11 +187,13 @@ const authSlice = createSlice({
       })
       .addCase(fetchCurrentUser.rejected, (state, action) => {
         state.loading = false;
-        state.user = null;
-        state.token = null;
-        state.refreshToken = null;
-        state.isAuthenticated = false;
-        state.error = action.payload;
+        if (action.payload?.shouldLogout) {
+          state.user = null;
+          state.token = null;
+          state.refreshToken = null;
+          state.isAuthenticated = false;
+        }
+        state.error = action.payload?.isBootstrapFailure ? null : action.payload?.message || action.payload;
         state.bootstrapped = true;
       });
   },

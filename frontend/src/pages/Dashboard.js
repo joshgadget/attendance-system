@@ -697,8 +697,8 @@ const Dashboard = () => {
   const primaryTabs = PRIMARY_TABS_BY_ROLE[role] || PRIMARY_TABS_BY_ROLE.student;
 
   const [activeTab, setActiveTab] = useState(tabs[0]);
-  const [loading, setLoading] = useState(true);
-  const [, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [busyAction, setBusyAction] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -958,11 +958,8 @@ const Dashboard = () => {
   const loadData = useCallback(async (spin = false) => {
     try {
       setError('');
-      if (spin) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
+      setRefreshing(true);
+      setLoading(Boolean(spin));
 
       const [analyticsResponse, notificationsResponse, helpResponse, profileResponse] = await Promise.all([
         api.get('/dashboard/analytics'),
@@ -1066,7 +1063,7 @@ const Dashboard = () => {
         });
       }
     } catch (loadError) {
-      setError(loadError.response?.data?.message || 'Dashboard data could not be loaded.');
+      setError(loadError.userMessage || loadError.response?.data?.message || 'Dashboard data could not be loaded.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -2406,17 +2403,6 @@ const Dashboard = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className={`flex min-h-screen items-center justify-center ${isDark ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-900'}`}>
-        <div className={`rounded-[2rem] border px-8 py-6 text-center backdrop-blur-xl ${isDark ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-white/90'}`}>
-          <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-blue-300" />
-          <p className={`mt-4 text-sm ${isDark ? 'text-slate-200' : 'text-slate-600'}`}>Loading your workspace...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={`dashboard-shell min-h-screen ${isDark ? 'dark dashboard-shell--app text-slate-100' : 'dashboard-shell--light text-slate-900'} ${preferences.compactMode ? 'dashboard-shell--compact' : ''}`}>
       <QrScannerPanel isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={handleMarkAttendance} />
@@ -2540,6 +2526,7 @@ const Dashboard = () => {
           </header>
 
           <section className="dashboard-content">
+        {refreshing && <div className={`mb-5 flex items-center gap-3 rounded-[1.2rem] border px-4 py-3 text-sm ${isDark ? 'border-white/10 bg-white/5 text-slate-200' : 'border-slate-200 bg-white/80 text-slate-600'}`}><LoaderCircle className="h-4 w-4 animate-spin text-blue-500" /><span>{loading ? 'Loading your workspace...' : 'Refreshing your workspace...'}</span></div>}
         {error && <div className="mb-6 rounded-[1.5rem] border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>}
         {success && <div className="mb-6 rounded-[1.5rem] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">{success}</div>}
         <div className="mt-2 grid gap-8">

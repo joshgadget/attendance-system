@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import store from './redux/store';
@@ -34,38 +34,36 @@ const storePendingAttendanceEntry = (location) => {
 
 const AuthBootstrap = ({ children }) => {
   const dispatch = useDispatch();
-  const { token, user, bootstrapped } = useSelector((state) => state.auth);
+  const { token, bootstrapped } = useSelector((state) => state.auth);
+  const restoreRequestedRef = useRef(false);
 
   useEffect(() => {
-    if (token && !user) {
+    if (token && !bootstrapped && !restoreRequestedRef.current) {
+      restoreRequestedRef.current = true;
       dispatch(fetchCurrentUser());
     }
-  }, [dispatch, token, user]);
-  if (token && !user && !bootstrapped) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
-        <div className="rounded-3xl border border-white/10 bg-white/5 px-8 py-6 text-center shadow-2xl backdrop-blur-xl">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-blue-300/40 border-t-blue-300" />
-          <p className="text-sm text-slate-200">Restoring your session...</p>
-        </div>
-      </div>
-    );
-  }
+  }, [bootstrapped, dispatch, token]);
 
   return children;
 };
 
 const PrivateRoute = ({ children }) => {
-  const { isAuthenticated } = useSelector((state) => state.auth);
+  const { isAuthenticated, bootstrapped } = useSelector((state) => state.auth);
+  if (!bootstrapped && isAuthenticated) {
+    return children;
+  }
   return isAuthenticated ? children : <Navigate to="/login" replace />;
 };
 
 const PublicRoute = ({ children }) => {
-  const { isAuthenticated, user } = useSelector((state) => state.auth);
+  const { isAuthenticated, user, bootstrapped } = useSelector((state) => state.auth);
   if (isAuthenticated && user?.mustResetPassword) {
     return <Navigate to="/force-reset" replace />;
   }
-  return isAuthenticated ? <Navigate to="/dashboard" replace /> : children;
+  if (!bootstrapped && isAuthenticated && !user) {
+    return children;
+  }
+  return isAuthenticated && user ? <Navigate to="/dashboard" replace /> : children;
 };
 
 const AttendanceEntryRoute = () => {

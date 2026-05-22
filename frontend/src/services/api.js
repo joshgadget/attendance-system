@@ -22,7 +22,7 @@ const API_URL = normalizeApiUrl(process.env.REACT_APP_API_URL);
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 20000,
+  timeout: 45000,
   withCredentials: false,
   headers: {
     'Content-Type': 'application/json',
