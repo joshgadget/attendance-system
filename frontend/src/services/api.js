@@ -22,18 +22,43 @@ const API_URL = normalizeApiUrl(process.env.REACT_APP_API_URL);
 
 const api = axios.create({
   baseURL: API_URL,
+  timeout: 20000,
   withCredentials: false,
   headers: {
     'Content-Type': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
   },
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  let token = null;
+  try {
+    token = window.localStorage.getItem('token');
+  } catch (error) {
+    token = null;
+  }
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.code === 'ECONNABORTED') {
+      error.userMessage = 'The request took too long. Please try again.';
+      return Promise.reject(error);
+    }
+
+    if (!error.response) {
+      error.userMessage = 'Unable to reach the server. Check your connection and try again.';
+      return Promise.reject(error);
+    }
+
+    error.userMessage = error.response?.data?.message || 'Something went wrong. Please try again.';
+    return Promise.reject(error);
+  }
+);
 
 export default api;

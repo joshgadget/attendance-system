@@ -16,10 +16,52 @@ const parseOrigins = (value) => {
     .filter(Boolean);
 };
 
+const toNumber = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+const requiredProductionEnv = [
+  'DB_HOST',
+  'DB_NAME',
+  'DB_USER',
+  'DB_PASSWORD',
+  'JWT_SECRET',
+  'JWT_REFRESH_SECRET',
+  'CORS_ORIGIN',
+  'FRONTEND_URL',
+];
+
+const validateRequiredEnv = () => {
+  if (!isProduction) {
+    return [];
+  }
+
+  return requiredProductionEnv.filter((key) => !String(process.env[key] || '').trim());
+};
+
+const getEnvOrFallback = (key, fallback) => {
+  const value = String(process.env[key] || '').trim();
+  if (value) {
+    return value;
+  }
+
+  if (isProduction) {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+
+  return fallback;
+};
+
 module.exports = {
+  isProduction,
   corsOrigins: parseOrigins(process.env.CORS_ORIGIN),
-  rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
-  rateLimitMaxRequests: Number(process.env.RATE_LIMIT_MAX_REQUESTS || 100),
-  attendanceRateLimitWindowMs: Number(process.env.ATTENDANCE_RATE_LIMIT_WINDOW_MS || 60 * 1000),
-  attendanceRateLimitMaxRequests: Number(process.env.ATTENDANCE_RATE_LIMIT_MAX_REQUESTS || 5),
+  rateLimitWindowMs: toNumber(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+  rateLimitMaxRequests: toNumber(process.env.RATE_LIMIT_MAX_REQUESTS, 100),
+  attendanceRateLimitWindowMs: toNumber(process.env.ATTENDANCE_RATE_LIMIT_WINDOW_MS, 60 * 1000),
+  attendanceRateLimitMaxRequests: toNumber(process.env.ATTENDANCE_RATE_LIMIT_MAX_REQUESTS, 5),
+  validateRequiredEnv,
+  getEnvOrFallback,
 };

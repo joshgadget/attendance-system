@@ -597,17 +597,12 @@ const forgotPassword = async (req, res) => {
     const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
     const resetLink = `${normalizedBaseUrl}/#/reset-password?token=${encodeURIComponent(rawToken)}`;
 
-    console.log(`Preparing password reset email for ${user.email}`);
-
     await sendEmail({
       to: user.email,
       subject: 'Attendance System Password Reset',
       text: `You requested a password reset. Use this link within 1 hour: ${resetLink}`,
       html: `<p>You requested a password reset for <strong>Attendance System</strong>.</p><p>Use this link within 1 hour:</p><p style="word-break: break-all; font-family: monospace;">${resetLink}</p><p>If clicking the link does not work, copy and paste it into your browser.</p><p>If you did not request this, you can ignore this email.</p>`,
     });
-
-    console.log(`Password reset email sent successfully to ${user.email}`);
-
     return res.json({
       success: true,
       message: 'If this email exists, a reset link has been sent',

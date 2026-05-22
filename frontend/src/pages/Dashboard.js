@@ -331,7 +331,7 @@ const Panel = ({ title, eyebrow, action, children }) => {
   const { isDark } = useTheme();
 
   return (
-  <section className={`rounded-[2rem] border p-6 backdrop-blur-xl ${isDark ? 'border-slate-700 bg-slate-900/80 shadow-[0_20px_60px_rgba(2,6,23,0.6)]' : 'border-white/70 bg-white/90 shadow-[0_20px_60px_rgba(148,163,184,0.14)]'}`}>
+  <section className={`dashboard-panel rounded-[2rem] border p-6 backdrop-blur-xl ${isDark ? 'border-slate-700 bg-slate-900/80 shadow-[0_20px_60px_rgba(2,6,23,0.6)]' : 'border-white/70 bg-white/90 shadow-[0_20px_60px_rgba(148,163,184,0.14)]'}`}>
     <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div>
         {eyebrow && <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-500">{eyebrow}</p>}
@@ -512,9 +512,9 @@ const Input = ({ label, onChange, ...props }) => {
   const { isDark } = useTheme();
 
   return (
-    <div>
-      <label className={`mb-2 block text-sm font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{label}</label>
-      <input onChange={(event) => onChange(event.target.value)} className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 ${isDark ? 'border-slate-700 bg-slate-800 text-slate-100 placeholder:text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-900'}`} {...props} />
+    <div className="dashboard-field">
+      <label className={`dashboard-field__label ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{label}</label>
+      <input onChange={(event) => onChange(event.target.value)} className={`dashboard-field__control ${isDark ? 'border-slate-700 bg-slate-800 text-slate-100 placeholder:text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-900'}`} {...props} />
     </div>
   );
 };
@@ -523,14 +523,68 @@ const Select = ({ label, value, onChange, options }) => {
   const { isDark } = useTheme();
 
   return (
-    <div>
-      <label className={`mb-2 block text-sm font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{label}</label>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 ${isDark ? 'border-slate-700 bg-slate-800 text-slate-100' : 'border-slate-200 bg-slate-50 text-slate-900'}`}>
+    <div className="dashboard-field">
+      <label className={`dashboard-field__label ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{label}</label>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className={`dashboard-field__control ${isDark ? 'border-slate-700 bg-slate-800 text-slate-100' : 'border-slate-200 bg-slate-50 text-slate-900'}`}>
         {options.map((option) => (
           <option key={`${option.value}-${option.label}`} value={option.value}>{option.label}</option>
         ))}
       </select>
     </div>
+  );
+};
+
+const TextAreaField = ({ label, value, onChange, rows = 4, placeholder = '' }) => {
+  const { isDark } = useTheme();
+
+  return (
+    <div className="dashboard-field md:col-span-2">
+      <label className={`dashboard-field__label ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{label}</label>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        rows={rows}
+        placeholder={placeholder}
+        className={`dashboard-field__control dashboard-field__control--textarea ${isDark ? 'border-slate-700 bg-slate-800 text-slate-100 placeholder:text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-900'}`}
+      />
+    </div>
+  );
+};
+
+const FileField = ({ label, onChange, accept, helper, fileName }) => {
+  const { isDark } = useTheme();
+
+  return (
+    <div className="dashboard-field">
+      <label className={`dashboard-field__label ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{label}</label>
+      <input
+        type="file"
+        accept={accept}
+        onChange={onChange}
+        className={`dashboard-file-input ${isDark ? 'border-slate-700 bg-slate-800/80 text-slate-200' : 'border-slate-200 bg-slate-50 text-slate-700'}`}
+      />
+      {helper && <p className={`dashboard-field__helper ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{helper}</p>}
+      {fileName && <p className={`dashboard-field__helper ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Last selected file: {fileName}</p>}
+    </div>
+  );
+};
+
+const ActionButton = ({ children, variant = 'primary', className = '', ...props }) => {
+  const styles = {
+    primary: 'bg-blue-700 text-white hover:bg-blue-800',
+    secondary: 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800',
+    soft: 'border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-slate-700 dark:bg-blue-950/30 dark:text-blue-200 dark:hover:bg-blue-950/50',
+    danger: 'border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 dark:border-rose-900/50 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-950/30',
+    warning: 'border border-amber-200 bg-white text-amber-700 hover:bg-amber-50 dark:border-amber-900/50 dark:bg-slate-900 dark:text-amber-300 dark:hover:bg-amber-950/30',
+  };
+
+  return (
+    <button
+      {...props}
+      className={`inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold transition disabled:opacity-60 ${styles[variant]} ${className}`.trim()}
+    >
+      {children}
+    </button>
   );
 };
 
@@ -3165,7 +3219,7 @@ const Dashboard = () => {
                 <div className="grid gap-8">
                   {role === 'admin' && (
                       <Panel title="Create a course" eyebrow="Academic setup">
-                        <form onSubmit={handleCreateCourse} className="grid gap-4 md:grid-cols-2">
+                        <form onSubmit={handleCreateCourse} className="dashboard-form-grid md:grid-cols-2">
                           <Input label="Course code" value={courseForm.courseCode} onChange={(value) => setCourseForm((current) => ({ ...current, courseCode: value.toUpperCase() }))} />
                           <Input label="Course name" value={courseForm.courseName} onChange={(value) => setCourseForm((current) => ({ ...current, courseName: value }))} />
                           <Select label="Semester" value={courseForm.semester} onChange={(value) => setCourseForm((current) => ({ ...current, semester: value }))} options={[{ value: 'rain', label: 'Rain' }, { value: 'harmattan', label: 'Harmattan' }]} />
@@ -3176,38 +3230,35 @@ const Dashboard = () => {
                           <Select label="Campus" value={courseForm.campus} onChange={(value) => setCourseForm((current) => ({ ...current, campus: value }))} options={buildSelectOptions(adminMetadataOptions.campuses, 'Choose campus', courseForm.campus)} />
                           <Select label="Level" value={courseForm.level} onChange={(value) => setCourseForm((current) => ({ ...current, level: value }))} options={buildSelectOptions(adminMetadataOptions.levels, 'Choose level', courseForm.level)} />
                           <Select label="Assign lecturer" value={courseForm.lecturerId} onChange={(value) => setCourseForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Choose lecturer' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
-                        <div className="md:col-span-2"><label className="mb-2 block text-sm font-semibold text-slate-700">Description</label><textarea value={courseForm.description} onChange={(event) => setCourseForm((current) => ({ ...current, description: event.target.value }))} rows={4} className="w-full rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /></div>
-                        <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-course'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-course' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}Create course</button></div>
+                          <TextAreaField label="Description" value={courseForm.description} onChange={(value) => setCourseForm((current) => ({ ...current, description: value }))} />
+                          <div className="md:col-span-2">
+                            <ActionButton type="submit" disabled={busyAction === 'create-course'}>
+                              {busyAction === 'create-course' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
+                              Create course
+                            </ActionButton>
+                          </div>
                       </form>
                     </Panel>
                   )}
                   {role === 'admin' && (
                     <Panel title="Import course catalog" eyebrow="Faculty course list">
                       <div className="space-y-4">
-                        <p className="text-sm leading-7 text-slate-600">Upload a CSV with headers like <span className="font-mono">courseCode, courseName, semester, academicYear, lecturerEmail, faculty, department, program, level</span>.</p>
-                        <div>
-                          <label className="block text-sm font-semibold text-slate-700">Upload course CSV</label>
-                          <input type="file" accept=".csv,text/csv" onChange={handleCourseCatalogCsvUpload} className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" />
-                          {courseCatalogFileName && <p className="mt-2 text-xs text-slate-500">Last selected file: {courseCatalogFileName}</p>}
-                        </div>
+                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a CSV with headers like <span className="font-mono">courseCode, courseName, semester, academicYear, lecturerEmail, faculty, department, program, level</span>.</p>
+                        <FileField label="Upload course CSV" accept=".csv,text/csv" onChange={handleCourseCatalogCsvUpload} fileName={courseCatalogFileName} />
                       </div>
                     </Panel>
                   )}
                   {role === 'admin' && (
                     <Panel title="Import timetable" eyebrow="Schedule upload">
                       <div className="space-y-4">
-                        <p className="text-sm leading-7 text-slate-600">Upload your school timetable <span className="font-mono">PDF</span> to map offered courses by department and level automatically, or upload a <span className="font-mono">CSV</span> with headers like <span className="font-mono">courseCode, dayOfWeek, startTime, endTime, venue, notifyMinutesBefore</span> for detailed class-time notifications.</p>
-                        <div>
-                          <label className="block text-sm font-semibold text-slate-700">Upload timetable file</label>
-                          <input type="file" accept=".pdf,.csv,text/csv,application/pdf" onChange={handleTimetableCsvUpload} className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" />
-                          {timetableFileName && <p className="mt-2 text-xs text-slate-500">Last selected file: {timetableFileName}</p>}
-                        </div>
+                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload your school timetable <span className="font-mono">PDF</span> to map offered courses by department and level automatically, or upload a <span className="font-mono">CSV</span> with headers like <span className="font-mono">courseCode, dayOfWeek, startTime, endTime, venue, notifyMinutesBefore</span> for detailed class-time notifications.</p>
+                        <FileField label="Upload timetable file" accept=".pdf,.csv,text/csv,application/pdf" onChange={handleTimetableCsvUpload} fileName={timetableFileName} />
                       </div>
                     </Panel>
                   )}
                   {role === 'admin' && (
                     <Panel title="Building geofences" eyebrow="Location setup">
-                      <form onSubmit={handleCreateBuilding} className="grid gap-4 md:grid-cols-2">
+                      <form onSubmit={handleCreateBuilding} className="dashboard-form-grid md:grid-cols-2">
                         <Input label="Building name" value={buildingForm.name} onChange={(value) => setBuildingForm((current) => ({ ...current, name: value }))} />
                         <Input label="Tag (optional)" value={buildingForm.tag} onChange={(value) => setBuildingForm((current) => ({ ...current, tag: value }))} />
                         <Select label="Campus" value={buildingForm.campus} onChange={(value) => setBuildingForm((current) => ({ ...current, campus: value }))} options={buildSelectOptions(adminMetadataOptions.campuses, 'Choose campus', buildingForm.campus)} />
@@ -3215,16 +3266,16 @@ const Dashboard = () => {
                         <Input label="Longitude" value={buildingForm.longitude} onChange={(value) => setBuildingForm((current) => ({ ...current, longitude: value }))} />
                         <Input label="Radius (meters)" type="number" value={buildingForm.radiusMeters} onChange={(value) => setBuildingForm((current) => ({ ...current, radiusMeters: value }))} />
                         <div className="md:col-span-2">
-                          <button type="submit" disabled={busyAction === 'create-building'} className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
+                          <ActionButton type="submit" variant="secondary" disabled={busyAction === 'create-building'}>
                             {busyAction === 'create-building' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
                             Save building geofence
-                          </button>
+                          </ActionButton>
                         </div>
                       </form>
 
-                      <div className="mt-6 space-y-3">
+                      <div className="dashboard-list mt-6 space-y-3">
                         {filteredBuildings.length > 0 ? filteredBuildings.map((building) => (
-                          <div key={building.id} className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
+                          <div key={building.id} className="dashboard-record-card rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <div>
                                 <p className="font-semibold text-slate-900">{building.name} {building.tag ? `(${building.tag})` : ''}</p>
@@ -3235,10 +3286,10 @@ const Dashboard = () => {
                               <div className="flex flex-wrap gap-2">
                                 <Badge tone={building.isActive ? 'emerald' : 'rose'}>{building.isActive ? 'active' : 'inactive'}</Badge>
                                 {building.isActive && (
-                                  <button onClick={() => handleDeactivateBuilding(building.id)} disabled={busyAction === `deactivate-building-${building.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60">
+                                  <ActionButton onClick={() => handleDeactivateBuilding(building.id)} disabled={busyAction === `deactivate-building-${building.id}`} variant="danger" className="px-3 py-2 text-xs">
                                     {busyAction === `deactivate-building-${building.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
                                     Deactivate
-                                  </button>
+                                  </ActionButton>
                                 )}
                               </div>
                             </div>
@@ -3253,18 +3304,14 @@ const Dashboard = () => {
                     <Panel title="Import course roster" eyebrow="Lecturer student list">
                       <div className="space-y-4">
                         <Select label="Assigned course" value={lecturerRosterCourseId} onChange={(value) => setLecturerRosterCourseId(value)} options={[{ value: '', label: 'Choose course' }, ...courses.map((course) => ({ value: course.id, label: `${course.courseCode} - ${course.courseName}` }))]} />
-                        <p className="text-sm leading-7 text-slate-600">Upload a CSV with headers like <span className="font-mono">matricNumber</span> or <span className="font-mono">email</span>. Matched students will be enrolled into the selected course automatically.</p>
-                        <div>
-                          <label className="block text-sm font-semibold text-slate-700">Upload roster CSV</label>
-                          <input type="file" accept=".csv,text/csv" onChange={handleLecturerRosterCsvUpload} className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" />
-                          {lecturerRosterFileName && <p className="mt-2 text-xs text-slate-500">Last selected file: {lecturerRosterFileName}</p>}
-                        </div>
+                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a CSV with headers like <span className="font-mono">matricNumber</span> or <span className="font-mono">email</span>. Matched students will be enrolled into the selected course automatically.</p>
+                        <FileField label="Upload roster CSV" accept=".csv,text/csv" onChange={handleLecturerRosterCsvUpload} fileName={lecturerRosterFileName} />
                       </div>
                     </Panel>
                   )}
                   {role === 'lecturer' && (
                     <Panel title="Create an attendance session" eyebrow="Class operations">
-                      <form onSubmit={handleCreateSession} className="grid gap-4 md:grid-cols-2">
+                      <form onSubmit={handleCreateSession} className="dashboard-form-grid md:grid-cols-2">
                         <Select label="Course" value={sessionForm.courseId} onChange={(value) => setSessionForm((current) => ({ ...current, courseId: value }))} options={[{ value: '', label: 'Choose course' }, ...courses.map((course) => ({ value: course.id, label: `${course.courseCode} - ${course.courseName}` }))]} />
                         <Input label="Date" type="date" value={sessionForm.date} onChange={(value) => setSessionForm((current) => ({ ...current, date: value }))} />
                         <Input label="Start time" type="time" value={sessionForm.startTime} onChange={(value) => setSessionForm((current) => ({ ...current, startTime: value }))} />
@@ -3285,10 +3332,15 @@ const Dashboard = () => {
                         />
                         <Input label="Venue" value={sessionForm.venue} onChange={(value) => setSessionForm((current) => ({ ...current, venue: value }))} />
                         <Input label="Grace period (minutes)" type="number" value={sessionForm.maxAttendanceTime} onChange={(value) => setSessionForm((current) => ({ ...current, maxAttendanceTime: value }))} />
-                        <div className="md:col-span-2 rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-slate-700">
+                        <div className="dashboard-callout md:col-span-2 rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-slate-700">
                           Geofence is auto-applied from the selected building. Students outside that building radius cannot mark attendance.
                         </div>
-                        <div className="md:col-span-2"><button type="submit" disabled={busyAction === 'create-session'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-session' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />}Create session</button></div>
+                        <div className="md:col-span-2">
+                          <ActionButton type="submit" disabled={busyAction === 'create-session'}>
+                            {busyAction === 'create-session' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />}
+                            Create session
+                          </ActionButton>
+                        </div>
                       </form>
                     </Panel>
                   )}
@@ -3297,20 +3349,20 @@ const Dashboard = () => {
               <Panel title={role === 'student' ? 'My semester courses' : 'Course directory'} eyebrow="Course list">
                 <div className="space-y-4">
                   {role === 'student' && (
-                    <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-4">
+                    <div className="dashboard-callout rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-4">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-sm font-semibold text-slate-800">Need to add or remove semester courses?</p>
                           <p className="mt-1 text-sm text-slate-600">Open the dedicated course-selection page to manage only the courses matched to your level, department, program, semester, and timetable.</p>
                         </div>
-                        <button
+                        <ActionButton
                           type="button"
                           onClick={() => navigate('/course-selection')}
-                          className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-800"
+                          className="px-4"
                         >
                           <BookOpen className="h-4 w-4" />
                           Manage courses
-                        </button>
+                        </ActionButton>
                       </div>
                     </div>
                   )}
@@ -3328,7 +3380,7 @@ const Dashboard = () => {
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{levelGroup.level}</p>
                           <div className="space-y-4">
                             {levelGroup.items.map((course) => (
-                              <div key={course.id} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
+                              <div key={course.id} className="dashboard-record-card rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                   <div>
                                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">{course.courseCode}</p>
@@ -3358,23 +3410,23 @@ const Dashboard = () => {
                                   <div className="mt-4 space-y-4">
                                     <div className="flex flex-wrap gap-2">
                                       {editingCourseId === String(course.id) ? (
-                                        <button onClick={handleCancelCourseEdit} type="button" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+                                        <ActionButton onClick={handleCancelCourseEdit} type="button" variant="secondary" className="px-4 py-2">
                                           Cancel edit
-                                        </button>
+                                        </ActionButton>
                                       ) : (
-                                        <button onClick={() => handleStartCourseEdit(course)} type="button" className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50">
+                                        <ActionButton onClick={() => handleStartCourseEdit(course)} type="button" variant="soft" className="px-4 py-2">
                                           Edit course
-                                        </button>
+                                        </ActionButton>
                                       )}
                                       {course.isActive !== false && (
-                                        <button onClick={() => handleArchiveCourse(course.id)} disabled={busyAction === `archive-course-${course.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-50 disabled:opacity-60">
+                                        <ActionButton onClick={() => handleArchiveCourse(course.id)} disabled={busyAction === `archive-course-${course.id}`} variant="warning" className="px-4 py-2">
                                           {busyAction === `archive-course-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
                                           Archive course
-                                        </button>
+                                        </ActionButton>
                                       )}
                                     </div>
                                     {editingCourseId === String(course.id) && (
-                                      <form onSubmit={(event) => handleUpdateCourse(event, course.id)} className="grid gap-4 rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-4 md:grid-cols-2">
+                                      <form onSubmit={(event) => handleUpdateCourse(event, course.id)} className="dashboard-form-grid dashboard-form-grid--nested rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-4 md:grid-cols-2">
                                         <Input label="Course code" value={courseEditForm.courseCode} onChange={(value) => setCourseEditForm((current) => ({ ...current, courseCode: value.toUpperCase() }))} />
                                         <Input label="Course name" value={courseEditForm.courseName} onChange={(value) => setCourseEditForm((current) => ({ ...current, courseName: value }))} />
                                         <Select label="Semester" value={courseEditForm.semester} onChange={(value) => setCourseEditForm((current) => ({ ...current, semester: value }))} options={[{ value: 'rain', label: 'Rain' }, { value: 'harmattan', label: 'Harmattan' }]} />
@@ -3385,15 +3437,12 @@ const Dashboard = () => {
                                         <Select label="Campus" value={courseEditForm.campus} onChange={(value) => setCourseEditForm((current) => ({ ...current, campus: value }))} options={buildSelectOptions(adminMetadataOptions.campuses, 'Choose campus', courseEditForm.campus)} />
                                         <Select label="Level" value={courseEditForm.level} onChange={(value) => setCourseEditForm((current) => ({ ...current, level: value }))} options={buildSelectOptions(adminMetadataOptions.levels, 'Choose level', courseEditForm.level)} />
                                         <Select label="Assign lecturer" value={courseEditForm.lecturerId} onChange={(value) => setCourseEditForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Choose lecturer' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
+                                        <TextAreaField label="Description" value={courseEditForm.description} onChange={(value) => setCourseEditForm((current) => ({ ...current, description: value }))} />
                                         <div className="md:col-span-2">
-                                          <label className="mb-2 block text-sm font-semibold text-slate-700">Description</label>
-                                          <textarea value={courseEditForm.description} onChange={(event) => setCourseEditForm((current) => ({ ...current, description: event.target.value }))} rows={4} className="w-full rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" />
-                                        </div>
-                                        <div className="md:col-span-2">
-                                          <button type="submit" disabled={busyAction === `update-course-${course.id}`} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">
+                                          <ActionButton type="submit" disabled={busyAction === `update-course-${course.id}`}>
                                             {busyAction === `update-course-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
                                             Save course changes
-                                          </button>
+                                          </ActionButton>
                                         </div>
                                       </form>
                                     )}
@@ -3401,8 +3450,8 @@ const Dashboard = () => {
                                 )}
                                 {role === 'lecturer' && (
                                   <div className="mt-4 flex flex-wrap gap-2">
-                                    <button onClick={() => handleDownloadReport(course.id, 'csv')} disabled={busyAction === `download-csv-${course.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{busyAction === `download-csv-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download CSV</button>
-                                    <button onClick={() => handleDownloadReport(course.id, 'pdf')} disabled={busyAction === `download-pdf-${course.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">{busyAction === `download-pdf-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download PDF</button>
+                                    <ActionButton onClick={() => handleDownloadReport(course.id, 'csv')} disabled={busyAction === `download-csv-${course.id}`} variant="soft" className="px-4 py-2">{busyAction === `download-csv-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download CSV</ActionButton>
+                                    <ActionButton onClick={() => handleDownloadReport(course.id, 'pdf')} disabled={busyAction === `download-pdf-${course.id}`} variant="secondary" className="px-4 py-2">{busyAction === `download-pdf-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download PDF</ActionButton>
                                   </div>
                                 )}
                               </div>
@@ -3422,7 +3471,7 @@ const Dashboard = () => {
               <Panel title="Attendance sessions" eyebrow="Lecturer control">
                 <div className="space-y-4">
                   {filteredSessions.length > 0 ? filteredSessions.map((session) => (
-                    <button key={session.id} onClick={() => loadSessionDetail(session.id)} className={`w-full rounded-[1.5rem] border p-5 text-left transition ${sessionDetail?.id === session.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-slate-50/80 hover:border-blue-300'}`}>
+                    <button key={session.id} onClick={() => loadSessionDetail(session.id)} className={`dashboard-record-card dashboard-record-card--interactive w-full rounded-[1.5rem] border p-5 text-left transition ${sessionDetail?.id === session.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-slate-50/80 hover:border-blue-300'}`}>
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">{session.course?.courseCode || 'Course'}</p><p className="mt-2 text-lg font-bold text-slate-950">{session.course?.courseName || 'Attendance session'}</p><p className="mt-2 text-sm text-slate-500">{formatDate(session.date)} at {formatTime(session.startTime)}</p><p className="mt-1 text-sm text-slate-500">Venue: {session.venue || 'Not set'}</p></div>
                         <div className="flex flex-wrap gap-2"><Badge tone={session.status === 'active' ? 'emerald' : 'slate'}>{session.status}</Badge><Badge tone="blue">{session.sessionCode}</Badge></div>

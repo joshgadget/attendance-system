@@ -1,28 +1,78 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '../../services/api';
 
-const storedToken = localStorage.getItem('token');
-const storedRefreshToken = localStorage.getItem('refreshToken');
-const storedUser = localStorage.getItem('user');
+const hasWindow = typeof window !== 'undefined';
+
+const readStorage = (key) => {
+  if (!hasWindow) {
+    return null;
+  }
+
+  try {
+    return window.localStorage.getItem(key);
+  } catch (error) {
+    return null;
+  }
+};
+
+const writeStorage = (key, value) => {
+  if (!hasWindow) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(key, value);
+  } catch (error) {
+    // Ignore storage write failures so auth state can still proceed in memory.
+  }
+};
+
+const removeStorage = (key) => {
+  if (!hasWindow) {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(key);
+  } catch (error) {
+    // Ignore storage cleanup failures.
+  }
+};
+
+const parseStoredUser = (rawValue) => {
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawValue);
+  } catch (error) {
+    return null;
+  }
+};
+
+const storedToken = readStorage('token');
+const storedRefreshToken = readStorage('refreshToken');
+const storedUser = readStorage('user');
 
 const persistSession = (user, tokens = {}) => {
   if (tokens.accessToken) {
-    localStorage.setItem('token', tokens.accessToken);
+    writeStorage('token', tokens.accessToken);
   }
 
   if (tokens.refreshToken) {
-    localStorage.setItem('refreshToken', tokens.refreshToken);
+    writeStorage('refreshToken', tokens.refreshToken);
   }
 
   if (user) {
-    localStorage.setItem('user', JSON.stringify(user));
+    writeStorage('user', JSON.stringify(user));
   }
 };
 
 const clearSession = () => {
-  localStorage.removeItem('token');
-  localStorage.removeItem('refreshToken');
-  localStorage.removeItem('user');
+  removeStorage('token');
+  removeStorage('refreshToken');
+  removeStorage('user');
 };
 
 export const login = createAsyncThunk(
@@ -34,7 +84,7 @@ export const login = createAsyncThunk(
       persistSession(payload.user, payload.tokens);
       return payload;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.message || 'Login failed');
+      return rejectWithValue(error.userMessage || error.response?.data?.message || 'Login failed');
     }
   }
 );
@@ -49,7 +99,7 @@ export const fetchCurrentUser = createAsyncThunk(
       return user;
     } catch (error) {
       clearSession();
-      return rejectWithValue(error.response?.data?.message || 'Session expired');
+      return rejectWithValue(error.userMessage || error.response?.data?.message || 'Session expired');
     }
   }
 );
@@ -57,7 +107,7 @@ export const fetchCurrentUser = createAsyncThunk(
 const authSlice = createSlice({
   name: 'auth',
   initialState: {
-    user: storedUser ? JSON.parse(storedUser) : null,
+    user: parseStoredUser(storedUser),
     token: storedToken,
     refreshToken: storedRefreshToken,
     isAuthenticated: Boolean(storedToken),

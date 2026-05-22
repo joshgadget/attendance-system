@@ -11,6 +11,7 @@ const { testConnection } = require('./config/database');
 const { sequelize, setupAssociations, Building } = require('./models');
 const { ensureSchemaGuard } = require('./utils/schemaGuard');
 const env = require('./utils/env');
+const logger = require('./utils/logger');
 
 const app = express();
 const server = http.createServer(app);
@@ -74,10 +75,19 @@ app.use((req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  console.error('API error:', err.message);
+  const statusCode = err.statusCode || 500;
+  logger.error('API error', {
+    message: err.message,
+    statusCode,
+    path: req.originalUrl,
+    method: req.method,
+    stack: err.stack,
+  });
   res.status(err.statusCode || 500).json({
     success: false,
-    message: err.message || 'Internal Server Error',
+    message: env.isProduction && statusCode >= 500
+      ? 'Something went wrong on the server. Please try again.'
+      : (err.message || 'Internal Server Error'),
   });
 });
 
@@ -85,25 +95,30 @@ const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
   try {
+    const missingEnv = env.validateRequiredEnv();
+    if (missingEnv.length > 0) {
+      throw new Error(`Missing required production environment variables: ${missingEnv.join(', ')}`);
+    }
+
     setupAssociations();
     await testConnection();
     const appliedChanges = await ensureSchemaGuard(sequelize);
     await sequelize.sync();
     if (process.env.SEED_OOU_BUILDINGS === 'true' && typeof Building.seedOOU === 'function') {
       await Building.seedOOU();
-      console.log('OOU building seed completed');
+      logger.info('OOU building seed completed');
     }
     if (appliedChanges.length > 0) {
-      console.log(`Schema guard applied: ${appliedChanges.join(', ')}`);
+      logger.info(`Schema guard applied: ${appliedChanges.join(', ')}`);
     }
-    console.log('Database connected and synced successfully');
+    logger.info('Database connected and synced successfully');
   } catch (error) {
-    console.error('Database startup failed:', error);
+    logger.error('Database startup failed', { message: error.message, stack: error.stack });
     process.exit(1);
   }
 
   server.listen(PORT, () => {
-    console.log(`Attendance System API running on port ${PORT}`);
+    logger.info(`Attendance System API running on port ${PORT}`);
   });
 };
 

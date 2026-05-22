@@ -1,8 +1,10 @@
+const env = require('../utils/env');
+
 module.exports = {
   jwt: {
-    secret: process.env.JWT_SECRET || 'defaultsecret',
+    secret: env.getEnvOrFallback('JWT_SECRET', 'dev-jwt-secret-change-me'),
     expiresIn: process.env.JWT_EXPIRE || '15m',
-    refreshSecret: process.env.JWT_REFRESH_SECRET || 'defaultrefresh',
+    refreshSecret: env.getEnvOrFallback('JWT_REFRESH_SECRET', 'dev-refresh-secret-change-me'),
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRE || '7d'
   },
   bcrypt: {

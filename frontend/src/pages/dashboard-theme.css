@@ -656,6 +656,107 @@
     0 18px 40px rgba(0, 0, 0, 0.22);
 }
 
+.dashboard-panel + .dashboard-panel,
+.dashboard-record-card + .dashboard-record-card {
+  margin-top: 0;
+}
+
+.dashboard-form-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.dashboard-form-grid--nested {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26);
+}
+
+.dashboard-field {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.dashboard-field__label {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.dashboard-field__control {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 1.15rem;
+  padding: 0.95rem 1rem;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.dashboard-field__control:hover,
+.dashboard-file-input:hover {
+  border-color: rgba(76, 130, 255, 0.38);
+}
+
+.dashboard-field__control:focus,
+.dashboard-file-input:focus {
+  border-color: rgba(76, 130, 255, 0.72);
+  box-shadow: 0 0 0 4px rgba(76, 130, 255, 0.16);
+}
+
+.dashboard-field__control--textarea {
+  resize: vertical;
+  min-height: 8rem;
+}
+
+.dashboard-field__helper {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.dashboard-file-input {
+  width: 100%;
+  border: 1px dashed rgba(148, 163, 184, 0.32);
+  border-radius: 1.15rem;
+  padding: 0.9rem 1rem;
+  font-size: 0.92rem;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.dashboard-file-input::file-selector-button {
+  margin-right: 0.9rem;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.62rem 0.95rem;
+}
+
+.dashboard-section-copy {
+  max-width: 68ch;
+}
+
+.dashboard-callout {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.dashboard-record-card {
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+}
+
+.dashboard-record-card--interactive {
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dashboard-record-card--interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 44px rgba(37, 99, 235, 0.12);
+}
+
 .dashboard-shell--app .rounded-\[2rem\],
 .dashboard-shell--app .rounded-\[1\.75rem\],
 .dashboard-shell--app .rounded-\[1\.5rem\] {
@@ -714,6 +815,30 @@
   border-color: rgba(255, 255, 255, 0.07) !important;
   background: rgba(255, 255, 255, 0.03) !important;
   color: #f4f6ff !important;
+}
+
+.dashboard-shell--app .dashboard-field__control,
+.dashboard-shell--app .dashboard-file-input {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.035) !important;
+  color: #f4f6ff !important;
+}
+
+.dashboard-shell--app .dashboard-file-input::file-selector-button {
+  background: linear-gradient(135deg, #366eff, #4f7dff);
+}
+
+.dashboard-shell--app .dashboard-record-card {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+  background: linear-gradient(180deg, rgba(27, 28, 42, 0.86) 0%, rgba(21, 22, 35, 0.92) 100%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 18px 36px rgba(0, 0, 0, 0.16);
+}
+
+.dashboard-shell--app .dashboard-callout {
+  border-color: rgba(59, 130, 246, 0.18) !important;
+  background: linear-gradient(180deg, rgba(30, 64, 175, 0.18) 0%, rgba(15, 23, 42, 0.42) 100%) !important;
 }
 
 .dashboard-shell--app input::placeholder,
@@ -831,6 +956,23 @@
 
 .dashboard-shell--light .dashboard-account-dropdown__item:hover {
   background: rgba(37, 99, 235, 0.08);
+}
+
+.dashboard-shell--light .dashboard-field__control,
+.dashboard-shell--light .dashboard-file-input {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(248, 250, 252, 0.88);
+}
+
+.dashboard-shell--light .dashboard-record-card {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(248, 250, 252, 0.88);
+  box-shadow: 0 12px 28px rgba(148, 163, 184, 0.12);
+}
+
+.dashboard-shell--light .dashboard-callout {
+  border-color: rgba(147, 197, 253, 0.9);
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.92) 0%, rgba(219, 234, 254, 0.82) 100%);
 }
 
 @media (max-width: 1279px) {
