@@ -2,21 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta http-equiv="refresh" content="0; url=/frontend/build/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Attendance System</title>
     <script>
       (function () {
-        try {
-          var path = window.location.pathname + window.location.search + window.location.hash;
-          window.sessionStorage.setItem('attendance-system-redirect-path', path);
-        } catch (error) {
-          // If storage is unavailable, continue to the root app anyway.
-        }
-        window.location.replace('/');
+        var target = "/frontend/build/" + (window.location.search || "") + (window.location.hash || "");
+        window.location.replace(target);
       })();
     </script>
   </head>
   <body>
-    <p>Redirecting to Attendance System...</p>
+    <p>Loading Attendance System...</p>
   </body>
 </html>
