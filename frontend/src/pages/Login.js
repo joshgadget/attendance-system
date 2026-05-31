@@ -55,12 +55,12 @@ const Login = () => {
             Attendance System
           </motion.h1>
           <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className={`mb-8 text-center ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
-            Smart attendance tracking for modern education
+            Sign in to continue
           </motion.p>
 
           {isAttendanceEntry && (
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className={`mb-6 rounded-2xl border px-4 py-4 text-center text-sm ${isDark ? 'border-emerald-800 bg-emerald-950/40 text-emerald-200' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-              Sign in to continue to the attendance page. Your scanned class details will be ready as soon as you enter the app.
+              Continue to attendance. Your session details will be ready after sign in.
             </motion.div>
           )}
 
@@ -96,7 +96,7 @@ const Login = () => {
           </div>
 
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }} className={`mt-8 rounded-[1.5rem] border p-5 text-center ${isDark ? 'border-slate-700 bg-slate-800/70' : 'border-blue-100 bg-blue-50/80'}`}>
-            <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>Students can create their own account using a verified matric number.</p>
+            <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>Need an account? Register with your matric number.</p>
             <Link to="/signup" className={`mt-4 inline-flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${isDark ? 'border-slate-600 bg-slate-900 text-blue-300 hover:border-slate-500 hover:bg-slate-800' : 'border-blue-200 bg-white text-blue-700 hover:border-blue-300 hover:bg-blue-100'}`}>
               Open student signup
               <ArrowRight className="h-4 w-4" />

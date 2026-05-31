@@ -50,6 +50,13 @@ const initialSessionForm = { courseId: '', date: '', startTime: '', durationMinu
 const initialBuildingForm = { name: '', tag: '', campus: '', latitude: '', longitude: '', radiusMeters: '80' };
 const initialQueryForm = { studentId: '', sessionId: '', title: '', message: '' };
 const initialAttendanceForm = { sessionCode: '', attendancePass: '', useLocation: true };
+const initialSiteMaintenanceForm = {
+  isMaintenanceEnabled: false,
+  badge: 'Temporary maintenance',
+  title: 'Site temporarily unavailable',
+  body: "We're applying a few updates right now. Please check back soon. All access is currently paused while maintenance is active.",
+  footer: 'Everything is locked during maintenance',
+};
 const TABS_BY_ROLE = {
   admin: ['overview', 'analytics', 'users', 'registry', 'courses', 'reports', 'notifications', 'help'],
   lecturer: ['overview', 'analytics', 'courses', 'sessions', 'queries', 'reports', 'notifications', 'help'],
@@ -714,6 +721,7 @@ const Dashboard = () => {
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [profilePhoto, setProfilePhoto] = useState('');
   const [preferences, setPreferences] = useState({ emailUpdates: true, classReminders: true, compactMode: false });
+  const [siteMaintenance, setSiteMaintenance] = useState(initialSiteMaintenanceForm);
   const [users, setUsers] = useState([]);
   const [lecturers, setLecturers] = useState([]);
   const [students, setStudents] = useState([]);
@@ -962,11 +970,12 @@ const Dashboard = () => {
       setRefreshing(true);
       setLoading(Boolean(spin));
 
-      const [analyticsResponse, notificationsResponse, helpResponse, profileResponse] = await Promise.all([
+      const [analyticsResponse, notificationsResponse, helpResponse, profileResponse, siteMaintenanceResponse] = await Promise.all([
         api.get('/dashboard/analytics'),
         api.get('/dashboard/notifications'),
         api.get('/dashboard/help'),
         api.get('/users/me/profile'),
+        api.get('/site/maintenance'),
       ]);
 
       setAnalytics(analyticsResponse.data.data || { highlightCards: [], charts: {}, tables: {} });
@@ -974,6 +983,10 @@ const Dashboard = () => {
       setHelpCenter(helpResponse.data.data || { articles: [], contact: null });
       setProfile(profileResponse.data.data || null);
       setProfilePhoto(profileResponse.data.data?.profilePhoto || '');
+      setSiteMaintenance({
+        ...initialSiteMaintenanceForm,
+        ...(siteMaintenanceResponse.data.data || {}),
+      });
       setProfileForm({
         firstName: profileResponse.data.data?.firstName || '',
         lastName: profileResponse.data.data?.lastName || '',
@@ -2141,27 +2154,27 @@ const Dashboard = () => {
   const stats = useMemo(() => {
     if (role === 'admin') {
       return [
-        { label: 'Users', value: summary?.totalUsers || 0, helper: 'All registered roles', icon: Users, tone: 'bg-blue-600' },
-        { label: 'Courses', value: summary?.totalCourses || 0, helper: 'Active teaching records', icon: BookOpen, tone: 'bg-slate-900' },
-        { label: 'Registry', value: summary?.totalRegistryRecords || 0, helper: `${summary?.claimedRegistryRecords || 0} claimed by students`, icon: ShieldCheck, tone: 'bg-sky-500' },
-        { label: 'Queries', value: summary?.pendingQueries || 0, helper: 'Pending absence follow-ups', icon: Bell, tone: 'bg-amber-500' },
+        { label: 'Users', value: summary?.totalUsers || 0, helper: 'All roles', icon: Users, tone: 'bg-blue-600' },
+        { label: 'Courses', value: summary?.totalCourses || 0, helper: 'Active courses', icon: BookOpen, tone: 'bg-slate-900' },
+        { label: 'Registry', value: summary?.totalRegistryRecords || 0, helper: `${summary?.claimedRegistryRecords || 0} claimed`, icon: ShieldCheck, tone: 'bg-sky-500' },
+        { label: 'Queries', value: summary?.pendingQueries || 0, helper: 'Pending replies', icon: Bell, tone: 'bg-amber-500' },
       ];
     }
 
     if (role === 'lecturer') {
       return [
-        { label: 'Courses', value: summary?.totalCourses || 0, helper: 'Courses assigned to you', icon: BookOpen, tone: 'bg-blue-600' },
-        { label: 'Active Sessions', value: summary?.activeSessions || 0, helper: 'Attendance windows open now', icon: Calendar, tone: 'bg-slate-900' },
-        { label: 'Pending Queries', value: summary?.pendingQueries || 0, helper: 'Students awaiting follow-up', icon: Bell, tone: 'bg-amber-500' },
-        { label: 'Students', value: summary?.totalStudents || 0, helper: 'Students available in system', icon: Users, tone: 'bg-sky-500' },
+        { label: 'Courses', value: summary?.totalCourses || 0, helper: 'Your courses', icon: BookOpen, tone: 'bg-blue-600' },
+        { label: 'Active Sessions', value: summary?.activeSessions || 0, helper: 'Open now', icon: Calendar, tone: 'bg-slate-900' },
+        { label: 'Pending Queries', value: summary?.pendingQueries || 0, helper: 'Awaiting follow-up', icon: Bell, tone: 'bg-amber-500' },
+        { label: 'Students', value: summary?.totalStudents || 0, helper: 'Available students', icon: Users, tone: 'bg-sky-500' },
       ];
     }
 
     return [
-      { label: 'Courses', value: summary?.totalCourses || 0, helper: 'Courses you are enrolled in', icon: BookOpen, tone: 'bg-blue-600' },
-      { label: 'Attendance Marks', value: summary?.totalAttendanceMarks || 0, helper: 'Total sessions marked', icon: CheckCircle2, tone: 'bg-slate-900' },
-      { label: 'Pending Queries', value: summary?.pendingQueries || 0, helper: 'Lecturer questions awaiting your reply', icon: Bell, tone: 'bg-amber-500' },
-      { label: 'Late Marks', value: summary?.lateMarks || 0, helper: 'Sessions marked after grace period', icon: Clock3, tone: 'bg-sky-500' },
+      { label: 'Courses', value: summary?.totalCourses || 0, helper: 'Your courses', icon: BookOpen, tone: 'bg-blue-600' },
+      { label: 'Attendance Marks', value: summary?.totalAttendanceMarks || 0, helper: 'Total marks', icon: CheckCircle2, tone: 'bg-slate-900' },
+      { label: 'Pending Queries', value: summary?.pendingQueries || 0, helper: 'Awaiting reply', icon: Bell, tone: 'bg-amber-500' },
+      { label: 'Late Marks', value: summary?.lateMarks || 0, helper: 'After grace period', icon: Clock3, tone: 'bg-sky-500' },
     ];
   }, [role, summary]);
 
@@ -2199,7 +2212,7 @@ const Dashboard = () => {
     }
 
     return [
-      { key: 'lecturer-note', label: 'Use course cards below', helper: 'Download per-course reports from your Courses tab.' },
+      { key: 'lecturer-note', label: 'Use course cards below', helper: 'Download reports from Courses.' },
     ];
   }, [role]);
 
@@ -2404,6 +2417,49 @@ const Dashboard = () => {
     }
   };
 
+  const handleToggleSiteMaintenance = async (enabled) => {
+    const nextSettings = {
+      ...siteMaintenance,
+      isMaintenanceEnabled: enabled,
+    };
+
+    try {
+      setBusyAction('update-site-maintenance');
+      setMessage();
+      setSiteMaintenance(nextSettings);
+      const response = await api.put('/site/maintenance', nextSettings);
+      setSiteMaintenance({
+        ...initialSiteMaintenanceForm,
+        ...(response.data.data || nextSettings),
+      });
+      setMessage(response.data.message || (enabled ? 'Maintenance mode enabled.' : 'Maintenance mode disabled.'));
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Maintenance settings could not be updated.');
+      setSiteMaintenance((current) => ({ ...current, isMaintenanceEnabled: !enabled }));
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleSaveSiteMaintenance = async (event) => {
+    event.preventDefault();
+
+    try {
+      setBusyAction('update-site-maintenance');
+      setMessage();
+      const response = await api.put('/site/maintenance', siteMaintenance);
+      setSiteMaintenance({
+        ...initialSiteMaintenanceForm,
+        ...(response.data.data || siteMaintenance),
+      });
+      setMessage(response.data.message || 'Site maintenance settings saved.');
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Site maintenance settings could not be saved.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   return (
     <div className={`dashboard-shell min-h-screen ${isDark ? 'dark dashboard-shell--app text-slate-100' : 'dashboard-shell--light text-slate-900'} ${preferences.compactMode ? 'dashboard-shell--compact' : ''}`}>
       <QrScannerPanel isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={handleMarkAttendance} />
@@ -2537,9 +2593,9 @@ const Dashboard = () => {
               <section className="dashboard-welcome">
                 <h1>Welcome back, {user?.firstName || 'there'} <span className="wave" role="img" aria-label="waving hand">{'\u{1F44B}'}</span></h1>
                 <p>
-                  {role === 'admin' && "Here's what's happening across the system today."}
-                  {role === 'lecturer' && "Here's what's happening with your classes today."}
-                  {role === 'student' && "Here's what's happening today."}
+                  {role === 'admin' && 'System overview.'}
+                  {role === 'lecturer' && 'Your classes today.'}
+                  {role === 'student' && 'Today at a glance.'}
                 </p>
               </section>
 
@@ -2563,7 +2619,7 @@ const Dashboard = () => {
                       <h2>Attendance</h2>
                       <p>Weekly overview</p>
                     </div>
-                    <div className="dashboard-card__meta">Compared to last week</div>
+                    <div className="dashboard-card__meta">Vs last week</div>
                   </div>
                   <div className="dashboard-chart__summary">
                     <span>{attendanceTrendValues[attendanceTrendValues.length - 1]}%</span>
@@ -2586,9 +2642,9 @@ const Dashboard = () => {
                         <circle key={index} cx={point.x} cy={point.y} r="5" className="dashboard-chart__point" />
                       ))}
                     </svg>
-                    {role === 'student' && `${history[0]?.session?.course?.courseCode || 'No latest attendance yet'} - Stay on top of your courses and lecturer responses.`}
-                    {role === 'lecturer' && `${activeSession?.course?.courseCode || 'No active session'} - Keep attendance open only during class and close promptly after.`}
-                    {role === 'admin' && `${summary?.totalCourses || 0} active courses - Registry, users, and reports are all available from the left menu.`}
+                    {role === 'student' && `${history[0]?.session?.course?.courseCode || 'No attendance yet'} - Keep up with your courses.`}
+                    {role === 'lecturer' && `${activeSession?.course?.courseCode || 'No active session'} - Open during class, close after.`}
+                    {role === 'admin' && `${summary?.totalCourses || 0} active courses - Registry, users, and reports are in the menu.`}
                   </div>
                 </section>
 
@@ -2698,7 +2754,7 @@ const Dashboard = () => {
                     </Panel>
                   )) : (
                     <Panel title="Operational detail" eyebrow="Operational detail">
-                      <EmptyState title="No detailed tables yet" description="Detailed institutional and course analytics will appear here when data is available." />
+                      <EmptyState title="No detailed tables yet" description="Detailed analytics will appear here later." />
                     </Panel>
                   )}
                 </div>
@@ -2719,7 +2775,7 @@ const Dashboard = () => {
                     >
                       <div>
                         <p className="font-semibold text-slate-900 dark:text-slate-100">{item.label}</p>
-                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Ready-to-share export for meetings, reviews, and record keeping.</p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Export for reports and reviews.</p>
                       </div>
                       {busyAction === `download-${item.reportType}-${item.format}` ? <LoaderCircle className="h-5 w-5 animate-spin text-blue-500" /> : <Download className="h-5 w-5 text-blue-500" />}
                     </button>
@@ -2744,7 +2800,7 @@ const Dashboard = () => {
             <div className="grid gap-8">
               <Panel title="Notification center" eyebrow="Recent activity">
                 <div className="space-y-4">
-                  {notifications.length > 0 ? notifications.map((item, index) => <NotificationItem key={`${item.title}-${index}`} item={item} />) : <EmptyState title="No notifications yet" description="Fresh activity, responses, and attendance events will appear here." />}
+                  {notifications.length > 0 ? notifications.map((item, index) => <NotificationItem key={`${item.title}-${index}`} item={item} />) : <EmptyState title="No notifications yet" description="New activity will appear here." />}
                 </div>
               </Panel>
             </div>
@@ -2840,8 +2896,8 @@ const Dashboard = () => {
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-2">
-                    <ActionTile title="Profile details" description="Use the Profile & security page to update your department, faculty, program, and password." />
-                    <ActionTile title="Account experience" description="Choose how the dashboard looks on this device and what kind of reminders you want to keep on." />
+                    <ActionTile title="Profile details" description="Update your profile and password." />
+                    <ActionTile title="Account experience" description="Adjust the dashboard and reminders." />
                   </div>
                 </div>
               </Panel>
@@ -2952,6 +3008,80 @@ const Dashboard = () => {
                   </div>
                 </Panel>
 
+                {role === 'admin' && (
+                  <Panel title="Site maintenance" eyebrow="Global access control">
+                    <form onSubmit={handleSaveSiteMaintenance} className="space-y-5">
+                      <div className={`rounded-[1.75rem] border p-5 ${isDark ? 'border-slate-700 bg-slate-900/70' : 'border-slate-200 bg-slate-50/80'}`}>
+                        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <p className={`text-lg font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Maintenance mode</p>
+                            <p className={`mt-2 max-w-2xl text-sm leading-6 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>When this is enabled, all non-admin visitors will see the maintenance screen and the rest of the site will be locked for them.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSiteMaintenance(!siteMaintenance.isMaintenanceEnabled)}
+                            disabled={busyAction === 'update-site-maintenance'}
+                            className={`inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${siteMaintenance.isMaintenanceEnabled ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+                          >
+                            {busyAction === 'update-site-maintenance' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                            {siteMaintenance.isMaintenanceEnabled ? 'Disable maintenance' : 'Enable maintenance'}
+                          </button>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Badge tone={siteMaintenance.isMaintenanceEnabled ? 'rose' : 'emerald'}>{siteMaintenance.isMaintenanceEnabled ? 'Maintenance active' : 'Site open'}</Badge>
+                          <Badge tone="slate">Last updated: {formatDateTime(siteMaintenance.updatedAt)}</Badge>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4">
+                        <Input
+                          label="Badge text"
+                          value={siteMaintenance.badge}
+                          onChange={(value) => setSiteMaintenance((current) => ({ ...current, badge: value }))}
+                        />
+                        <Input
+                          label="Title"
+                          value={siteMaintenance.title}
+                          onChange={(value) => setSiteMaintenance((current) => ({ ...current, title: value }))}
+                        />
+                        <div>
+                          <label className={`mb-2 block text-sm font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Message</label>
+                          <textarea
+                            rows={5}
+                            value={siteMaintenance.body}
+                            onChange={(event) => setSiteMaintenance((current) => ({ ...current, body: event.target.value }))}
+                            className={`w-full rounded-[1.5rem] border px-4 py-4 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100 ${isDark ? 'border-slate-700 bg-slate-900/80 text-slate-100 placeholder:text-slate-500' : 'border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400'}`}
+                            placeholder="Write the maintenance message visitors will see."
+                          />
+                        </div>
+                        <Input
+                          label="Footer text"
+                          value={siteMaintenance.footer}
+                          onChange={(value) => setSiteMaintenance((current) => ({ ...current, footer: value }))}
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          type="submit"
+                          disabled={busyAction === 'update-site-maintenance'}
+                          className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {busyAction === 'update-site-maintenance' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                          Save site message
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSiteMaintenance(initialSiteMaintenanceForm)}
+                          className={`inline-flex items-center gap-2 rounded-2xl border px-5 py-3 font-semibold transition ${isDark ? 'border-slate-700 text-slate-200 hover:bg-slate-800' : 'border-slate-300 text-slate-700 hover:bg-slate-100'}`}
+                        >
+                          Reset defaults
+                        </button>
+                      </div>
+                    </form>
+                  </Panel>
+                )}
+
                 <Panel title="Quick links" eyebrow="Shortcuts">
                   <div className="grid gap-4 md:grid-cols-2">
                     <button type="button" onClick={() => openWorkspaceTab('profile')} className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5 text-left transition hover:border-blue-300 hover:bg-blue-50/70 dark:border-slate-700 dark:bg-slate-900/70 dark:hover:border-blue-700 dark:hover:bg-slate-900">
@@ -2985,8 +3115,8 @@ const Dashboard = () => {
               </Panel>
               <Panel title="Quick support actions" eyebrow="Support">
                 <div className="space-y-4">
-                  <ActionTile title="Check notifications first" description="Most day-to-day issues already show up in the notification center before they become a support request." />
-                  <ActionTile title="Use exports for escalation" description="When reporting an issue to your department or administrator, attach the appropriate PDF or CSV report so the evidence is clear." />
+                  <ActionTile title="Check notifications first" description="Most issues show up here first." />
+                  <ActionTile title="Use exports for escalation" description="Attach a PDF or CSV when reporting." />
                   <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/70">
                     <div className="flex items-start gap-3">
                       <Mail className="mt-1 h-5 w-5 text-blue-500" />
@@ -3051,7 +3181,7 @@ const Dashboard = () => {
                           <div>
                             <p className="text-sm font-semibold text-slate-700">Assign courses (admin override)</p>
                             <p className="mt-1 text-xs text-slate-500">
-                              The system recommends department and level matches first, then lets you add carryovers or cross-department courses manually.
+                              Department and level matches come first, then you can add others manually.
                             </p>
                           </div>
                           {selectedStudent && (
@@ -3231,7 +3361,7 @@ const Dashboard = () => {
                   {role === 'admin' && (
                     <Panel title="Import course catalog" eyebrow="Faculty course list">
                       <div className="space-y-4">
-                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a CSV with headers like <span className="font-mono">courseCode, courseName, semester, academicYear, lecturerEmail, faculty, department, program, level</span>.</p>
+                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a CSV with course details.</p>
                         <FileField label="Upload course CSV" accept=".csv,text/csv" onChange={handleCourseCatalogCsvUpload} fileName={courseCatalogFileName} />
                       </div>
                     </Panel>
@@ -3239,7 +3369,7 @@ const Dashboard = () => {
                   {role === 'admin' && (
                     <Panel title="Import timetable" eyebrow="Schedule upload">
                       <div className="space-y-4">
-                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload your school timetable <span className="font-mono">PDF</span> to map offered courses by department and level automatically, or upload a <span className="font-mono">CSV</span> with headers like <span className="font-mono">courseCode, dayOfWeek, startTime, endTime, venue, notifyMinutesBefore</span> for detailed class-time notifications.</p>
+                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a timetable <span className="font-mono">PDF</span> or <span className="font-mono">CSV</span> to map courses and class times.</p>
                         <FileField label="Upload timetable file" accept=".pdf,.csv,text/csv,application/pdf" onChange={handleTimetableCsvUpload} fileName={timetableFileName} />
                       </div>
                     </Panel>
@@ -3292,7 +3422,7 @@ const Dashboard = () => {
                     <Panel title="Import course roster" eyebrow="Lecturer student list">
                       <div className="space-y-4">
                         <Select label="Assigned course" value={lecturerRosterCourseId} onChange={(value) => setLecturerRosterCourseId(value)} options={[{ value: '', label: 'Choose course' }, ...courses.map((course) => ({ value: course.id, label: `${course.courseCode} - ${course.courseName}` }))]} />
-                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a CSV with headers like <span className="font-mono">matricNumber</span> or <span className="font-mono">email</span>. Matched students will be enrolled into the selected course automatically.</p>
+                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a CSV with matric number or email to enroll students.</p>
                         <FileField label="Upload roster CSV" accept=".csv,text/csv" onChange={handleLecturerRosterCsvUpload} fileName={lecturerRosterFileName} />
                       </div>
                     </Panel>
@@ -3340,8 +3470,8 @@ const Dashboard = () => {
                     <div className="dashboard-callout rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-4">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <p className="text-sm font-semibold text-slate-800">Need to add or remove semester courses?</p>
-                          <p className="mt-1 text-sm text-slate-600">Open the dedicated course-selection page to manage only the courses matched to your level, department, program, semester, and timetable.</p>
+                          <p className="text-sm font-semibold text-slate-800">Manage semester courses.</p>
+                          <p className="mt-1 text-sm text-slate-600">Use course selection to update your list.</p>
                         </div>
                         <ActionButton
                           type="button"
@@ -3359,7 +3489,7 @@ const Dashboard = () => {
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-sm font-bold uppercase tracking-[0.18em] text-blue-600">{departmentGroup.department}</p>
-                          <p className="mt-1 text-sm text-slate-500">Grouped by department and level for cleaner academic administration.</p>
+                          <p className="mt-1 text-sm text-slate-500">Grouped by department and level.</p>
                         </div>
                         <Badge tone="slate">{departmentGroup.levels.reduce((sum, levelGroup) => sum + levelGroup.items.length, 0)} courses</Badge>
                       </div>
@@ -3465,7 +3595,7 @@ const Dashboard = () => {
                         <div className="flex flex-wrap gap-2"><Badge tone={session.status === 'active' ? 'emerald' : 'slate'}>{session.status}</Badge><Badge tone="blue">{session.sessionCode}</Badge></div>
                       </div>
                     </button>
-                  )) : <EmptyState title="No sessions found" description="Create a class session to generate a QR attendance code." />}
+                  )) : <EmptyState title="No sessions found" description="Create a session to generate a QR code." />}
                 </div>
               </Panel>
               <div className="grid gap-8">
@@ -3473,20 +3603,20 @@ const Dashboard = () => {
                   {sessionDetail ? (
                     <div className="space-y-6">
                       <div className="grid gap-4 md:grid-cols-2">
-                        <SummaryTile label="Course" value={sessionDetail.course?.courseCode || 'Not set'} helper={sessionDetail.course?.courseName || 'No course linked'} />
+                        <SummaryTile label="Course" value={sessionDetail.course?.courseCode || 'Not set'} helper={sessionDetail.course?.courseName || 'Linked course'} />
                         <SummaryTile label="Session code" value={sessionDetail.sessionCode} helper={`${formatDate(sessionDetail.date)} at ${formatTime(sessionDetail.startTime)}`} />
-                        <SummaryTile label="Attendance key" value={sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'Unavailable'} helper={sessionDetail.attendancePassExpiresAt ? `Manual fallback uses the course short code. Live QR refreshes until ${formatDateTime(sessionDetail.attendancePassExpiresAt)}.` : 'Manual fallback uses the course short code for this class.'} />
-                        <SummaryTile label="Expected students" value={sessionDetail.attendanceStats?.expectedCount || 0} helper="Active enrolled students for this course" />
-                        <SummaryTile label="Marked attendance" value={sessionDetail.attendanceStats?.markedCount || 0} helper="Students already present or late" />
-                        <SummaryTile label="Present on time" value={sessionDetail.attendanceStats?.presentCount || 0} helper="Students marked within the attendance window" />
-                        <SummaryTile label="Absent students" value={sessionDetail.attendanceStats?.absentCount || 0} helper="Students who will receive automatic absence follow-up" />
+                        <SummaryTile label="Attendance key" value={sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'Unavailable'} helper={sessionDetail.attendancePassExpiresAt ? `Fallback uses the course short code until ${formatDateTime(sessionDetail.attendancePassExpiresAt)}.` : 'Fallback uses the course short code.'} />
+                        <SummaryTile label="Expected students" value={sessionDetail.attendanceStats?.expectedCount || 0} helper="Expected count" />
+                        <SummaryTile label="Marked attendance" value={sessionDetail.attendanceStats?.markedCount || 0} helper="Present or late" />
+                        <SummaryTile label="Present on time" value={sessionDetail.attendanceStats?.presentCount || 0} helper="Marked in time" />
+                        <SummaryTile label="Absent students" value={sessionDetail.attendanceStats?.absentCount || 0} helper="Will get follow-up" />
                       </div>
                       {(sessionDetail.geofenceLatitude && sessionDetail.geofenceLongitude && sessionDetail.geofenceRadiusMeters) && (
                         <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4 text-sm text-blue-900">
                           Geofence active: center {sessionDetail.geofenceLatitude}, {sessionDetail.geofenceLongitude} with {sessionDetail.geofenceRadiusMeters}m radius.
                         </div>
                       )}
-                      {qrDataUrl && <div className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-5"><div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between"><div className="max-w-2xl"><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Scannable QR</p><p className="mt-2 text-sm leading-7 text-slate-600">Students can scan this with their normal phone camera. The link opens the app, takes them to attendance, and fills in the session details for this class.</p><p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Fallback pair: {sessionDetail.sessionCode} + {sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'COURSE CODE'}</p></div><div className="shrink-0 self-center rounded-[1.75rem] border border-white bg-white p-4 shadow-sm"><img src={qrDataUrl} alt="Session QR code" className="block h-52 w-52 shrink-0 rounded-[1.25rem] object-contain sm:h-56 sm:w-56" /></div></div></div>}
+                      {qrDataUrl && <div className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-5"><div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between"><div className="max-w-2xl"><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">QR code</p><p className="mt-2 text-sm leading-7 text-slate-600">Scan to open attendance with the session filled in.</p><p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Fallback pair: {sessionDetail.sessionCode} + {sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'COURSE CODE'}</p></div><div className="shrink-0 self-center rounded-[1.75rem] border border-white bg-white p-4 shadow-sm"><img src={qrDataUrl} alt="Session QR code" className="block h-52 w-52 shrink-0 rounded-[1.25rem] object-contain sm:h-56 sm:w-56" /></div></div></div>}
                       <div className="flex flex-wrap gap-3">
                         {sessionDetail.status === 'active' && <ActionButton onClick={() => handleCloseSession(sessionDetail.id)} disabled={busyAction === `close-session-${sessionDetail.id}`} variant="contrast">{busyAction === `close-session-${sessionDetail.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Close session and auto-send queries</ActionButton>}
                         <button onClick={() => { setQueryForm((current) => ({ ...current, sessionId: String(sessionDetail.id) })); setActiveTab('queries'); }} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100"><Bell className="h-4 w-4" />Open query composer</button>
@@ -3526,7 +3656,7 @@ const Dashboard = () => {
                 <Panel title="Mark attendance" eyebrow="Student check-in">
                   <div className="space-y-5">
                     {attendanceEntrySource && <div className="rounded-[1.5rem] border border-emerald-200 bg-emerald-50/80 px-5 py-4 text-sm text-emerald-800">Attendance details were loaded from {attendanceEntrySource}. Confirm the session code and tap <span className="font-semibold">Mark with code</span>.</div>}
-                    <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-5"><p className="text-sm leading-7 text-slate-600">Use the QR scanner for the smoothest flow. If you need to mark manually, enter the session code together with the course short code shown by your lecturer.</p></div>
+                    <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-5"><p className="text-sm leading-7 text-slate-600">Use the scanner, or enter the session code and course short code manually.</p></div>
                     <div className="grid gap-4">
                       <Input label="Session code" value={attendanceForm.sessionCode} onChange={(value) => setAttendanceForm((current) => ({ ...current, sessionCode: value.toUpperCase() }))} />
                       <Input label="Attendance key (course short code)" value={attendanceForm.attendancePass} onChange={(value) => setAttendanceForm((current) => ({ ...current, attendancePass: value.toUpperCase() }))} />

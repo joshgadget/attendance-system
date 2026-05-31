@@ -12,6 +12,7 @@ const Building = require('./Building');
 const CourseSchedule = require('./CourseSchedule');
 const CourseAudience = require('./CourseAudience');
 const AuditLog = require('./AuditLog');
+const SiteSetting = require('./SiteSetting');
 
 // Setup associations function
 const setupAssociations = () => {
@@ -74,6 +75,10 @@ const setupAssociations = () => {
   // User -> AuditLog
   User.hasMany(AuditLog, { foreignKey: 'actorId', as: 'auditLogs' });
   AuditLog.belongsTo(User, { foreignKey: 'actorId', as: 'actor' });
+
+  // User -> SiteSetting
+  User.hasMany(SiteSetting, { foreignKey: 'updatedByUserId', as: 'updatedSiteSettings' });
+  SiteSetting.belongsTo(User, { foreignKey: 'updatedByUserId', as: 'updatedBy' });
 };
 
 // Sync all models with database
@@ -100,6 +105,7 @@ module.exports = {
   CourseSchedule,
   CourseAudience,
   AuditLog,
+  SiteSetting,
   setupAssociations,
   syncDatabase
 };

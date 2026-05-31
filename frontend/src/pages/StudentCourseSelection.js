@@ -170,12 +170,12 @@ const StudentCourseSelection = () => {
                   <GraduationCap className="h-8 w-8 text-white" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-500">Student course center</p>
-                  <h1 className={`mt-2 text-3xl font-black tracking-tight ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>Choose the courses that define your semester</h1>
+                  <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-500">Courses</p>
+                  <h1 className={`mt-2 text-3xl font-black tracking-tight ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>Choose your semester courses</h1>
                 </div>
               </div>
               <p className={`max-w-3xl text-sm leading-7 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
-                This page only shows courses that match your registered department, program, level, semester, and academic year. That keeps your timetable and attendance notifications clean and accurate.
+                Only timetable-linked courses appear here.
               </p>
             </div>
 
@@ -202,7 +202,7 @@ const StudentCourseSelection = () => {
             </section>
 
             <section className={`rounded-[2rem] border p-6 ${isDark ? 'border-slate-700 bg-slate-900/80' : 'border-slate-200 bg-white/88'}`}>
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-blue-500">Selection filters</p>
+              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-blue-500">Filters</p>
               <div className="mt-4 grid gap-4">
                 <select
                   value={semester}
@@ -261,7 +261,7 @@ const StudentCourseSelection = () => {
                     <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-sm font-bold uppercase tracking-[0.18em] text-blue-600">{departmentGroup.department}</p>
-                        <p className={`mt-1 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Grouped by level so your selections stay aligned with the timetable.</p>
+                        <p className={`mt-1 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Grouped by level.</p>
                       </div>
                       <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${isDark ? 'border-slate-700 bg-slate-800 text-slate-300' : 'border-slate-200 bg-white text-slate-600'}`}>
                         {departmentGroup.levels.reduce((sum, levelGroup) => sum + levelGroup.items.length, 0)} courses
@@ -315,7 +315,7 @@ const StudentCourseSelection = () => {
               </div>
             ) : (
               <div className={`mt-8 rounded-[1.5rem] border border-dashed p-6 text-sm ${isDark ? 'border-slate-600 bg-slate-900/70 text-slate-300' : 'border-blue-200 bg-slate-50/80 text-slate-600'}`}>
-                No timetable-matched courses were found for your department, program, level, semester, and academic year yet.
+                No matched courses yet.
               </div>
             )}
           </section>

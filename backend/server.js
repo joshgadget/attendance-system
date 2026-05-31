@@ -39,6 +39,7 @@ const io = new Server(server, {
 });
 
 app.set('io', io);
+require('./websocket/socketHandler')(io);
 app.set('trust proxy', 1);
 
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -59,6 +60,7 @@ app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'Server is running', timestamp: new Date().toISOString() });
 });
 
+app.use('/api/site', require('./routes/siteRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/registry', require('./routes/registryRoutes'));
