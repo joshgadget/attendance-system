@@ -1,6 +1,21 @@
 const { DataTypes } = require('sequelize');
 
+const tableExists = async (queryInterface, tableName) => {
+  const tables = await queryInterface.showAllTables();
+  return tables.some((table) => {
+    if (typeof table === 'string') {
+      return table === tableName;
+    }
+
+    return table && table.tableName === tableName;
+  });
+};
+
 const ensureColumn = async (queryInterface, tableName, columnName, definition) => {
+  if (!(await tableExists(queryInterface, tableName))) {
+    return false;
+  }
+
   const columns = await queryInterface.describeTable(tableName);
   if (columns[columnName]) {
     return false;
@@ -11,6 +26,10 @@ const ensureColumn = async (queryInterface, tableName, columnName, definition) =
 };
 
 const ensureIndex = async (queryInterface, tableName, indexName, definition) => {
+  if (!(await tableExists(queryInterface, tableName))) {
+    return false;
+  }
+
   const indexes = await queryInterface.showIndex(tableName);
   const exists = indexes.some((index) => index.name === indexName);
   if (exists) {
