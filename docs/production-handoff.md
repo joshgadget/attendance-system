@@ -14,11 +14,7 @@
 1. Redeploy the backend after pulling the latest code.
 2. Redeploy the frontend after pulling the latest code.
 3. Confirm these backend variables are set in production:
-   - `DB_HOST`
-   - `DB_PORT`
-   - `DB_NAME`
-   - `DB_USER`
-   - `DB_PASSWORD`
+   - `DATABASE_URL`
    - `JWT_SECRET`
    - `JWT_REFRESH_SECRET`
    - `CORS_ORIGIN`
