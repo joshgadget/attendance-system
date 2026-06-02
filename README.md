@@ -21,7 +21,7 @@ Attendance System is a role-based attendance management platform for admins, lec
 ### Backend
 
 1. Copy `backend/.env.example` to `backend/.env`
-2. Set your Supabase `DATABASE_URL`, then update JWT secrets
+2. Update database credentials and JWT secrets
 3. Run:
 
 ```bash
@@ -53,13 +53,13 @@ Services:
 - Frontend: `http://localhost:3000`
 - Backend API: `http://localhost:5000/api`
 - Health check: `http://localhost:5000/api/health`
-- Database: Supabase Postgres
+- MySQL: `localhost:3306`
 
 ## Production Notes
 
 - Replace all example secrets before deployment
 - Lock down `CORS_ORIGIN` to your real frontend domain
-- Use a managed Supabase Postgres database for production reliability
+- Use a managed MySQL database for production reliability
 - Put the frontend behind HTTPS and a real domain
 - Back up the registry, enrollment, attendance, and query tables regularly
 - Consider object storage and audit logging if the institution needs higher compliance

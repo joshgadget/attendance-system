@@ -24,7 +24,10 @@ const toNumber = (value, fallback) => {
 const isProduction = process.env.NODE_ENV === 'production';
 
 const requiredProductionEnv = [
-  'DATABASE_URL',
+  'DB_HOST',
+  'DB_NAME',
+  'DB_USER',
+  'DB_PASSWORD',
   'JWT_SECRET',
   'JWT_REFRESH_SECRET',
   'CORS_ORIGIN',

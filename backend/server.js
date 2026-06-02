@@ -104,8 +104,8 @@ const startServer = async () => {
 
     setupAssociations();
     await testConnection();
-    await sequelize.sync();
     const appliedChanges = await ensureSchemaGuard(sequelize);
+    await sequelize.sync();
     if (process.env.SEED_OOU_BUILDINGS === 'true' && typeof Building.seedOOU === 'function') {
       await Building.seedOOU();
       logger.info('OOU building seed completed');

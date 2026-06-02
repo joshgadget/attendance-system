@@ -1,12 +1,32 @@
 services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: attendance_db
+      MYSQL_USER: attendance_user
+      MYSQL_PASSWORD: change_me
+      MYSQL_ROOT_PASSWORD: root_change_me
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
   backend:
     build:
       context: ./backend
     restart: unless-stopped
     env_file:
-      - ./backend/.env
+      - ./backend/.env.example
     environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: attendance_db
+      DB_USER: attendance_user
+      DB_PASSWORD: change_me
       CORS_ORIGIN: http://localhost:3000
+    depends_on:
+      - db
     ports:
       - "5000:5000"
 
@@ -20,3 +40,6 @@ services:
       - backend
     ports:
       - "3000:80"
+
+volumes:
+  mysql_data:
