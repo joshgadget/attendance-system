@@ -343,6 +343,10 @@ Attendance: stores the actual attendance record for each student and session, to
 
 AbsenceQuery: stores lecturer follow-up records for students who were not marked present when a session was closed.
 
+AuditLog: stores important system actions such as session creation, attendance marking, duplicate attempts, and absence-query events.
+
+SiteSetting: stores global system settings such as maintenance mode and site notice content.
+
 3.7.2 Entity Relationships
 
 The relationships among the entities are as follows:
@@ -353,7 +357,9 @@ The relationships among the entities are as follows:
 4. one session can have many attendance records;
 5. one student can have many attendance records;
 6. one session can generate many absence queries; and
-7. a student registry record can be linked to one claimed user account.
+7. a student registry record can be linked to one claimed user account;
+8. a user can generate many audit-log records; and
+9. a user can update site-setting records where permitted.
 
 This structure ensures that attendance can only be recorded when there is a valid connection between the student, the course, and the class session.
 
@@ -385,7 +391,7 @@ This module allows administrators to configure buildings with latitude, longitud
 
 This module validates and records attendance. It checks that:
 
-1. the session code belongs to an active session;
+1. the attendance key or session code belongs to an active session;
 2. the student has not already been recorded for the same session;
 3. the student is actively enrolled for the course;
 4. the location is within the allowed geofence, where required; and
@@ -465,6 +471,8 @@ This course-selection feature is one of the most important outcomes of the imple
 
 Attendance processing is the core result of the project. The system supports QR-based attendance through lecturer-generated sessions. Students can scan the session code from within the application, or submit the session code manually where necessary. Before a record is created, the system validates the session status, confirms that the student is enrolled in the course, checks location requirements for geofenced sessions, and prevents duplicate submission.
 
+The implementation also supports the attendance-key flow used by the backend, including the course short-code fallback where applicable. This makes the marking process practical for both QR scanning and manual entry when the lecturer displays the attendance key for the class.
+
 One major improvement achieved during implementation was duplicate-scan protection. Earlier repeat-marking behaviour was corrected so that once attendance is recorded for a student in a session, repeated scans return an already-recorded response rather than creating new entries. This improves data integrity and directly supports the project's anti-fraud objective.
 
 The system also distinguishes between present and late attendance. Students who mark attendance after the standard window are not treated as present; they are classified as late. This makes attendance records more realistic and more useful for academic review.
@@ -543,7 +551,7 @@ In practical terms, the system demonstrates that a web-based attendance platform
 
 4.5 Deployment Outcome
 
-The system was prepared for live web access through separate frontend and backend deployments. The frontend was published through GitHub Pages using the domain attendancesystem.xyz, while the backend API was exposed through api.attendancesystem.xyz. This result shows that the application is not only a prototype at source-code level, but a deployable and usable web platform.
+The system was prepared for deployment through separate frontend and backend services, with Docker-based local deployment support and production environment controls. This result shows that the application is not only a prototype at source-code level, but a deployable and usable web platform.
 
 4.6 Limitations Observed During Implementation
 

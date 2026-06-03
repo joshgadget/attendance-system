@@ -121,6 +121,29 @@ const ensureSchemaGuard = async (sequelize) => {
     appliedChanges.push('attendance.deviceFlagged');
   }
 
+  const absenceQueryColumns = [
+    ['queryEvidenceFileName', { type: DataTypes.STRING(255), allowNull: true }],
+    ['queryEvidenceMimeType', { type: DataTypes.STRING(100), allowNull: true }],
+    ['queryEvidenceData', { type: DataTypes.TEXT('long'), allowNull: true }],
+    ['queryEvidenceNote', { type: DataTypes.TEXT, allowNull: true }],
+    ['responseEvidenceFileName', { type: DataTypes.STRING(255), allowNull: true }],
+    ['responseEvidenceMimeType', { type: DataTypes.STRING(100), allowNull: true }],
+    ['responseEvidenceData', { type: DataTypes.TEXT('long'), allowNull: true }],
+    ['responseEvidenceNote', { type: DataTypes.TEXT, allowNull: true }],
+    ['escalationState', { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'none' }],
+    ['escalatedAt', { type: DataTypes.DATE, allowNull: true }],
+    ['escalatedByUserId', { type: DataTypes.INTEGER, allowNull: true }],
+    ['escalationReason', { type: DataTypes.TEXT, allowNull: true }],
+    ['adminResolution', { type: DataTypes.TEXT, allowNull: true }],
+    ['adminResolvedAt', { type: DataTypes.DATE, allowNull: true }],
+  ];
+
+  for (const [columnName, definition] of absenceQueryColumns) {
+    if (await ensureColumn(queryInterface, 'absence_queries', columnName, definition)) {
+      appliedChanges.push(`absence_queries.${columnName}`);
+    }
+  }
+
   if (await ensureIndex(queryInterface, 'attendance', 'attendance_session_student_unique', {
     unique: true,
     fields: ['sessionId', 'studentId'],

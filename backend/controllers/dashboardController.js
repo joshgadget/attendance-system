@@ -5,6 +5,23 @@ const sortByDateDesc = (items, accessor) =>
   [...items].sort((left, right) => new Date(accessor(right)).getTime() - new Date(accessor(left)).getTime());
 
 const formatCourseName = (course) => [course?.courseCode, course?.courseName].filter(Boolean).join(' - ');
+const describeQueryEvidence = (query) => {
+  const pieces = [];
+
+  if (query?.queryEvidenceFileName) {
+    pieces.push(`query evidence: ${query.queryEvidenceFileName}`);
+  }
+
+  if (query?.responseEvidenceFileName) {
+    pieces.push(`response evidence: ${query.responseEvidenceFileName}`);
+  }
+
+  if (query?.escalationState === 'requested') {
+    pieces.push('escalated to admin');
+  }
+
+  return pieces.length > 0 ? ` (${pieces.join(', ')})` : '';
+};
 const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const dayIndexMap = dayOrder.reduce((acc, day, index) => ({ ...acc, [day]: index }), {});
 
@@ -322,10 +339,12 @@ const buildAdminNotifications = async () => {
     AbsenceQuery.findAll({
       include: [
         { model: User, as: 'student', attributes: ['firstName', 'lastName', 'matricNumber'] },
+        { model: User, as: 'lecturer', attributes: ['firstName', 'lastName', 'email'] },
+        { model: User, as: 'escalatedBy', attributes: ['firstName', 'lastName', 'email', 'role'] },
         { model: Session, as: 'session', include: [{ model: Course, as: 'course', attributes: ['courseCode'] }], attributes: ['id'] },
       ],
       order: [['createdAt', 'DESC']],
-      limit: 5,
+      limit: 8,
     }),
     Session.findAll({
       where: { status: 'active' },
@@ -347,10 +366,16 @@ const buildAdminNotifications = async () => {
 
   const items = [
     ...queries.map((query) => ({
-      title: `Query ${query.status} for ${fullName(query.student) || query.student?.matricNumber || 'student'}`,
-      description: `${query.title}${query.session?.course?.courseCode ? ` on ${query.session.course.courseCode}` : ''}`,
-      tone: query.status === 'pending' ? 'amber' : query.status === 'responded' ? 'blue' : 'emerald',
-      createdAt: query.createdAt,
+      title: query.escalationState === 'requested'
+        ? 'Absence query escalated to admin'
+        : query.status === 'responded'
+          ? 'Student responded to absence query'
+          : query.status === 'closed'
+            ? 'Absence query closed'
+            : 'Pending absence query',
+      description: `${fullName(query.student) || query.student?.matricNumber || 'student'}: ${query.title}${query.session?.course?.courseCode ? ` on ${query.session.course.courseCode}` : ''}${describeQueryEvidence(query)}${query.escalationReason ? ` | ${query.escalationReason}` : ''}`,
+      tone: query.escalationState === 'requested' ? 'rose' : query.status === 'pending' ? 'amber' : query.status === 'responded' ? 'blue' : 'emerald',
+      createdAt: query.updatedAt || query.createdAt,
     })),
     ...sessions.map((session) => ({
       title: `Live session: ${session.course?.courseCode || 'Course session'}`,
@@ -381,6 +406,7 @@ const buildLecturerNotifications = async (userId) => {
       where: { lecturerId: userId },
       include: [
         { model: User, as: 'student', attributes: ['firstName', 'lastName', 'matricNumber'] },
+        { model: User, as: 'escalatedBy', attributes: ['firstName', 'lastName', 'email', 'role'] },
         { model: Session, as: 'session', include: [{ model: Course, as: 'course', attributes: ['courseCode'] }], attributes: ['id'] },
       ],
       order: [['updatedAt', 'DESC']],
@@ -401,9 +427,15 @@ const buildLecturerNotifications = async (userId) => {
 
   const items = [
     ...queries.map((query) => ({
-      title: query.status === 'responded' ? 'Student replied to your query' : 'Absence query update',
-      description: `${fullName(query.student) || query.student?.matricNumber || 'Student'}: ${query.title}`,
-      tone: query.status === 'responded' ? 'emerald' : query.status === 'pending' ? 'amber' : 'slate',
+      title: query.escalationState === 'requested'
+        ? 'Query escalated for admin review'
+        : query.status === 'responded'
+          ? 'Student replied to your query'
+          : query.status === 'closed'
+            ? 'Query closed'
+            : 'Absence query update',
+      description: `${fullName(query.student) || query.student?.matricNumber || 'Student'}: ${query.title}${describeQueryEvidence(query)}${query.escalationReason ? ` | ${query.escalationReason}` : ''}`,
+      tone: query.escalationState === 'requested' ? 'rose' : query.status === 'responded' ? 'emerald' : query.status === 'pending' ? 'amber' : 'slate',
       createdAt: query.updatedAt || query.createdAt,
     })),
     ...sessions
@@ -424,7 +456,10 @@ const buildStudentNotifications = async (userId) => {
   const [queries, attendances] = await Promise.all([
     AbsenceQuery.findAll({
       where: { studentId: userId },
-      include: [{ model: Session, as: 'session', include: [{ model: Course, as: 'course', attributes: ['courseCode'] }], attributes: ['id'] }],
+      include: [
+        { model: User, as: 'escalatedBy', attributes: ['firstName', 'lastName', 'email', 'role'] },
+        { model: Session, as: 'session', include: [{ model: Course, as: 'course', attributes: ['courseCode'] }], attributes: ['id'] },
+      ],
       order: [['updatedAt', 'DESC']],
       limit: 8,
     }),
@@ -449,9 +484,15 @@ const buildStudentNotifications = async (userId) => {
 
   const items = [
     ...queries.map((query) => ({
-      title: query.status === 'pending' ? 'New lecturer query' : query.status === 'closed' ? 'Query resolved' : 'Query update received',
-      description: `${query.title}${query.session?.course?.courseCode ? ` (${query.session.course.courseCode})` : ''}`,
-      tone: query.status === 'pending' ? 'amber' : query.status === 'closed' ? 'emerald' : 'blue',
+      title: query.escalationState === 'requested'
+        ? 'Query escalated to admin'
+        : query.status === 'pending'
+          ? 'New lecturer query'
+          : query.status === 'closed'
+            ? 'Query resolved'
+            : 'Query update received',
+      description: `${query.title}${query.session?.course?.courseCode ? ` (${query.session.course.courseCode})` : ''}${describeQueryEvidence(query)}${query.escalationReason ? ` | ${query.escalationReason}` : ''}`,
+      tone: query.escalationState === 'requested' ? 'rose' : query.status === 'pending' ? 'amber' : query.status === 'closed' ? 'emerald' : 'blue',
       createdAt: query.updatedAt || query.createdAt,
     })),
     ...attendances.map((attendance) => ({

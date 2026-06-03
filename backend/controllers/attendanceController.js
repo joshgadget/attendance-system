@@ -6,6 +6,7 @@ const authConfig = require('../config/auth');
 const { sendEmail } = require('../utils/mailer');
 const { logAuditEvent } = require('../utils/auditLogger');
 const { findEnrollmentsForCourse } = require('../utils/enrollmentLookup');
+const { broadcastNotification, buildNotificationPayload } = require('../utils/realtimeNotifications');
 
 const generateSessionCode = () => crypto.randomBytes(5).toString('hex').toUpperCase();
 const SESSION_SUMMARY_ATTRIBUTES = ['id', 'courseId', 'lecturerId', 'sessionCode', 'date', 'startTime', 'endTime', 'venue', 'status', 'maxAttendanceTime', 'createdAt', 'updatedAt'];
@@ -624,36 +625,58 @@ exports.closeSession = async (req, res) => {
     const presentStudentIds = new Set(attendances.map((entry) => entry.studentId));
     const absentEnrollments = enrollments.filter((entry) => !presentStudentIds.has(entry.userId));
 
-    for (const enrollment of absentEnrollments) {
-      const existingQuery = await AbsenceQuery.findOne({
-        where: { sessionId: session.id, studentId: enrollment.userId },
+  for (const enrollment of absentEnrollments) {
+    const existingQuery = await AbsenceQuery.findOne({
+      where: { sessionId: session.id, studentId: enrollment.userId },
+    });
+
+    if (!existingQuery) {
+      const query = await AbsenceQuery.create({
+        lecturerId: session.lecturerId,
+        studentId: enrollment.userId,
+        sessionId: session.id,
+        title: `Absence query for ${session.course?.courseCode || 'session'}`,
+        message: `You were not marked present for the ${session.course?.courseName || 'class session'} held on ${session.date}. Please explain why you were absent.`,
+        status: 'pending',
+        escalationState: 'none',
       });
 
-      if (!existingQuery) {
-        const query = await AbsenceQuery.create({
-          lecturerId: session.lecturerId,
-          studentId: enrollment.userId,
-          sessionId: session.id,
-          title: `Absence query for ${session.course?.courseCode || 'session'}`,
-          message: `You were not marked present for the ${session.course?.courseName || 'class session'} held on ${session.date}. Please explain why you were absent.`,
-          status: 'pending',
-        });
-
-        try {
-          if (enrollment.student?.email) {
-            const lecturerName = [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') || 'Your lecturer';
+      try {
+        if (enrollment.student?.email) {
+          const lecturerName = [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') || 'Your lecturer';
             await sendEmail({
               to: enrollment.student.email,
               subject: `Attendance System: Absence noted for ${session.course?.courseCode || 'your class'}`,
               text: `${lecturerName} has closed attendance for ${session.course?.courseCode || 'your class'} on ${session.date}. You were marked absent and an absence query was created.\n\nTitle: ${query.title}\n\nMessage: ${query.message}`,
               html: `<p>${lecturerName} has closed attendance for <strong>${session.course?.courseCode || 'your class'}</strong> on ${session.date}.</p><p>You were marked absent and an absence query was created for you.</p><p><strong>Title:</strong> ${query.title}</p><p>${query.message}</p>`,
             });
-          }
-        } catch (emailError) {
-          console.warn(`Automatic absence email failed for student ${enrollment.userId}:`, emailError.message);
         }
+      } catch (emailError) {
+        console.warn(`Automatic absence email failed for student ${enrollment.userId}:`, emailError.message);
       }
+
+      const io = req.app.get('io');
+      const queryNotification = buildNotificationPayload({
+        type: 'absence_query',
+        title: 'Automatic absence query created',
+        description: `${session.course?.courseCode || 'A course'} closed with ${enrollment.student?.firstName || 'a student'} marked absent.`,
+        tone: 'amber',
+        linkTab: 'queries',
+        entityType: 'absence_query',
+        entityId: query.id,
+        meta: {
+          queryId: query.id,
+          sessionId: session.id,
+          studentId: enrollment.userId,
+          lecturerId: session.lecturerId,
+        },
+      });
+      broadcastNotification(io, {
+        userIds: [enrollment.userId, session.lecturerId],
+        notification: queryNotification,
+      });
     }
+  }
 
     await logAuditEvent({
       req,

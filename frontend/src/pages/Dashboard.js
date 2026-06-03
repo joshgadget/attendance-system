@@ -38,6 +38,7 @@ import QRCode from 'qrcode';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useDispatch, useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { io as createSocket } from 'socket.io-client';
 import api from '../services/api';
 import { logout } from '../redux/slices/authSlice';
 import { useTheme } from '../theme/ThemeContext';
@@ -241,6 +242,25 @@ const getCourseLevelLabel = (course) => {
 const getAttendanceKeyForCourse = (course) => String(course?.courseCode || '').trim().toUpperCase();
 const PENDING_ATTENDANCE_STORAGE_KEY = 'attendance-system-pending-entry';
 const DEFAULT_LEVEL_OPTIONS = ['100', '200', '300', '400', '500', '600'];
+const MAX_EVIDENCE_BYTES = 3 * 1024 * 1024;
+const ALLOWED_EVIDENCE_MIME_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']);
+const SOCKET_BASE_URL = (() => {
+  const fallback = 'http://localhost:5000';
+  const raw = String(process.env.REACT_APP_API_URL || '').trim();
+  if (!raw) {
+    return fallback;
+  }
+
+  try {
+    const parsed = new URL(raw);
+    parsed.pathname = parsed.pathname.replace(/\/api\/?$/, '').replace(/\/+$/, '');
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString().replace(/\/+$/, '');
+  } catch (error) {
+    return raw.replace(/\/api\/?$/, '').replace(/\/+$/, '') || fallback;
+  }
+})();
 
 const collectUniqueValues = (...collections) => {
   const values = new Set();
@@ -271,6 +291,36 @@ const getCurrentLocation = () =>
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
     );
   });
+
+const readFileAsDataUrl = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('File could not be read.'));
+    reader.readAsDataURL(file);
+  });
+
+const createEvidencePayload = async (file, note = '') => {
+  if (!file) {
+    return null;
+  }
+
+  if (!ALLOWED_EVIDENCE_MIME_TYPES.has(file.type)) {
+    throw new Error('Please choose a PDF or image file for the evidence attachment.');
+  }
+
+  if (file.size > MAX_EVIDENCE_BYTES) {
+    throw new Error('Evidence should be 3MB or smaller.');
+  }
+
+  const data = await readFileAsDataUrl(file);
+  return {
+    fileName: file.name,
+    mimeType: file.type,
+    data,
+    note: String(note || '').trim(),
+  };
+};
 
 const extractAttendancePayload = (decodedText) => {
   const fallback = { sessionCode: '', attendancePass: '' };
@@ -526,6 +576,74 @@ const Input = ({ label, onChange, ...props }) => {
   );
 };
 
+const EvidenceAttachment = ({ label, fileName, mimeType, data, note }) => {
+  const { isDark } = useTheme();
+
+  if (!data) {
+    return null;
+  }
+
+  const isImage = String(mimeType || '').startsWith('image/');
+
+  return (
+    <div className={`mt-4 rounded-[1.25rem] border p-4 ${isDark ? 'border-slate-700 bg-slate-950/60' : 'border-slate-200 bg-white/80'}`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className={`text-xs font-semibold uppercase tracking-[0.18em] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{label}</p>
+          <p className={`mt-1 font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{fileName || 'Evidence attachment'}</p>
+          <p className={`mt-1 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{mimeType || 'Unknown file type'}</p>
+          {note && <p className={`mt-3 text-sm leading-6 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{note}</p>}
+        </div>
+        <a href={data} download={fileName || 'evidence'} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-200">
+          Open
+        </a>
+      </div>
+      {isImage ? (
+        <img src={data} alt={fileName || 'Evidence preview'} className="mt-4 max-h-72 w-full rounded-2xl object-cover" />
+      ) : (
+        <div className={`mt-4 rounded-2xl border px-4 py-4 text-sm ${isDark ? 'border-slate-700 bg-slate-900/70 text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+          PDF evidence preview is available in the new tab.
+        </div>
+      )}
+    </div>
+  );
+};
+
+const LiveNotificationToast = ({ item, onOpen, onClose }) => {
+  const { isDark } = useTheme();
+
+  if (!item) {
+    return null;
+  }
+
+  return (
+    <div className="pointer-events-none fixed bottom-5 right-5 z-[80] w-[min(92vw,28rem)]">
+      <div className={`pointer-events-auto rounded-[1.5rem] border p-4 shadow-[0_18px_50px_rgba(15,23,42,0.22)] ${isDark ? 'border-slate-700 bg-slate-950/95' : 'border-slate-200 bg-white/95'}`}>
+        <div className="flex items-start gap-3">
+          <div className="mt-1 rounded-2xl bg-blue-600 p-2 text-white">
+            <Bell className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className={`font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{item.title}</p>
+            <p className={`mt-1 text-sm leading-6 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.description}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" onClick={onOpen} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-800">
+                Open {item.linkTab || 'notifications'}
+              </button>
+              <button type="button" onClick={onClose} className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold ${isDark ? 'border-slate-700 text-slate-200 hover:bg-slate-900' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className={`rounded-full p-1 ${isDark ? 'text-slate-400 hover:bg-slate-900' : 'text-slate-500 hover:bg-slate-100'}`}>
+            <XCircle className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Select = ({ label, value, onChange, options }) => {
   const { isDark } = useTheme();
 
@@ -720,7 +838,7 @@ const Dashboard = () => {
   const [profileForm, setProfileForm] = useState({ firstName: '', lastName: '', department: '', faculty: '', program: '' });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [profilePhoto, setProfilePhoto] = useState('');
-  const [preferences, setPreferences] = useState({ emailUpdates: true, classReminders: true, compactMode: false });
+  const [preferences, setPreferences] = useState({ emailUpdates: true, classReminders: true, compactMode: false, browserNotifications: false });
   const [siteMaintenance, setSiteMaintenance] = useState(initialSiteMaintenanceForm);
   const [users, setUsers] = useState([]);
   const [lecturers, setLecturers] = useState([]);
@@ -741,6 +859,8 @@ const Dashboard = () => {
   const [lecturerRosterFileName, setLecturerRosterFileName] = useState('');
   const [lecturerRosterCourseId, setLecturerRosterCourseId] = useState('');
   const [responseDrafts, setResponseDrafts] = useState({});
+  const [responseEvidenceDrafts, setResponseEvidenceDrafts] = useState({});
+  const [escalationDrafts, setEscalationDrafts] = useState({});
   const [attendanceEntrySource, setAttendanceEntrySource] = useState('');
   const [registryFilters, setRegistryFilters] = useState({ faculty: '', department: '', program: '', level: '', claimed: '' });
   const [selectedStudentId, setSelectedStudentId] = useState('');
@@ -757,19 +877,24 @@ const Dashboard = () => {
   const [sessionForm, setSessionForm] = useState(initialSessionForm);
   const [buildingForm, setBuildingForm] = useState(initialBuildingForm);
   const [queryForm, setQueryForm] = useState(initialQueryForm);
+  const [queryEvidence, setQueryEvidence] = useState({ fileName: '', mimeType: '', data: '', note: '' });
   const [attendanceForm, setAttendanceForm] = useState(initialAttendanceForm);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [liveNotification, setLiveNotification] = useState(null);
   const attendanceRequestRef = useRef(false);
   const photoInputRef = useRef(null);
   const legacyPhotoSyncRef = useRef(false);
+  const socketRef = useRef(null);
+  const loadDataRef = useRef(null);
+  const refreshTimerRef = useRef(null);
 
   const activeSession = useMemo(() => sessions.find((session) => session.status === 'active') || null, [sessions]);
 
   useEffect(() => {
     if (!user) {
       setProfilePhoto('');
-      setPreferences({ emailUpdates: true, classReminders: true, compactMode: false });
+      setPreferences({ emailUpdates: true, classReminders: true, compactMode: false, browserNotifications: false });
       legacyPhotoSyncRef.current = false;
       return;
     }
@@ -783,9 +908,10 @@ const Dashboard = () => {
         emailUpdates: storedPreferences.emailUpdates ?? true,
         classReminders: storedPreferences.classReminders ?? true,
         compactMode: storedPreferences.compactMode ?? false,
+        browserNotifications: storedPreferences.browserNotifications ?? false,
       });
     } catch (storageError) {
-      setPreferences({ emailUpdates: true, classReminders: true, compactMode: false });
+      setPreferences({ emailUpdates: true, classReminders: true, compactMode: false, browserNotifications: false });
     }
   }, [user]);
 
@@ -882,6 +1008,86 @@ const Dashboard = () => {
       window.localStorage.removeItem(PENDING_ATTENDANCE_STORAGE_KEY);
     }
   }, [role]);
+
+  /* eslint-disable no-use-before-define */
+  useEffect(() => {
+    if (!user?.id) {
+      return undefined;
+    }
+
+    const token = window.localStorage.getItem('token');
+    if (!token) {
+      return undefined;
+    }
+
+    const socket = createSocket(SOCKET_BASE_URL, {
+      auth: { token },
+      transports: ['websocket'],
+      withCredentials: false,
+    });
+
+    socketRef.current = socket;
+
+    const handleNotification = (notification) => {
+      if (!notification) {
+        return;
+      }
+
+      setNotifications((current) => {
+        const exists = current.some((item) => (
+          item.type === notification.type &&
+          item.entityType === notification.entityType &&
+          item.entityId === notification.entityId &&
+          item.title === notification.title &&
+          item.createdAt === notification.createdAt
+        ));
+
+        if (exists) {
+          return current;
+        }
+
+        return [notification, ...current].slice(0, 20);
+      });
+
+      deliverLiveNotification(notification);
+    };
+
+    const handleRefresh = () => {
+      queueDashboardRefresh();
+    };
+
+    socket.on('notification:new', handleNotification);
+    socket.on('dashboard:refresh', handleRefresh);
+    socket.on('connect_error', (socketError) => {
+      console.warn('Realtime notification connection failed:', socketError.message);
+    });
+
+    return () => {
+      socket.off('notification:new', handleNotification);
+      socket.off('dashboard:refresh', handleRefresh);
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [deliverLiveNotification, queueDashboardRefresh, user?.id]);
+  /* eslint-enable no-use-before-define */
+
+  useEffect(() => () => {
+    if (refreshTimerRef.current) {
+      window.clearTimeout(refreshTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!liveNotification) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setLiveNotification(null);
+    }, 6500);
+
+    return () => window.clearTimeout(timer);
+  }, [liveNotification]);
 
   useEffect(() => {
     setAccountMenuOpen(false);
@@ -1083,6 +1289,10 @@ const Dashboard = () => {
       setRefreshing(false);
     }
   }, [loadSessionDetail, role, sessionDetail?.id]);
+
+  useEffect(() => {
+    loadDataRef.current = loadData;
+  }, [loadData]);
 
   useEffect(() => {
     loadData();
@@ -1668,8 +1878,12 @@ const Dashboard = () => {
     try {
       setBusyAction('create-query');
       setMessage();
-      await api.post('/queries', queryForm);
+      await api.post('/queries', {
+        ...queryForm,
+        queryEvidence: queryEvidence.data ? queryEvidence : null,
+      });
       setQueryForm(initialQueryForm);
+      clearQueryEvidence();
       setMessage('Absence query sent successfully.');
       await loadData(true);
       if (queryForm.sessionId) {
@@ -1686,8 +1900,12 @@ const Dashboard = () => {
     try {
       setBusyAction(`respond-query-${queryId}`);
       setMessage();
-      await api.patch(`/queries/${queryId}/respond`, { response: responseDrafts[queryId] || '' });
+      await api.patch(`/queries/${queryId}/respond`, {
+        response: responseDrafts[queryId] || '',
+        responseEvidence: responseEvidenceDrafts[queryId] || null,
+      });
       setResponseDrafts((current) => ({ ...current, [queryId]: '' }));
+      setResponseEvidenceDrafts((current) => ({ ...current, [queryId]: null }));
       setMessage('Response submitted successfully.');
       await loadData(true);
     } catch (actionError) {
@@ -1706,6 +1924,23 @@ const Dashboard = () => {
       await loadData(true);
     } catch (actionError) {
       setMessage('', actionError.response?.data?.message || 'Query could not be closed.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleEscalateQuery = async (queryId) => {
+    try {
+      setBusyAction(`escalate-query-${queryId}`);
+      setMessage();
+      await api.patch(`/queries/${queryId}/escalate`, {
+        reason: escalationDrafts[queryId] || '',
+      });
+      setEscalationDrafts((current) => ({ ...current, [queryId]: '' }));
+      setMessage('Query escalated to admin review.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Query could not be escalated.');
     } finally {
       setBusyAction('');
     }
@@ -2318,6 +2553,117 @@ const Dashboard = () => {
     setSidebarOpen(false);
   };
 
+  const queueDashboardRefresh = useCallback(() => {
+    if (refreshTimerRef.current) {
+      window.clearTimeout(refreshTimerRef.current);
+    }
+
+    refreshTimerRef.current = window.setTimeout(() => {
+      loadDataRef.current?.(false).catch(() => null);
+    }, 250);
+  }, []);
+
+  const deliverLiveNotification = useCallback((notification) => {
+    setLiveNotification(notification);
+
+    if (!preferences.browserNotifications) {
+      return;
+    }
+
+    if (!window.Notification || window.Notification.permission !== 'granted') {
+      return;
+    }
+
+    if (!document.hidden && document.hasFocus()) {
+      return;
+    }
+
+    try {
+      new window.Notification(notification.title, {
+        body: notification.description,
+        icon: '/favicon.ico',
+      });
+    } catch (error) {
+      // Browser notifications are best-effort only.
+    }
+  }, [preferences.browserNotifications]);
+
+  const handleQueryEvidenceChange = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const evidence = await createEvidencePayload(file);
+      setQueryEvidence({
+        ...evidence,
+        note: queryEvidence.note || '',
+      });
+    } catch (error) {
+      setMessage('', error.message || 'Evidence could not be loaded.');
+    }
+  };
+
+  const clearQueryEvidence = () => {
+    setQueryEvidence({ fileName: '', mimeType: '', data: '', note: '' });
+  };
+
+  const handleResponseEvidenceChange = async (queryId, event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const evidence = await createEvidencePayload(file);
+      setResponseEvidenceDrafts((current) => ({
+        ...current,
+        [queryId]: evidence,
+      }));
+    } catch (error) {
+      setMessage('', error.message || 'Response evidence could not be loaded.');
+    }
+  };
+
+  const handleEscalationDraftChange = (queryId, value) => {
+    setEscalationDrafts((current) => ({
+      ...current,
+      [queryId]: value,
+    }));
+  };
+
+  const handleBrowserNotificationsChange = async (enabled) => {
+    if (!enabled) {
+      setPreferences((current) => ({ ...current, browserNotifications: false }));
+      setMessage('Browser notifications turned off.');
+      return;
+    }
+
+    if (!window.Notification) {
+      setMessage('', 'This browser does not support browser notifications.');
+      return;
+    }
+
+    let permission = window.Notification.permission;
+    if (permission === 'default') {
+      permission = await window.Notification.requestPermission();
+    }
+
+    if (permission !== 'granted') {
+      setPreferences((current) => ({ ...current, browserNotifications: false }));
+      setMessage('', 'Browser notifications were not enabled.');
+      return;
+    }
+
+    setPreferences((current) => ({ ...current, browserNotifications: true }));
+    setMessage('Browser notifications are enabled.');
+  };
+
   const handleProfilePhotoChange = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -2463,6 +2809,19 @@ const Dashboard = () => {
   return (
     <div className={`dashboard-shell min-h-screen ${isDark ? 'dark dashboard-shell--app text-slate-100' : 'dashboard-shell--light text-slate-900'} ${preferences.compactMode ? 'dashboard-shell--compact' : ''}`}>
       <QrScannerPanel isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={handleMarkAttendance} />
+      <LiveNotificationToast
+        item={liveNotification}
+        onOpen={() => {
+          if (!liveNotification) {
+            return;
+          }
+
+          const tabToOpen = tabs.includes(liveNotification.linkTab) ? liveNotification.linkTab : 'notifications';
+          openWorkspaceTab(tabToOpen);
+          setLiveNotification(null);
+        }}
+        onClose={() => setLiveNotification(null)}
+      />
       <div className="dashboard-frame">
         <button
           type="button"
@@ -2799,6 +3158,19 @@ const Dashboard = () => {
           {activeTab === 'notifications' && (
             <div className="grid gap-8">
               <Panel title="Notification center" eyebrow="Recent activity">
+                <div className={`mb-4 rounded-[1.5rem] border px-5 py-4 text-sm ${preferences.browserNotifications ? 'border-emerald-200 bg-emerald-50/80 text-emerald-900' : 'border-amber-200 bg-amber-50/80 text-amber-900'}`}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-semibold">{preferences.browserNotifications ? 'Browser push alerts are enabled' : 'Browser push alerts are off'}</p>
+                      <p className="mt-1 leading-6">{preferences.browserNotifications ? 'You will receive live alerts for queries, escalations, and session updates while the dashboard is open or in the background.' : 'Turn on browser push alerts in Settings to get live query and session updates without refreshing.'}</p>
+                    </div>
+                    {!preferences.browserNotifications && (
+                      <button type="button" onClick={() => openWorkspaceTab('settings')} className="inline-flex items-center gap-2 rounded-2xl border border-amber-300 bg-white px-4 py-2 font-semibold text-amber-700 transition hover:bg-amber-100">
+                        Open settings
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <div className="space-y-4">
                   {notifications.length > 0 ? notifications.map((item, index) => <NotificationItem key={`${item.title}-${index}`} item={item} />) : <EmptyState title="No notifications yet" description="New activity will appear here." />}
                 </div>
@@ -2998,6 +3370,12 @@ const Dashboard = () => {
                       description="Show reminder-style cues before upcoming classes and attendance windows."
                       checked={preferences.classReminders}
                       onChange={(value) => setPreferences((current) => ({ ...current, classReminders: value }))}
+                    />
+                    <PreferenceToggle
+                      label="Browser push alerts"
+                      description="Show live browser notifications for new queries, escalations, and session updates."
+                      checked={preferences.browserNotifications}
+                      onChange={(value) => handleBrowserNotificationsChange(value)}
                     />
                     <PreferenceToggle
                       label="Compact dashboard layout"
@@ -3703,6 +4081,15 @@ const Dashboard = () => {
                     <Select label="Student" value={queryForm.studentId} onChange={(value) => setQueryForm((current) => ({ ...current, studentId: value }))} options={[{ value: '', label: queryEligibleStudents.length > 0 ? 'Choose eligible student' : 'No eligible students found' }, ...queryEligibleStudents.map((student) => ({ value: student.id, label: `${fullName(student)}${student.matricNumber ? ` (${student.matricNumber})` : ''}` }))]} />
                     <Input label="Title" value={queryForm.title} onChange={(value) => setQueryForm((current) => ({ ...current, title: value }))} />
                     <div><label className="mb-2 block text-sm font-semibold text-slate-700">Message</label><textarea value={queryForm.message} onChange={(event) => setQueryForm((current) => ({ ...current, message: event.target.value }))} rows={6} className="w-full rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" /></div>
+                    <FileField label="Attach evidence (optional)" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/*" onChange={handleQueryEvidenceChange} helper="Optional PDF or image, up to 3MB." fileName={queryEvidence.fileName} />
+                    <TextAreaField label="Evidence note (optional)" value={queryEvidence.note} onChange={(value) => setQueryEvidence((current) => ({ ...current, note: value }))} rows={3} placeholder="Add a short explanation for the attachment." />
+                    {queryEvidence.data && (
+                      <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-4 text-sm text-slate-700">
+                        <p className="font-semibold text-slate-900">Selected evidence</p>
+                        <p className="mt-1">{queryEvidence.fileName}</p>
+                        <button type="button" onClick={clearQueryEvidence} className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50">Remove attachment</button>
+                      </div>
+                    )}
                     <button type="submit" disabled={busyAction === 'create-query'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'create-query' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Send query</button>
                   </form>
                 </Panel>
@@ -3717,11 +4104,35 @@ const Dashboard = () => {
                           <p className="mt-2 text-sm leading-7 text-slate-600">{query.message}</p>
                           <p className="mt-3 text-sm text-slate-500">{role === 'student' ? `From ${fullName(query.lecturer)}` : `To ${fullName(query.student)}${query.student?.matricNumber ? ` (${query.student.matricNumber})` : ''}`}</p>
                           {query.session && <p className="mt-1 text-sm text-slate-500">Linked session: {query.session.course?.courseCode} on {formatDate(query.session.date)}</p>}
+                          {query.escalationState === 'requested' && <p className="mt-1 text-sm font-semibold text-rose-600">Escalated to admin for review.</p>}
+                          {query.escalatedBy && <p className="mt-1 text-sm text-slate-500">Escalated by: {fullName(query.escalatedBy)}</p>}
+                          {query.escalationReason && <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-800"><span className="font-semibold">Escalation note:</span> {query.escalationReason}</div>}
+                          <EvidenceAttachment label="Query evidence" fileName={query.queryEvidenceFileName} mimeType={query.queryEvidenceMimeType} data={query.queryEvidenceData} note={query.queryEvidenceNote} />
                           {query.studentResponse && <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-800"><span className="font-semibold">Student response:</span> {query.studentResponse}</div>}
+                          <EvidenceAttachment label="Response evidence" fileName={query.responseEvidenceFileName} mimeType={query.responseEvidenceMimeType} data={query.responseEvidenceData} note={query.responseEvidenceNote} />
                         </div>
-                        <div className="flex flex-wrap gap-2"><Badge tone={query.status === 'pending' ? 'amber' : query.status === 'responded' ? 'blue' : 'emerald'}>{query.status}</Badge></div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge tone={query.status === 'pending' ? 'amber' : query.status === 'responded' ? 'blue' : 'emerald'}>{query.status}</Badge>
+                          {query.escalationState === 'requested' && <Badge tone="rose">escalated</Badge>}
+                        </div>
                       </div>
-                      {role === 'student' && query.status === 'pending' && <div className="mt-4 space-y-3"><textarea value={responseDrafts[query.id] || ''} onChange={(event) => setResponseDrafts((current) => ({ ...current, [query.id]: event.target.value }))} rows={4} className="w-full rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" placeholder="Explain why you missed class" /><button onClick={() => handleRespondToQuery(query.id)} disabled={busyAction === `respond-query-${query.id}`} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === `respond-query-${query.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Submit response</button></div>}
+                      {role === 'student' && query.status === 'pending' && (
+                        <div className="mt-4 space-y-3">
+                          <textarea value={responseDrafts[query.id] || ''} onChange={(event) => setResponseDrafts((current) => ({ ...current, [query.id]: event.target.value }))} rows={4} className="w-full rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" placeholder="Explain why you missed class" />
+                          <FileField label="Attach response evidence (optional)" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/*" onChange={(event) => handleResponseEvidenceChange(query.id, event)} fileName={responseEvidenceDrafts[query.id]?.fileName || ''} helper="Optional PDF or image, up to 3MB." />
+                          <button onClick={() => handleRespondToQuery(query.id)} disabled={busyAction === `respond-query-${query.id}`} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === `respond-query-${query.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Submit response</button>
+                        </div>
+                      )}
+                      {role !== 'admin' && query.status !== 'closed' && (
+                        <div className="mt-5 rounded-[1.5rem] border border-slate-200 bg-white/70 p-4">
+                          <p className="text-sm font-semibold text-slate-900">Escalate to admin</p>
+                          <p className="mt-1 text-sm text-slate-600">Use this when the explanation still needs a higher-level review.</p>
+                          <textarea value={escalationDrafts[query.id] || ''} onChange={(event) => handleEscalationDraftChange(query.id, event.target.value)} rows={3} className="mt-3 w-full rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" placeholder="What should admin review?" />
+                          <div className="mt-3 flex flex-wrap gap-3">
+                            <button onClick={() => handleEscalateQuery(query.id)} disabled={busyAction === `escalate-query-${query.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60">{busyAction === `escalate-query-${query.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}Escalate to admin</button>
+                          </div>
+                        </div>
+                      )}
                       {role === 'lecturer' && query.status === 'responded' && <button onClick={() => handleCloseQuery(query.id)} disabled={busyAction === `close-query-${query.id}`} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60">{busyAction === `close-query-${query.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Close query</button>}
                     </div>
                   )) : <EmptyState title="No queries found" description={role === 'student' ? 'You have no outstanding lecturer queries right now.' : 'Auto-generated and manual absence queries will appear here.'} />}

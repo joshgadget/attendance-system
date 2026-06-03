@@ -68,6 +68,10 @@ const setupAssociations = () => {
   User.hasMany(AbsenceQuery, { foreignKey: 'studentId', as: 'receivedQueries' });
   AbsenceQuery.belongsTo(User, { foreignKey: 'studentId', as: 'student' });
 
+  // User -> Escalated AbsenceQuery
+  User.hasMany(AbsenceQuery, { foreignKey: 'escalatedByUserId', as: 'escalatedQueries' });
+  AbsenceQuery.belongsTo(User, { foreignKey: 'escalatedByUserId', as: 'escalatedBy' });
+
   // Session -> AbsenceQuery
   Session.hasMany(AbsenceQuery, { foreignKey: 'sessionId', as: 'queries' });
   AbsenceQuery.belongsTo(Session, { foreignKey: 'sessionId', as: 'session' });
