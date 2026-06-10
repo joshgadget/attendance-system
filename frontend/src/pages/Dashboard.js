@@ -1451,6 +1451,34 @@ const Dashboard = () => {
     }
   };
 
+  const handleRemoveCourseSchedule = async (scheduleId) => {
+    try {
+      setBusyAction(`remove-schedule-${scheduleId}`);
+      setMessage();
+      const response = await api.delete(`/courses/schedules/${scheduleId}`);
+      setMessage(response.data.message || 'Timetable entry removed successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Timetable entry could not be removed.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleClearCourseSchedules = async (courseId) => {
+    try {
+      setBusyAction(`clear-course-schedules-${courseId}`);
+      setMessage();
+      const response = await api.delete(`/courses/${courseId}/schedules`);
+      setMessage(response.data.message || 'Course timetable removed successfully.');
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Course timetable could not be removed.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   const handleDownloadReport = async (courseId, format) => {
     try {
       setBusyAction(`download-${format}-${courseId}`);
@@ -2564,6 +2592,10 @@ const Dashboard = () => {
   }, []);
 
   const deliverLiveNotification = useCallback((notification) => {
+    if (notification?.type === 'class.reminder' && !preferences.classReminders) {
+      return;
+    }
+
     setLiveNotification(notification);
 
     if (!preferences.browserNotifications) {
@@ -2586,7 +2618,7 @@ const Dashboard = () => {
     } catch (error) {
       // Browser notifications are best-effort only.
     }
-  }, [preferences.browserNotifications]);
+  }, [preferences.browserNotifications, preferences.classReminders]);
 
   const handleQueryEvidenceChange = async (event) => {
     const file = event.target.files?.[0];
@@ -3162,7 +3194,7 @@ const Dashboard = () => {
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="font-semibold">{preferences.browserNotifications ? 'Browser push alerts are enabled' : 'Browser push alerts are off'}</p>
-                      <p className="mt-1 leading-6">{preferences.browserNotifications ? 'You will receive live alerts for queries, escalations, and session updates while the dashboard is open or in the background.' : 'Turn on browser push alerts in Settings to get live query and session updates without refreshing.'}</p>
+                      <p className="mt-1 leading-6">{preferences.browserNotifications ? 'You will receive live alerts for class reminders, queries, escalations, and session updates while the dashboard is open or in the background.' : 'Turn on browser push alerts in Settings to get class reminders and live query or session updates without refreshing.'}</p>
                     </div>
                     {!preferences.browserNotifications && (
                       <button type="button" onClick={() => openWorkspaceTab('settings')} className="inline-flex items-center gap-2 rounded-2xl border border-amber-300 bg-white px-4 py-2 font-semibold text-amber-700 transition hover:bg-amber-100">
@@ -3367,13 +3399,13 @@ const Dashboard = () => {
                     />
                     <PreferenceToggle
                       label="Class reminder prompts"
-                      description="Show reminder-style cues before upcoming classes and attendance windows."
+                      description="Keep 30-minute timetable reminder cues visible before upcoming classes and attendance windows."
                       checked={preferences.classReminders}
                       onChange={(value) => setPreferences((current) => ({ ...current, classReminders: value }))}
                     />
                     <PreferenceToggle
                       label="Browser push alerts"
-                      description="Show live browser notifications for new queries, escalations, and session updates."
+                      description="Show live browser notifications for class reminders, new queries, escalations, and session updates."
                       checked={preferences.browserNotifications}
                       onChange={(value) => handleBrowserNotificationsChange(value)}
                     />
@@ -3747,7 +3779,7 @@ const Dashboard = () => {
                   {role === 'admin' && (
                     <Panel title="Import timetable" eyebrow="Schedule upload">
                       <div className="space-y-4">
-                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a timetable <span className="font-mono">PDF</span> or <span className="font-mono">CSV</span> to map courses and class times.</p>
+                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a timetable <span className="font-mono">PDF</span> or <span className="font-mono">CSV</span> to map courses and class times. Removing timetable slots from a course card stops future reminder alerts automatically.</p>
                         <FileField label="Upload timetable file" accept=".pdf,.csv,text/csv,application/pdf" onChange={handleTimetableCsvUpload} fileName={timetableFileName} />
                       </div>
                     </Panel>
@@ -3886,12 +3918,31 @@ const Dashboard = () => {
                                     <p className="mt-1 text-sm text-slate-500">Lecturer: {fullName(course.lecturer)}</p>
                                     {course.enrollment && <p className="mt-1 text-sm text-slate-500">Enrollment status: {course.enrollment.status}</p>}
                                     {course.schedules?.length > 0 && (
-                                      <div className="mt-3 flex flex-wrap gap-2">
+                                      <div className="mt-3 space-y-3">
+                                        <div className="flex flex-wrap gap-2">
                                         {course.schedules.map((schedule) => (
-                                          <Badge key={`${course.id}-${schedule.id}`} tone="slate">
-                                            {schedule.dayOfWeek} {formatTime(schedule.startTime)}-{formatTime(schedule.endTime)}{schedule.venue ? ` | ${schedule.venue}` : ''}
-                                          </Badge>
+                                          <span key={`${course.id}-${schedule.id}`} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                                            <span>{schedule.dayOfWeek} {formatTime(schedule.startTime)}-{formatTime(schedule.endTime)}{schedule.venue ? ` | ${schedule.venue}` : ''}</span>
+                                            {role === 'admin' && (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleRemoveCourseSchedule(schedule.id)}
+                                                disabled={busyAction === `remove-schedule-${schedule.id}`}
+                                                className="inline-flex h-5 w-5 items-center justify-center rounded-full text-rose-600 transition hover:bg-rose-50 disabled:opacity-60"
+                                                aria-label={`Remove timetable slot for ${course.courseCode}`}
+                                              >
+                                                {busyAction === `remove-schedule-${schedule.id}` ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                                              </button>
+                                            )}
+                                          </span>
                                         ))}
+                                        </div>
+                                        {role === 'admin' && (
+                                          <ActionButton onClick={() => handleClearCourseSchedules(course.id)} disabled={busyAction === `clear-course-schedules-${course.id}`} type="button" variant="danger" className="px-4 py-2">
+                                            {busyAction === `clear-course-schedules-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                            Remove course timetable
+                                          </ActionButton>
+                                        )}
                                       </div>
                                     )}
                                   </div>

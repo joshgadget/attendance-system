@@ -3,6 +3,7 @@ const { PDFParse } = require('pdf-parse');
 const { Course, CourseSchedule, CourseAudience, Enrollment, User, StudentRegistry } = require('../models');
 const { logAuditEvent } = require('../utils/auditLogger');
 const { normalizeInstitutionText, normalizeInstitutionPayload, normalizeAcademicYear, normalizeLevel } = require('../utils/institutionNormalizer');
+const { broadcastNotification, buildNotificationPayload } = require('../utils/realtimeNotifications');
 
 const normalizeDayOfWeek = (value = '') => {
   const normalized = String(value).trim().toLowerCase();
@@ -45,6 +46,8 @@ const normalizeTime = (value = '') => {
 
   return '';
 };
+
+const formatTimeLabel = (value = '') => String(value).slice(0, 5);
 
 const dayMap = {
   MON: 'monday',
@@ -334,6 +337,66 @@ const resolveFallbackLecturer = async (preferredUserId) => {
   }
 
   return null;
+};
+
+const getCourseNotificationUserIds = async (courseId, lecturerId = null) => {
+  const userIds = new Set();
+
+  if (lecturerId) {
+    userIds.add(Number(lecturerId));
+  }
+
+  const enrollments = await Enrollment.findAll({
+    where: {
+      courseId,
+      status: 'active',
+    },
+    attributes: ['userId'],
+  });
+
+  enrollments.forEach((entry) => {
+    if (entry.userId) {
+      userIds.add(Number(entry.userId));
+    }
+  });
+
+  return Array.from(userIds).filter(Boolean);
+};
+
+const emitTimetableChangeNotification = async ({
+  req,
+  course,
+  title,
+  description,
+  entityType = 'course',
+  entityId = null,
+}) => {
+  const io = req.app.get('io');
+  if (!io || !course?.id) {
+    return;
+  }
+
+  const userIds = await getCourseNotificationUserIds(course.id, course.lecturerId);
+  if (!userIds.length) {
+    return;
+  }
+
+  broadcastNotification(io, {
+    userIds,
+    notification: buildNotificationPayload({
+      type: 'timetable.updated',
+      title,
+      description,
+      tone: 'slate',
+      linkTab: 'courses',
+      entityType,
+      entityId: entityId || course.id,
+      meta: {
+        courseId: course.id,
+        courseCode: course.courseCode || null,
+      },
+    }),
+  });
 };
 
 exports.createCourse = async (req, res) => {
@@ -857,6 +920,145 @@ exports.getCourseSchedules = async (req, res) => {
         : schedules;
 
     res.json({ success: true, data: filtered });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.removeCourseSchedule = async (req, res) => {
+  try {
+    const schedule = await CourseSchedule.findByPk(req.params.scheduleId, {
+      include: [{
+        model: Course,
+        as: 'course',
+        attributes: ['id', 'courseCode', 'courseName', 'lecturerId', 'campus', 'faculty', 'department'],
+      }],
+    });
+
+    if (!schedule) {
+      return res.status(404).json({ success: false, message: 'Timetable entry not found' });
+    }
+
+    if (!schedule.isActive) {
+      return res.json({
+        success: true,
+        message: 'Timetable entry was already removed.',
+        data: schedule,
+      });
+    }
+
+    schedule.isActive = false;
+    await schedule.save();
+
+    await logAuditEvent({
+      req,
+      action: 'course.schedule.removed',
+      targetType: 'course_schedule',
+      targetId: schedule.id,
+      campus: schedule.course?.campus || null,
+      faculty: schedule.course?.faculty || null,
+      department: schedule.course?.department || null,
+      metadata: {
+        courseId: schedule.courseId,
+        courseCode: schedule.course?.courseCode || null,
+        dayOfWeek: schedule.dayOfWeek,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        venue: schedule.venue || null,
+      },
+    });
+
+    await emitTimetableChangeNotification({
+      req,
+      course: schedule.course,
+      title: `Timetable updated for ${schedule.course?.courseCode || 'a course'}`,
+      description: `${schedule.course?.courseCode || 'This course'} will no longer send reminders for ${schedule.dayOfWeek} at ${formatTimeLabel(schedule.startTime)}${schedule.venue ? ` in ${schedule.venue}` : ''}.`,
+      entityType: 'course_schedule',
+      entityId: schedule.id,
+    });
+
+    res.json({
+      success: true,
+      message: 'Timetable entry removed successfully. Class reminders for that slot will stop automatically.',
+      data: schedule,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.clearCourseSchedules = async (req, res) => {
+  try {
+    const course = await Course.findByPk(req.params.id, {
+      attributes: ['id', 'courseCode', 'courseName', 'lecturerId', 'campus', 'faculty', 'department'],
+    });
+
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found' });
+    }
+
+    const activeSchedules = await CourseSchedule.findAll({
+      where: {
+        courseId: course.id,
+        isActive: true,
+      },
+      attributes: ['id', 'dayOfWeek', 'startTime', 'endTime', 'venue'],
+      order: [['dayOfWeek', 'ASC'], ['startTime', 'ASC']],
+    });
+
+    if (activeSchedules.length === 0) {
+      return res.json({
+        success: true,
+        message: 'This course does not have any active timetable entries to remove.',
+        data: {
+          courseId: course.id,
+          removedCount: 0,
+        },
+      });
+    }
+
+    await CourseSchedule.update(
+      { isActive: false },
+      {
+        where: {
+          courseId: course.id,
+          isActive: true,
+        },
+      }
+    );
+
+    await logAuditEvent({
+      req,
+      action: 'course.schedule.bulk_removed',
+      targetType: 'course',
+      targetId: course.id,
+      campus: course.campus,
+      faculty: course.faculty,
+      department: course.department,
+      metadata: {
+        courseCode: course.courseCode,
+        removedCount: activeSchedules.length,
+      },
+    });
+
+    await emitTimetableChangeNotification({
+      req,
+      course,
+      title: `Timetable removed for ${course.courseCode || 'a course'}`,
+      description: `${course.courseCode || 'This course'} no longer has active timetable slots, so future class reminders have stopped.`,
+      entityType: 'course',
+      entityId: course.id,
+    });
+
+    res.json({
+      success: true,
+      message: 'Course timetable removed successfully. Future class reminders for this course will stop automatically.',
+      data: {
+        courseId: course.id,
+        removedCount: activeSchedules.length,
+        schedules: activeSchedules,
+      },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

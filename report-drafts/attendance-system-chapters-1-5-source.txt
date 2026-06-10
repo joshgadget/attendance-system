@@ -81,6 +81,14 @@ The present study is also justified because it goes beyond simple attendance cap
 
 Finally, the study contributes to the wider digital transformation of academic administration. By improving accuracy, transparency, accessibility, and accountability in class attendance management, the system provides practical value to students, lecturers, and school management.
 
+1.6 Research Contribution and Institutional Relevance
+
+Beyond solving the immediate problem of attendance marking, this project contributes to the literature and to institutional practice in a more structured way. The implemented system shows how a web-based attendance solution can be built around real academic data rather than around a stand-alone scan-and-submit workflow. In practical terms, the system links registry records, course structures, enrollment data, geofenced classroom definitions, attendance sessions, absence queries, and audit logs into one coordinated workflow.
+
+That integration matters because many attendance systems in the literature focus on one strong feature, such as QR scanning or biometric verification, but do not connect that feature to the rest of the academic process. The present system demonstrates that a research-worthy attendance platform must do more than accept a scan. It must verify that the student exists in the institutional registry, confirm that the student is enrolled in the right course, check that the attendance session is still active, validate the student location where required, and preserve the record in a form that can later support queries and reporting.
+
+The project is therefore relevant both academically and operationally. Academically, it strengthens the discussion around web-based attendance by showing that low-cost technology can be combined with data validation, late-status handling, duplicate prevention, and real-time feedback without introducing heavy hardware requirements. Operationally, it gives institutions a practical model for reducing manual workload while still preserving accountability, traceability, and follow-up capability.
+
 PAGE_BREAK
 CHAPTER TWO
 LITERATURE REVIEW
@@ -217,6 +225,20 @@ The system should also satisfy non-functional requirements such as:
 The literature shows that many attendance systems solve only one part of the broader problem. Some emphasise identity verification but depend on special hardware. Some manage simple QR attendance but do not integrate student registry, course-level filtering, timetable structure, lecturer follow-up, or report generation. Others are effective in research settings but are not easily adaptable to a practical institutional workflow.
 
 The system developed in this study is therefore based on the need for a balanced and practical solution. It combines web-based access, registry-backed student verification, course and level matching, QR attendance, geofenced session validation, duplicate attendance protection, query handling, timetable-aware support, and reporting in one application.
+
+2.10 Comparative Analysis of Existing Approaches
+
+The reviewed studies can be grouped into five broad categories. Manual systems remain the simplest to deploy, but they are also the least reliable because they depend entirely on human supervision. RFID and fingerprint systems improve identity control, yet they introduce device cost, maintenance demands, and installation complexity that may not suit every institution. Face recognition systems strengthen verification further, but they require more processing power, camera quality, and deployment discipline than many classrooms can consistently provide. Wi-Fi-based attendance removes the need for explicit scanning, but it depends heavily on stable network presence and may not be suitable where user-device connectivity is inconsistent.
+
+QR-based systems sit in a more balanced position. They are inexpensive, easy to generate, and simple for students and lecturers to use. Their main weakness is that a QR code alone does not guarantee that the right person is marking attendance at the right time and in the right place. The present study responds to that weakness by combining QR attendance with course enrollment checks, session-code verification, duplicate submission control, and geofence validation. This means the system benefits from the speed of QR attendance while also borrowing some of the trust advantages usually associated with stricter attendance technologies.
+
+In comparison with earlier studies, the implemented system is more complete because it does not stop at the point of marking presence. It also covers student registry onboarding, course-audience rules, timetable-linked course management, absence-query handling, attendance history, exportable reports, and role-specific dashboards. These additions make the project closer to a practical institutional platform than a narrow laboratory prototype.
+
+2.11 Literature Synthesis and Identified Gap
+
+The literature review shows a clear research direction: attendance systems are becoming more digital, more mobile, and more intelligent. What is still missing in many cases is a unified model that joins academic identity, course enrollment, session control, and post-session accountability in one browser-based workflow. This gap is important because attendance data is only useful when it can be trusted, retrieved, and explained later.
+
+The proposed system addresses that gap by combining features that are usually developed separately. It treats the student registry as the foundation of identity control, the enrollment table as the basis for course eligibility, the session table as the temporary attendance window, the attendance table as the official mark record, and the absence-query table as the follow-up mechanism. When combined with audit logs and notifications, the result is a coherent institutional record rather than a single isolated sign-in event.
 
 PAGE_BREAK
 CHAPTER THREE
@@ -427,6 +449,22 @@ These measures improve the reliability of attendance records and reduce the chan
 
 Although the system achieves its primary objectives, some limitations remain. Timetable PDF interpretation still depends on the consistency of the uploaded institutional format. Background push notifications are not yet fully implemented beyond in-app dashboard notifications. Some security-hardening opportunities also remain for future improvement, especially around minimising token exposure on the client and tightening route visibility for certain attendance and user data operations.
 
+3.11 Code-to-Model Mapping and Implementation Traceability
+
+The implementation is strongly supported by a clear data model. The User entity stores role-based identity information, profile details, password reset state, device fingerprint history, and account lock status. This allows the authentication layer to support secure login, password recovery, and temporary lockout after repeated failed attempts. The StudentRegistry entity serves as the authoritative source for matric-number-backed signup and ensures that student identity is verified against institutional records before an account can be claimed.
+
+Academic structure is represented by the Course, Enrollment, CourseSchedule, and CourseAudience entities. Course stores the core course metadata, including the course code, academic year, semester, and lecturer assignment. Enrollment ties a student to a course for a specific semester and academic year, which is essential for attendance eligibility. CourseSchedule captures recurring timetable information such as day of week, venue, and start and end times. CourseAudience defines the academic groups that a course is intended for, which makes the student course-selection process more accurate and institution-aware.
+
+Operational control is handled through the Session, Attendance, AbsenceQuery, Building, AuditLog, and SiteSetting entities. Session stores the live attendance window and its geofence values, while Attendance stores each student mark together with the verification method, device data, and location metadata. AbsenceQuery captures lecturer follow-up and student response activity, including evidence attachments and escalation state. Building stores the latitude, longitude, and allowed radius for each verified classroom location. AuditLog records critical actions for accountability, and SiteSetting allows the system to present a maintenance notice when required.
+
+The controller logic reinforces this model with real validation rules. Session creation generates a unique session code, attaches the selected geofenced building, and stores the attendance window. Attendance marking verifies the session code, attendance pass, active enrollment, attendance timing, and location distance before saving the record. If a student attempts to mark attendance more than once, the application and the database both prevent duplication. When a lecturer closes a session, the system compares the attendance records to the enrolled student list and creates absence queries automatically for students who were not marked present.
+
+This traceability between the model layer and the controller layer is important from a research perspective because it shows that the system was not built as a superficial interface exercise. Each major feature in the user interface is backed by an explicit table, association, and validation rule in the backend.
+
+3.12 Summary
+
+Chapter Three presented the development methodology, system architecture, technology stack, database design, module structure, and validation rules used in the implementation. It also showed how the codebase maps directly to the system requirements through entity relationships, controller logic, and security controls. The chapter demonstrates that the application was designed as an integrated academic platform rather than as a narrow attendance scanner.
+
 PAGE_BREAK
 CHAPTER FOUR
 RESULTS AND DISCUSSION
@@ -559,6 +597,14 @@ Some limitations were observed during the implementation and testing process. Ti
 
 These limitations do not remove the practical value of the system, but they show useful directions for future improvement.
 
+4.7 Traceability of the User Experience to the Codebase
+
+The reported results are reflected directly in the frontend and backend implementation. On the frontend, the dashboard manages the different role-based views, the QR scanning interface, the manual attendance form, course selection, queries, reports, notifications, and help content. The attendance entry route stores pending QR payloads before login so that a student can tap an attendance link, sign in if necessary, and continue the marking process without repeating the scanning step.
+
+The lecturer QR flow is equally direct. When a session detail is loaded, the system generates a QR payload that contains the session code and attendance key, then renders it for classroom use. On the student side, the scanner can decode the QR payload and extract the attendance details for submission. If the QR flow is not available, the student can enter the attendance session code and course-based attendance key manually. This dual-path design improves usability without weakening validation.
+
+The backend results described earlier are also grounded in code. The attendance controller computes the allowable attendance window, measures the student's geofence distance, rejects invalid or duplicate marks, and classifies late submissions accurately. The absence-query controller creates the follow-up record, sends notifications, attaches evidence when present, and supports escalation when the lecturer or student requires a higher-level review. Together, these pieces show that the system behaves consistently across the interface, service layer, and database.
+
 PAGE_BREAK
 CHAPTER FIVE
 CONCLUSION AND RECOMMENDATIONS
@@ -597,6 +643,12 @@ Further work may focus on:
 3. richer lecturer-student query threads with approval actions that can directly adjust attendance records;
 4. stronger institutional reporting dashboards with faculty and department breakdowns; and
 5. integration with wider student information systems where such infrastructure is available.
+
+5.4 Final Reflection
+
+The broader value of the project is that it shows how attendance management can move from a narrow administrative routine into a data-informed academic process. The system does not simply record whether a student was present. It also explains who the student is, which course the student belongs to, where the attendance took place, when the mark was made, how the mark was verified, and what follow-up action should happen next if the student was absent.
+
+That level of structure is what makes the work more research worthy. It shows that a web-based attendance platform can be practical without being simplistic. It can be light enough to run on everyday devices, yet strict enough to protect institutional records. It can be usable for students and lecturers, yet still support administrative oversight and auditability. For that reason, the project provides a sound basis for future academic and institutional improvements in attendance management.
 
 REFERENCES
 

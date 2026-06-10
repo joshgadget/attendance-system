@@ -13,6 +13,7 @@ const CourseSchedule = require('./CourseSchedule');
 const CourseAudience = require('./CourseAudience');
 const AuditLog = require('./AuditLog');
 const SiteSetting = require('./SiteSetting');
+const ClassReminderLog = require('./ClassReminderLog');
 
 // Setup associations function
 const setupAssociations = () => {
@@ -59,6 +60,18 @@ const setupAssociations = () => {
   // Course -> CourseAudience
   Course.hasMany(CourseAudience, { foreignKey: 'courseId', as: 'audiences' });
   CourseAudience.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
+
+  // Course schedule -> Class reminder logs
+  CourseSchedule.hasMany(ClassReminderLog, { foreignKey: 'courseScheduleId', as: 'reminderLogs' });
+  ClassReminderLog.belongsTo(CourseSchedule, { foreignKey: 'courseScheduleId', as: 'schedule' });
+
+  // Course -> Class reminder logs
+  Course.hasMany(ClassReminderLog, { foreignKey: 'courseId', as: 'reminderLogs' });
+  ClassReminderLog.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
+
+  // User -> Class reminder logs
+  User.hasMany(ClassReminderLog, { foreignKey: 'userId', as: 'classReminderLogs' });
+  ClassReminderLog.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
   // Lecturer -> AbsenceQuery
   User.hasMany(AbsenceQuery, { foreignKey: 'lecturerId', as: 'sentQueries' });
@@ -108,6 +121,7 @@ module.exports = {
   Building,
   CourseSchedule,
   CourseAudience,
+  ClassReminderLog,
   AuditLog,
   SiteSetting,
   setupAssociations,

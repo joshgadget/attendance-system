@@ -12,6 +12,7 @@ const { sequelize, setupAssociations, Building } = require('./models');
 const { ensureSchemaGuard } = require('./utils/schemaGuard');
 const env = require('./utils/env');
 const logger = require('./utils/logger');
+const { startClassReminderService } = require('./utils/classReminderService');
 
 const app = express();
 const server = http.createServer(app);
@@ -121,6 +122,7 @@ const startServer = async () => {
 
   server.listen(PORT, () => {
     logger.info(`Attendance System API running on port ${PORT}`);
+    startClassReminderService(io);
   });
 };
 

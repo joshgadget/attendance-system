@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { User, Course, Enrollment, Session, Attendance, AbsenceQuery, StudentRegistry, CourseSchedule, AuditLog } = require('../models');
+const { User, Course, Enrollment, Session, Attendance, AbsenceQuery, StudentRegistry, CourseSchedule, AuditLog, ClassReminderLog } = require('../models');
 
 const sortByDateDesc = (items, accessor) =>
   [...items].sort((left, right) => new Date(accessor(right)).getTime() - new Date(accessor(left)).getTime());
@@ -87,6 +87,10 @@ const buildUpcomingScheduleNotifications = (enrollments = [], scope = 'student')
       }
 
       const notifyBefore = Number(schedule.notifyMinutesBefore || 30);
+      if (minutesUntil <= notifyBefore) {
+        continue;
+      }
+
       const title = scope === 'lecturer'
         ? `Upcoming class for ${course.courseCode || 'your course'}`
         : `Upcoming class: ${course.courseCode || 'Course'}`;
@@ -103,6 +107,38 @@ const buildUpcomingScheduleNotifications = (enrollments = [], scope = 'student')
   }
 
   return upcoming.sort((left, right) => left.priority - right.priority).slice(0, 8);
+};
+
+const buildReminderLogItems = async (userId) => {
+  const reminderLogs = await ClassReminderLog.findAll({
+    where: {
+      userId,
+      channel: 'in_app',
+      deliveryStatus: 'sent',
+    },
+    include: [
+      { model: Course, as: 'course', attributes: ['id', 'courseCode', 'courseName'], required: false },
+      { model: CourseSchedule, as: 'schedule', attributes: ['id', 'dayOfWeek', 'startTime', 'venue'], required: false },
+    ],
+    order: [['createdAt', 'DESC']],
+    limit: 6,
+  });
+
+  return reminderLogs.map((entry) => ({
+    title: entry.title,
+    description: entry.description,
+    tone: 'blue',
+    createdAt: entry.createdAt,
+    type: 'class.reminder',
+    entityType: 'course_schedule',
+    entityId: entry.courseScheduleId,
+    linkTab: 'courses',
+    meta: {
+      courseId: entry.courseId,
+      courseCode: entry.course?.courseCode || null,
+      scheduleId: entry.schedule?.id || entry.courseScheduleId,
+    },
+  }));
 };
 
 const buildAdminAnalytics = async () => {
@@ -401,7 +437,7 @@ const buildAdminNotifications = async () => {
 };
 
 const buildLecturerNotifications = async (userId) => {
-  const [queries, sessions, courses] = await Promise.all([
+  const [queries, sessions, courses, reminderItems] = await Promise.all([
     AbsenceQuery.findAll({
       where: { lecturerId: userId },
       include: [
@@ -423,9 +459,11 @@ const buildLecturerNotifications = async (userId) => {
       include: [{ model: CourseSchedule, as: 'schedules', where: { isActive: true }, required: false }],
       attributes: ['id', 'courseCode', 'courseName'],
     }),
+    buildReminderLogItems(userId),
   ]);
 
   const items = [
+    ...reminderItems,
     ...queries.map((query) => ({
       title: query.escalationState === 'requested'
         ? 'Query escalated for admin review'
@@ -453,7 +491,7 @@ const buildLecturerNotifications = async (userId) => {
 };
 
 const buildStudentNotifications = async (userId) => {
-  const [queries, attendances] = await Promise.all([
+  const [queries, attendances, reminderItems] = await Promise.all([
     AbsenceQuery.findAll({
       where: { studentId: userId },
       include: [
@@ -469,6 +507,7 @@ const buildStudentNotifications = async (userId) => {
       order: [['markedAt', 'DESC']],
       limit: 5,
     }),
+    buildReminderLogItems(userId),
   ]);
 
   const enrollments = await Enrollment.findAll({
@@ -483,6 +522,7 @@ const buildStudentNotifications = async (userId) => {
   });
 
   const items = [
+    ...reminderItems,
     ...queries.map((query) => ({
       title: query.escalationState === 'requested'
         ? 'Query escalated to admin'
