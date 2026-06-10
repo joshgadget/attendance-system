@@ -76,13 +76,16 @@ const ClassReminderLog = sequelize.define(
     timestamps: true,
     indexes: [
       {
+        name: 'crl_occurrence_unique',
         unique: true,
         fields: ['course_schedule_id', 'user_id', 'channel', 'occurrence_at'],
       },
       {
+        name: 'crl_user_created_idx',
         fields: ['user_id', 'createdAt'],
       },
       {
+        name: 'crl_course_created_idx',
         fields: ['course_id', 'createdAt'],
       },
     ],
