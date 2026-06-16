@@ -4,6 +4,7 @@ const { sendEmail } = require('../utils/mailer');
 const { logAuditEvent } = require('../utils/auditLogger');
 const { findEnrollmentsForCourse } = require('../utils/enrollmentLookup');
 const { broadcastNotification, buildNotificationPayload } = require('../utils/realtimeNotifications');
+const { canEscalateAbsenceQuery } = require('../utils/absenceQueryPolicy');
 
 const MAX_EVIDENCE_BYTES = 3 * 1024 * 1024;
 const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
@@ -258,7 +259,7 @@ exports.getQueries = async (req, res) => {
       where,
       include: [
         { model: User, as: 'student', attributes: ['id', 'firstName', 'lastName', 'email', 'matricNumber'] },
-        { model: User, as: 'lecturer', attributes: ['id', 'firstName', 'lastName', 'email'] },
+        { model: User, as: 'lecturer', attributes: ['id', 'firstName', 'lastName', 'email', 'role'] },
         { model: User, as: 'escalatedBy', attributes: ['id', 'firstName', 'lastName', 'email', 'role'] },
         {
           model: Session,
@@ -280,7 +281,9 @@ exports.respondToQuery = async (req, res) => {
   try {
     const { response } = req.body;
     const responseEvidence = normalizeEvidencePayload(req.body, 'response');
-    const query = await AbsenceQuery.findByPk(req.params.id);
+    const query = await AbsenceQuery.findByPk(req.params.id, {
+      include: [{ model: User, as: 'lecturer', attributes: ['id', 'firstName', 'lastName', 'email', 'role'] }],
+    });
 
     if (!query) {
       return res.status(404).json({ success: false, message: 'Query not found' });
@@ -360,12 +363,9 @@ exports.escalateQuery = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Query not found' });
     }
 
-    if (req.user.role === 'student' && query.studentId !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Not authorized' });
-    }
-
-    if (req.user.role === 'lecturer' && query.lecturerId !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Not authorized' });
+    const escalationPolicy = canEscalateAbsenceQuery({ actor: req.user, query });
+    if (!escalationPolicy.allowed) {
+      return res.status(403).json({ success: false, message: escalationPolicy.message });
     }
 
     query.escalationState = 'requested';

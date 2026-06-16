@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { Op } = require('sequelize');
 const { Enrollment, Course, CourseAudience, StudentRegistry, User } = require('../models');
 const authConfig = require('../config/auth');
+const env = require('../utils/env');
 const { sendEmail } = require('../utils/mailer');
 const { normalizeInstitutionPayload, normalizeInstitutionText } = require('../utils/institutionNormalizer');
 
@@ -18,6 +19,45 @@ const hashToken = (token) => crypto.createHash('sha256').update(token).digest('h
 const buildDisplayName = (user) => [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'there';
 const normalizeCampus = (value = '') => normalizeInstitutionText(value, 'campus');
 const resolveRequestIp = (req) => req.ip || req.get?.('x-forwarded-for') || req.connection?.remoteAddress || null;
+const refreshCookieName = 'attendance_refresh_token';
+
+const cookieMaxAgeSeconds = (() => {
+  const match = String(authConfig.jwt.refreshExpiresIn || '').match(/^(\d+)([smhd])$/i);
+  if (!match) {
+    return 7 * 24 * 60 * 60;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const multipliers = { s: 1, m: 60, h: 60 * 60, d: 24 * 60 * 60 };
+  return amount * multipliers[unit];
+})();
+
+const serializeRefreshCookie = (token, maxAgeSeconds = cookieMaxAgeSeconds) => [
+  `${refreshCookieName}=${encodeURIComponent(token || '')}`,
+  'HttpOnly',
+  'Path=/api/auth',
+  `Max-Age=${maxAgeSeconds}`,
+  env.isProduction ? 'SameSite=None' : 'SameSite=Lax',
+  env.isProduction ? 'Secure' : '',
+].filter(Boolean).join('; ');
+
+const setRefreshCookie = (res, token) => {
+  res.setHeader('Set-Cookie', serializeRefreshCookie(token));
+};
+
+const clearRefreshCookie = (res) => {
+  res.setHeader('Set-Cookie', serializeRefreshCookie('', 0));
+};
+
+const readRefreshCookie = (req) => {
+  const rawCookie = req.headers.cookie || '';
+  const match = rawCookie
+    .split(';')
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(`${refreshCookieName}=`));
+  return match ? decodeURIComponent(match.slice(refreshCookieName.length + 1)) : '';
+};
 
 const sendWelcomeEmail = async (user, context = {}) => {
   if (!user?.email) {
@@ -531,12 +571,18 @@ const login = async (req, res) => {
     user.lastKnownIp = resolveRequestIp(req);
     await user.save();
 
+    const tokens = generateTokens(user);
+    setRefreshCookie(res, tokens.refreshToken);
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
       data: {
         user: user.toSafeObject(),
-        tokens: generateTokens(user),
+        tokens: {
+          accessToken: tokens.accessToken,
+          refreshToken: env.isProduction ? undefined : tokens.refreshToken,
+        },
       },
     });
   } catch (error) {
@@ -547,7 +593,8 @@ const login = async (req, res) => {
 
 const refreshToken = async (req, res) => {
   try {
-    const { refreshToken: token } = req.body;
+    const { refreshToken: bodyToken } = req.body;
+    const token = bodyToken || readRefreshCookie(req);
     if (!token) {
       return res.status(400).json({ success: false, message: 'refreshToken is required' });
     }
@@ -558,7 +605,15 @@ const refreshToken = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid token' });
     }
 
-    res.json({ success: true, data: generateTokens(user) });
+    const tokens = generateTokens(user);
+    setRefreshCookie(res, tokens.refreshToken);
+    res.json({
+      success: true,
+      data: {
+        accessToken: tokens.accessToken,
+        refreshToken: env.isProduction ? undefined : tokens.refreshToken,
+      },
+    });
   } catch (error) {
     res.status(401).json({ success: false, message: 'Invalid or expired refresh token' });
   }
@@ -569,6 +624,7 @@ const getMe = async (req, res) => {
 };
 
 const logout = async (req, res) => {
+  clearRefreshCookie(res);
   res.json({ success: true, message: 'Logged out successfully' });
 };
 

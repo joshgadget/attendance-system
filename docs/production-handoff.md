@@ -8,6 +8,10 @@
 - Backend logging is cleaner and more structured for deployed environments.
 - Frontend API requests now use a timeout and friendlier network/server failure messages.
 - Frontend session persistence now fails gracefully if local storage is unavailable or corrupted.
+- Frontend crashes and Web Vital metrics now report to backend client-event endpoints.
+- Refresh tokens are now set as `httpOnly` cookies by the backend, with credentialed frontend API requests enabled.
+- The backend exposes `/api/ready` for database-backed readiness checks.
+- A repeatable database export command is available through `npm run backup` in `backend`.
 
 ## Deploy checklist
 
@@ -39,10 +43,12 @@
 5. Mark one valid attendance and one invalid attendance attempt.
 6. Confirm reports, dashboard summaries, and notifications load.
 7. Open `https://api.attendancesystem.xyz/api/health` and confirm the API responds.
+8. Open `https://api.attendancesystem.xyz/api/ready` and confirm the database readiness check responds.
+9. Confirm student users cannot escalate absence queries and lecturers/admins can only escalate allowed lecturer-originated queries.
 
 ## Recommended next hardening
 
-- Move auth tokens from `localStorage` to secure `httpOnly` cookies when you are ready to do a deeper auth pass.
-- Add automated backup/export for registry, attendance, and query records.
-- Add a scheduled health check or uptime monitor for the backend.
+- Move access tokens from `localStorage` into an in-memory or cookie-backed session model after the refresh-cookie rollout is stable.
+- Schedule `npm run backup` on the production backend host and move backup files to durable off-host storage.
+- Add a scheduled health check or uptime monitor for `/api/health` and `/api/ready`.
 - Run the Postman security collection after each major release.

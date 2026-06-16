@@ -59,13 +59,13 @@ const initialSiteMaintenanceForm = {
   footer: 'Everything is locked during maintenance',
 };
 const TABS_BY_ROLE = {
-  admin: ['overview', 'analytics', 'users', 'registry', 'courses', 'reports', 'notifications', 'help'],
+  admin: ['overview', 'analytics', 'users', 'registry', 'courses', 'queries', 'reports', 'notifications', 'help'],
   lecturer: ['overview', 'analytics', 'courses', 'sessions', 'queries', 'reports', 'notifications', 'help'],
   student: ['overview', 'analytics', 'courses', 'attendance', 'queries', 'reports', 'notifications', 'help'],
 };
 
 const PRIMARY_TABS_BY_ROLE = {
-  admin: ['overview', 'users', 'registry', 'courses', 'reports', 'notifications'],
+  admin: ['overview', 'users', 'registry', 'courses', 'queries', 'reports', 'notifications'],
   lecturer: ['overview', 'courses', 'sessions', 'queries', 'reports', 'notifications'],
   student: ['overview', 'courses', 'attendance', 'queries', 'reports', 'notifications'],
 };
@@ -244,6 +244,18 @@ const PENDING_ATTENDANCE_STORAGE_KEY = 'attendance-system-pending-entry';
 const DEFAULT_LEVEL_OPTIONS = ['100', '200', '300', '400', '500', '600'];
 const MAX_EVIDENCE_BYTES = 3 * 1024 * 1024;
 const ALLOWED_EVIDENCE_MIME_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']);
+const isLecturerOriginatedQuery = (query) => query?.lecturer?.role === 'lecturer';
+const canEscalateQueryInDashboard = (query, role, user) => {
+  if (!query || query.status === 'closed' || role === 'student') {
+    return false;
+  }
+
+  if (role === 'lecturer') {
+    return String(query.lecturerId) === String(user?.id);
+  }
+
+  return role === 'admin' && isLecturerOriginatedQuery(query);
+};
 const SOCKET_BASE_URL = (() => {
   const fallback = 'http://localhost:5000';
   const raw = String(process.env.REACT_APP_API_URL || '').trim();
@@ -1239,7 +1251,7 @@ const Dashboard = () => {
       });
 
       if (role === 'admin') {
-        const [summaryResponse, usersResponse, lecturersResponse, studentsResponse, coursesResponse, registryResponse, buildingsResponse] = await Promise.all([
+        const [summaryResponse, usersResponse, lecturersResponse, studentsResponse, coursesResponse, registryResponse, buildingsResponse, queriesResponse] = await Promise.all([
           api.get('/users/summary'),
           api.get('/users'),
           api.get('/users/lecturers'),
@@ -1247,6 +1259,7 @@ const Dashboard = () => {
           api.get('/courses'),
           api.get('/registry'),
           api.get('/buildings'),
+          api.get('/queries'),
         ]);
 
         setSummary(summaryResponse.data.data);
@@ -1256,8 +1269,8 @@ const Dashboard = () => {
         setCourses(coursesResponse.data.data || []);
         setRegistry(registryResponse.data.data || []);
         setBuildings(buildingsResponse.data.data || []);
+        setQueries(queriesResponse.data.data || []);
         setSessions([]);
-        setQueries([]);
         setHistory([]);
         setSessionDetail(null);
         setQrDataUrl('');
@@ -2002,7 +2015,7 @@ const Dashboard = () => {
         reason: escalationDrafts[queryId] || '',
       });
       setEscalationDrafts((current) => ({ ...current, [queryId]: '' }));
-      setMessage('Query escalated to admin review.');
+      setMessage(role === 'admin' ? 'Lecturer query escalated for admin review.' : 'Query escalated to admin review.');
       await loadData(true);
     } catch (actionError) {
       setMessage('', actionError.response?.data?.message || 'Query could not be escalated.');
@@ -4172,17 +4185,17 @@ const Dashboard = () => {
                           <button onClick={() => handleRespondToQuery(query.id)} disabled={busyAction === `respond-query-${query.id}`} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === `respond-query-${query.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Submit response</button>
                         </div>
                       )}
-                      {role !== 'admin' && query.status !== 'closed' && (
+                      {canEscalateQueryInDashboard(query, role, user) && (
                         <div className="mt-5 rounded-[1.5rem] border border-slate-200 bg-white/70 p-4">
-                          <p className="text-sm font-semibold text-slate-900">Escalate to admin</p>
-                          <p className="mt-1 text-sm text-slate-600">Use this when the explanation still needs a higher-level review.</p>
-                          <textarea value={escalationDrafts[query.id] || ''} onChange={(event) => handleEscalationDraftChange(query.id, event.target.value)} rows={3} className="mt-3 w-full rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" placeholder="What should admin review?" />
+                          <p className="text-sm font-semibold text-slate-900">{role === 'admin' ? 'Escalate lecturer query' : 'Escalate to admin'}</p>
+                          <p className="mt-1 text-sm text-slate-600">{role === 'admin' ? 'Use this when a lecturer-originated query needs formal admin attention.' : 'Use this when the explanation still needs a higher-level review.'}</p>
+                          <textarea value={escalationDrafts[query.id] || ''} onChange={(event) => handleEscalationDraftChange(query.id, event.target.value)} rows={3} className="mt-3 w-full rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100" placeholder={role === 'admin' ? 'What should be reviewed formally?' : 'What should admin review?'} />
                           <div className="mt-3 flex flex-wrap gap-3">
-                            <button onClick={() => handleEscalateQuery(query.id)} disabled={busyAction === `escalate-query-${query.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60">{busyAction === `escalate-query-${query.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}Escalate to admin</button>
+                            <button onClick={() => handleEscalateQuery(query.id)} disabled={busyAction === `escalate-query-${query.id}`} className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60">{busyAction === `escalate-query-${query.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}{role === 'admin' ? 'Escalate lecturer query' : 'Escalate to admin'}</button>
                           </div>
                         </div>
                       )}
-                      {role === 'lecturer' && query.status === 'responded' && <button onClick={() => handleCloseQuery(query.id)} disabled={busyAction === `close-query-${query.id}`} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60">{busyAction === `close-query-${query.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Close query</button>}
+                      {((role === 'lecturer' && query.status === 'responded') || (role === 'admin' && query.status !== 'closed')) && <button onClick={() => handleCloseQuery(query.id)} disabled={busyAction === `close-query-${query.id}`} className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60">{busyAction === `close-query-${query.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{role === 'admin' ? 'Resolve query' : 'Close query'}</button>}
                     </div>
                   )) : <EmptyState title="No queries found" description={role === 'student' ? 'You have no outstanding lecturer queries right now.' : 'Auto-generated and manual absence queries will appear here.'} />}
                 </div>

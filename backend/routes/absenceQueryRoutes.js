@@ -20,7 +20,7 @@ router.use(authMiddleware);
 router.get('/', absenceQueryController.getQueries);
 router.post('/', requireRole('lecturer', 'admin'), absenceQueryController.createQuery);
 router.patch('/:id/respond', requireRole('student', 'admin'), absenceQueryController.respondToQuery);
-router.patch('/:id/escalate', requireRole('student', 'lecturer', 'admin'), absenceQueryController.escalateQuery);
+router.patch('/:id/escalate', requireRole('lecturer', 'admin'), absenceQueryController.escalateQuery);
 router.patch('/:id/close', requireRole('lecturer', 'admin'), absenceQueryController.closeQuery);
 
 module.exports = router;

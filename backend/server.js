@@ -16,6 +16,8 @@ const { startClassReminderService } = require('./utils/classReminderService');
 
 const app = express();
 const server = http.createServer(app);
+app.disable('x-powered-by');
+
 const corsOptions = {
   origin(origin, callback) {
     if (!origin) {
@@ -43,7 +45,17 @@ app.set('io', io);
 require('./websocket/socketHandler')(io);
 app.set('trust proxy', 1);
 
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      defaultSrc: ["'none'"],
+      baseUri: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(
@@ -58,9 +70,36 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.get('/api/health', (req, res) => {
-  res.json({ success: true, message: 'Server is running', timestamp: new Date().toISOString() });
+  res.json({
+    success: true,
+    status: 'ok',
+    message: 'Server is running',
+    uptimeSeconds: Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
 });
 
+app.get('/api/ready', async (req, res) => {
+  try {
+    await sequelize.authenticate();
+    res.json({
+      success: true,
+      status: 'ready',
+      database: 'connected',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Readiness check failed', { message: error.message });
+    res.status(503).json({
+      success: false,
+      status: 'not_ready',
+      database: 'unavailable',
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+app.use('/api/client-events', require('./routes/clientEventRoutes'));
 app.use('/api/site', require('./routes/siteRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
