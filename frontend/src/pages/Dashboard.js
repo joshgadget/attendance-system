@@ -891,6 +891,45 @@ const Dashboard = () => {
 
   const activeSession = useMemo(() => sessions.find((session) => session.status === 'active') || null, [sessions]);
 
+  const queueDashboardRefresh = useCallback(() => {
+    if (refreshTimerRef.current) {
+      window.clearTimeout(refreshTimerRef.current);
+    }
+
+    refreshTimerRef.current = window.setTimeout(() => {
+      loadDataRef.current?.(false).catch(() => null);
+    }, 250);
+  }, []);
+
+  const deliverLiveNotification = useCallback((notification) => {
+    if (notification?.type === 'class.reminder' && !preferences.classReminders) {
+      return;
+    }
+
+    setLiveNotification(notification);
+
+    if (!preferences.browserNotifications) {
+      return;
+    }
+
+    if (!window.Notification || window.Notification.permission !== 'granted') {
+      return;
+    }
+
+    if (!document.hidden && document.hasFocus()) {
+      return;
+    }
+
+    try {
+      new window.Notification(notification.title, {
+        body: notification.description,
+        icon: '/favicon.ico',
+      });
+    } catch (error) {
+      // Browser notifications are best-effort only.
+    }
+  }, [preferences.browserNotifications, preferences.classReminders]);
+
   useEffect(() => {
     if (!user) {
       setProfilePhoto('');
@@ -1009,7 +1048,6 @@ const Dashboard = () => {
     }
   }, [role]);
 
-  /* eslint-disable no-use-before-define */
   useEffect(() => {
     if (!user?.id) {
       return undefined;
@@ -1069,7 +1107,6 @@ const Dashboard = () => {
       socketRef.current = null;
     };
   }, [deliverLiveNotification, queueDashboardRefresh, user?.id]);
-  /* eslint-enable no-use-before-define */
 
   useEffect(() => () => {
     if (refreshTimerRef.current) {
@@ -2580,45 +2617,6 @@ const Dashboard = () => {
     setAccountMenuOpen(false);
     setSidebarOpen(false);
   };
-
-  const queueDashboardRefresh = useCallback(() => {
-    if (refreshTimerRef.current) {
-      window.clearTimeout(refreshTimerRef.current);
-    }
-
-    refreshTimerRef.current = window.setTimeout(() => {
-      loadDataRef.current?.(false).catch(() => null);
-    }, 250);
-  }, []);
-
-  const deliverLiveNotification = useCallback((notification) => {
-    if (notification?.type === 'class.reminder' && !preferences.classReminders) {
-      return;
-    }
-
-    setLiveNotification(notification);
-
-    if (!preferences.browserNotifications) {
-      return;
-    }
-
-    if (!window.Notification || window.Notification.permission !== 'granted') {
-      return;
-    }
-
-    if (!document.hidden && document.hasFocus()) {
-      return;
-    }
-
-    try {
-      new window.Notification(notification.title, {
-        body: notification.description,
-        icon: '/favicon.ico',
-      });
-    } catch (error) {
-      // Browser notifications are best-effort only.
-    }
-  }, [preferences.browserNotifications, preferences.classReminders]);
 
   const handleQueryEvidenceChange = async (event) => {
     const file = event.target.files?.[0];

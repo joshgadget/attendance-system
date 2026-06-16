@@ -14,4 +14,6 @@ for (const entry of fs.readdirSync(buildDir)) {
   fs.cpSync(source, target, { recursive: true, force: true });
 }
 
+fs.copyFileSync(path.join(buildDir, 'index.html'), path.join(repoRoot, '404.html'));
+
 console.log('Synced frontend/build into the GitHub Pages root.');
