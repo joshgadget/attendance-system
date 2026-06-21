@@ -256,175 +256,6 @@ const canEscalateQueryInDashboard = (query, role, user) => {
 
   return role === 'admin' && isLecturerOriginatedQuery(query);
 };
-
-const buildWorkflowModel = ({ role, summary, courses, sessions, queries, history, activeSession }) => {
-  const courseTotal = Number(summary?.totalCourses ?? courses.length ?? 0);
-  const pendingQueries = queries.filter((query) => query.status === 'pending').length;
-  const respondedQueries = queries.filter((query) => query.status === 'responded').length;
-  const escalatedQueries = queries.filter((query) => query.escalationState === 'requested').length;
-  const lecturerQueryCount = queries.filter((query) => isLecturerOriginatedQuery(query) && query.status !== 'closed').length;
-  const registryTotal = Number(summary?.totalRegistryRecords || 0);
-  const registryClaimed = Number(summary?.claimedRegistryRecords || 0);
-  const registryOpen = Math.max(0, registryTotal - registryClaimed);
-  const attendanceMarks = Number(summary?.totalAttendanceMarks ?? history.length ?? 0);
-  const latestAttendance = history[0]?.status ? `Last mark ${history[0].status}` : 'Ready';
-
-  if (role === 'admin') {
-    return {
-      eyebrow: 'Institution command center',
-      title: 'Operate attendance like infrastructure',
-      description: 'Registry, courses, lecturer queries, and formal reports stay visible from one controlled workflow.',
-      focusLabel: 'Admin focus',
-      focusValue: escalatedQueries > 0 ? `${escalatedQueries} escalated` : pendingQueries > 0 ? `${pendingQueries} pending` : 'Stable',
-      items: [
-        {
-          step: '01',
-          tab: 'registry',
-          icon: ShieldCheck,
-          title: 'Verify identities',
-          description: 'Keep matric records clean before attendance reports become official.',
-          metric: registryTotal ? `${registryClaimed}/${registryTotal} claimed` : 'Registry ready',
-          state: registryOpen > 0 ? 'attention' : 'complete',
-          statusLabel: registryOpen > 0 ? `${registryOpen} open` : 'Clean',
-        },
-        {
-          step: '02',
-          tab: 'courses',
-          icon: BookOpen,
-          title: 'Control course ownership',
-          description: 'Assign lecturers and course audiences before sessions start.',
-          metric: `${courseTotal} courses`,
-          state: courseTotal > 0 ? 'active' : 'attention',
-          statusLabel: courseTotal > 0 ? 'Mapped' : 'Setup',
-        },
-        {
-          step: '03',
-          tab: 'queries',
-          icon: MessageSquare,
-          title: 'Review lecturer queries',
-          description: 'Admin escalation is limited to lecturer-originated absence queries.',
-          metric: lecturerQueryCount > 0 ? `${lecturerQueryCount} to review` : 'No backlog',
-          state: escalatedQueries > 0 || lecturerQueryCount > 0 ? 'attention' : 'complete',
-          statusLabel: escalatedQueries > 0 ? 'Escalated' : lecturerQueryCount > 0 ? 'Review' : 'Clear',
-        },
-        {
-          step: '04',
-          tab: 'reports',
-          icon: FileText,
-          title: 'Export executive reports',
-          description: 'Generate CSV or PDF evidence for departments and audit reviews.',
-          metric: 'PDF + CSV',
-          state: courseTotal > 0 ? 'active' : 'queued',
-          statusLabel: 'Ready',
-        },
-      ],
-    };
-  }
-
-  if (role === 'lecturer') {
-    const followUpQueries = pendingQueries + respondedQueries;
-
-    return {
-      eyebrow: 'Teaching operations',
-      title: 'Run class attendance without loose ends',
-      description: 'Open sessions, capture attendance, handle student replies, and close records from a single loop.',
-      focusLabel: 'Class focus',
-      focusValue: activeSession?.course?.courseCode || activeSession?.sessionCode || `${followUpQueries} queries`,
-      items: [
-        {
-          step: '01',
-          tab: 'courses',
-          icon: BookOpen,
-          title: 'Prepare course list',
-          description: 'Confirm assigned courses and student groups before the lecture starts.',
-          metric: `${courseTotal} assigned`,
-          state: courseTotal > 0 ? 'complete' : 'attention',
-          statusLabel: courseTotal > 0 ? 'Ready' : 'Needs setup',
-        },
-        {
-          step: '02',
-          tab: 'sessions',
-          icon: Calendar,
-          title: 'Open live session',
-          description: 'Use QR, passcode, geofence, and live refresh while class is active.',
-          metric: activeSession?.course?.courseCode || `${sessions.length} sessions`,
-          state: activeSession ? 'active' : 'queued',
-          statusLabel: activeSession ? 'Live' : 'Next',
-        },
-        {
-          step: '03',
-          tab: 'queries',
-          icon: MessageSquare,
-          title: 'Resolve absence queries',
-          description: 'Close valid replies or escalate only your unresolved lecturer queries to admin.',
-          metric: followUpQueries > 0 ? `${followUpQueries} open` : 'No backlog',
-          state: respondedQueries > 0 ? 'attention' : pendingQueries > 0 ? 'active' : 'complete',
-          statusLabel: respondedQueries > 0 ? 'Decide' : pendingQueries > 0 ? 'Waiting' : 'Clear',
-        },
-        {
-          step: '04',
-          tab: 'reports',
-          icon: FileText,
-          title: 'Package evidence',
-          description: 'Export course reports after sessions are closed and queries are handled.',
-          metric: 'Course reports',
-          state: sessions.length > 0 ? 'active' : 'queued',
-          statusLabel: 'Export',
-        },
-      ],
-    };
-  }
-
-  return {
-    eyebrow: 'Student attendance passport',
-    title: 'Know exactly what to do next',
-    description: 'Courses, check-ins, lecturer queries, and your attendance record are arranged as one simple path.',
-    focusLabel: 'Student focus',
-    focusValue: pendingQueries > 0 ? `${pendingQueries} reply due` : latestAttendance,
-    items: [
-      {
-        step: '01',
-        tab: 'courses',
-        icon: BookOpen,
-        title: 'Confirm courses',
-        description: 'See enrolled classes and the lecturers attached to each course.',
-        metric: `${courseTotal} courses`,
-        state: courseTotal > 0 ? 'complete' : 'attention',
-        statusLabel: courseTotal > 0 ? 'Enrolled' : 'Check',
-      },
-      {
-        step: '02',
-        tab: 'attendance',
-        icon: CheckCircle2,
-        title: 'Mark attendance',
-        description: 'Scan the class QR or enter the attendance code during the allowed window.',
-        metric: latestAttendance,
-        state: 'active',
-        statusLabel: 'Ready',
-      },
-      {
-        step: '03',
-        tab: 'queries',
-        icon: MessageSquare,
-        title: 'Reply to lecturer queries',
-        description: 'Submit your explanation and evidence. Escalation is reserved for staff and admin.',
-        metric: pendingQueries > 0 ? `${pendingQueries} reply due` : 'No reply due',
-        state: pendingQueries > 0 ? 'attention' : 'complete',
-        statusLabel: pendingQueries > 0 ? 'Action' : 'Clear',
-      },
-      {
-        step: '04',
-        tab: 'reports',
-        icon: FileText,
-        title: 'Track your record',
-        description: 'Download your attendance history when you need a formal copy.',
-        metric: `${attendanceMarks} marks`,
-        state: attendanceMarks > 0 ? 'active' : 'queued',
-        statusLabel: 'Record',
-      },
-    ],
-  };
-};
 const SOCKET_BASE_URL = (() => {
   const fallback = 'http://localhost:5000';
   const raw = String(process.env.REACT_APP_API_URL || '').trim();
@@ -633,71 +464,6 @@ const ActionTile = ({ title, description }) => {
   </div>
   );
 };
-
-const WorkflowCommandStrip = ({ model, role, availableTabs, onOpenTab }) => (
-  <section className={`dashboard-workflow dashboard-workflow--${role}`}>
-    <div className="dashboard-workflow__orb dashboard-workflow__orb--one" />
-    <div className="dashboard-workflow__orb dashboard-workflow__orb--two" />
-    <div className="dashboard-workflow__header">
-      <div>
-        <p className="dashboard-workflow__eyebrow">{model.eyebrow}</p>
-        <h2>{model.title}</h2>
-        <p>{model.description}</p>
-      </div>
-      <div className="dashboard-workflow__focus">
-        <span>{model.focusLabel}</span>
-        <strong>{model.focusValue}</strong>
-      </div>
-    </div>
-
-    <div className="dashboard-workflow__grid">
-      {model.items.map((item) => {
-        const Icon = item.icon;
-        const canOpen = item.tab && availableTabs.includes(item.tab);
-        const content = (
-          <>
-            <div className="dashboard-workflow__item-head">
-              <span className="dashboard-workflow__step">{item.step}</span>
-              <span className={`dashboard-workflow__status is-${item.state}`}>{item.statusLabel}</span>
-            </div>
-            <div className="dashboard-workflow__item-body">
-              <div className="dashboard-workflow__icon">
-                <Icon className="h-5 w-5" />
-              </div>
-              <div>
-                <h3>{item.title}</h3>
-                <p>{item.description}</p>
-              </div>
-            </div>
-            <div className="dashboard-workflow__item-foot">
-              <span>{item.metric}</span>
-              {canOpen && <span>Open {TAB_LABELS[item.tab]}</span>}
-            </div>
-          </>
-        );
-
-        if (canOpen) {
-          return (
-            <button
-              type="button"
-              key={item.step}
-              className={`dashboard-workflow__item is-${item.state}`}
-              onClick={() => onOpenTab(item.tab)}
-            >
-              {content}
-            </button>
-          );
-        }
-
-        return (
-          <article key={item.step} className={`dashboard-workflow__item is-${item.state}`}>
-            {content}
-          </article>
-        );
-      })}
-    </div>
-  </section>
-);
 
 const Avatar = ({ person, photo, className = '' }) => (
   <div className={`dashboard-avatar ${className}`.trim()}>
@@ -2764,15 +2530,6 @@ const Dashboard = () => {
   }, [role]);
 
   const primaryStats = useMemo(() => stats.slice(0, 4), [stats]);
-  const workflowModel = useMemo(() => buildWorkflowModel({
-    role,
-    summary,
-    courses,
-    sessions,
-    queries,
-    history,
-    activeSession,
-  }), [activeSession, courses, history, queries, role, sessions, summary]);
   const recentActivity = useMemo(() => {
     if (notifications.length > 0) {
       return notifications.slice(0, 4);
@@ -3236,21 +2993,13 @@ const Dashboard = () => {
           {activeTab === 'overview' && (
             <div className="dashboard-overview">
               <section className="dashboard-welcome">
-                <p className="dashboard-welcome__eyebrow">{workflowModel.eyebrow}</p>
-                <h1>{role === 'admin' ? 'Control the attendance operation' : role === 'lecturer' ? 'Run today from one cockpit' : 'Your attendance path is clear'}, {user?.firstName || 'there'}</h1>
+                <h1>Welcome back, {user?.firstName || 'there'} <span className="wave" role="img" aria-label="waving hand">{'\u{1F44B}'}</span></h1>
                 <p>
-                  {role === 'admin' && 'Identity, courses, lecturer escalations, and reports are now organized as an executive workflow.'}
-                  {role === 'lecturer' && 'Sessions, attendance capture, student replies, and reports now follow a visible class workflow.'}
-                  {role === 'student' && 'Courses, check-in, lecturer query replies, and reports are laid out as the next best action.'}
+                  {role === 'admin' && 'System overview.'}
+                  {role === 'lecturer' && 'Your classes today.'}
+                  {role === 'student' && 'Today at a glance.'}
                 </p>
               </section>
-
-              <WorkflowCommandStrip
-                model={workflowModel}
-                role={role}
-                availableTabs={tabs}
-                onOpenTab={openWorkspaceTab}
-              />
 
               <div className="dashboard-stat-grid">
                 {primaryStats.map((stat, index) => (
@@ -3275,8 +3024,8 @@ const Dashboard = () => {
                     <div className="dashboard-card__meta">Vs last week</div>
                   </div>
                   <div className="dashboard-chart__summary">
-                    <strong>{attendanceTrendValues[attendanceTrendValues.length - 1]}%</strong>
-                    <span>Current trend</span>
+                    <span>{attendanceTrendValues[attendanceTrendValues.length - 1]}%</span>
+                    <small>Current trend</small>
                   </div>
                   <div className="dashboard-chart">
                     <svg viewBox="0 0 660 240" preserveAspectRatio="none">
@@ -3284,11 +3033,6 @@ const Dashboard = () => {
                         <linearGradient id="attendanceFill" x1="0%" x2="0%" y1="0%" y2="100%">
                           <stop offset="0%" stopColor="rgba(90,137,255,0.35)" />
                           <stop offset="100%" stopColor="rgba(90,137,255,0.02)" />
-                        </linearGradient>
-                        <linearGradient id="attendanceLine" x1="0%" x2="100%" y1="0%" y2="0%">
-                          <stop offset="0%" stopColor="#6ee7f9" />
-                          <stop offset="48%" stopColor="#5a89ff" />
-                          <stop offset="100%" stopColor="#7dd3fc" />
                         </linearGradient>
                       </defs>
                       {[0, 1, 2, 3].map((line) => (
@@ -3300,11 +3044,9 @@ const Dashboard = () => {
                         <circle key={index} cx={point.x} cy={point.y} r="5" className="dashboard-chart__point" />
                       ))}
                     </svg>
-                    <div className="dashboard-chart__caption">
-                      {role === 'student' && `${history[0]?.session?.course?.courseCode || 'No attendance yet'} - Keep up with your courses.`}
-                      {role === 'lecturer' && `${activeSession?.course?.courseCode || 'No active session'} - Open during class, close after.`}
-                      {role === 'admin' && `${summary?.totalCourses || 0} active courses - Registry, users, and reports are in the menu.`}
-                    </div>
+                    {role === 'student' && `${history[0]?.session?.course?.courseCode || 'No attendance yet'} - Keep up with your courses.`}
+                    {role === 'lecturer' && `${activeSession?.course?.courseCode || 'No active session'} - Open during class, close after.`}
+                    {role === 'admin' && `${summary?.totalCourses || 0} active courses - Registry, users, and reports are in the menu.`}
                   </div>
                 </section>
 
