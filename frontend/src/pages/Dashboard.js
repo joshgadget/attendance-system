@@ -465,6 +465,47 @@ const ActionTile = ({ title, description }) => {
   );
 };
 
+const MobileCommandCenter = ({ command, onOpenTab }) => {
+  if (!command) {
+    return null;
+  }
+
+  const PrimaryIcon = command.primaryIcon || LayoutDashboard;
+
+  return (
+    <section className="dashboard-mobile-command" aria-label="Mobile command center">
+      <div className="dashboard-mobile-command__hero">
+        <div>
+          <p className="dashboard-mobile-command__eyebrow">{command.eyebrow}</p>
+          <h2>{command.title}</h2>
+          <p>{command.description}</p>
+        </div>
+        <button type="button" className="dashboard-mobile-command__cta" onClick={() => onOpenTab(command.primaryTab)}>
+          <PrimaryIcon className="h-5 w-5" />
+          <span>{command.primaryLabel}</span>
+        </button>
+      </div>
+
+      <div className="dashboard-mobile-command__list">
+        {command.items.map((item) => {
+          const Icon = item.icon || LayoutDashboard;
+          return (
+            <button type="button" key={item.label} className="dashboard-mobile-command__item" onClick={() => onOpenTab(item.tab)}>
+              <span className={`dashboard-mobile-command__item-icon tone-${item.tone || 'blue'}`}>
+                <Icon className="h-4 w-4" />
+              </span>
+              <span>
+                <strong>{item.label}</strong>
+                <small>{item.value}</small>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+};
+
 const Avatar = ({ person, photo, className = '' }) => (
   <div className={`dashboard-avatar ${className}`.trim()}>
     {photo ? <img src={photo} alt={`${fullName(person)} avatar`} className="dashboard-avatar__image" /> : <span className="dashboard-avatar__fallback">{initialsFor(person)}</span>}
@@ -870,6 +911,9 @@ const Dashboard = () => {
   const [timetableFileName, setTimetableFileName] = useState('');
   const [lecturerRosterFileName, setLecturerRosterFileName] = useState('');
   const [lecturerRosterCourseId, setLecturerRosterCourseId] = useState('');
+  const [lecturerCourseRoster, setLecturerCourseRoster] = useState({ course: null, count: 0, enrollments: [] });
+  const [lecturerRosterStudentIdentifier, setLecturerRosterStudentIdentifier] = useState('');
+  const [rosterLoading, setRosterLoading] = useState(false);
   const [responseDrafts, setResponseDrafts] = useState({});
   const [responseEvidenceDrafts, setResponseEvidenceDrafts] = useState({});
   const [escalationDrafts, setEscalationDrafts] = useState({});
@@ -1182,6 +1226,33 @@ const Dashboard = () => {
       });
     }
   };
+
+  const loadLecturerCourseRoster = useCallback(async (courseId) => {
+    if (role !== 'lecturer' || !courseId) {
+      setLecturerCourseRoster({ course: null, count: 0, enrollments: [] });
+      return;
+    }
+
+    try {
+      setRosterLoading(true);
+      const response = await api.get(`/courses/${courseId}/enrollments`);
+      setLecturerCourseRoster(response.data.data || { course: null, count: 0, enrollments: [] });
+    } catch (actionError) {
+      setLecturerCourseRoster({ course: null, count: 0, enrollments: [] });
+      setMessage('', actionError.response?.data?.message || 'Course roster could not be loaded.');
+    } finally {
+      setRosterLoading(false);
+    }
+  }, [role]);
+
+  useEffect(() => {
+    if (role !== 'lecturer' || !lecturerRosterCourseId) {
+      setLecturerCourseRoster({ course: null, count: 0, enrollments: [] });
+      return;
+    }
+
+    loadLecturerCourseRoster(lecturerRosterCourseId);
+  }, [lecturerRosterCourseId, loadLecturerCourseRoster, role]);
 
   const loadSessionDetail = useCallback(async (sessionId) => {
     if (!sessionId) {
@@ -1910,11 +1981,77 @@ const Dashboard = () => {
       const missingCount = response.data.data?.missing?.length || 0;
       setMessage(`Roster import completed from ${file.name}. ${response.data.data?.count || 0} students linked.${missingCount ? ` ${missingCount} rows could not be matched.` : ''}`);
       await loadData(true);
+      await loadLecturerCourseRoster(lecturerRosterCourseId);
     } catch (actionError) {
       setMessage('', actionError.response?.data?.message || actionError.message || 'Student roster import failed.');
     } finally {
       setBusyAction('');
       event.target.value = '';
+    }
+  };
+
+  const handleAddLecturerRosterStudent = async (event) => {
+    event.preventDefault();
+    const identifier = lecturerRosterStudentIdentifier.trim();
+
+    if (!lecturerRosterCourseId) {
+      setMessage('', 'Choose a course before adding a student.');
+      return;
+    }
+
+    if (!identifier) {
+      setMessage('', 'Enter a matric number or email.');
+      return;
+    }
+
+    const studentPayload = identifier.includes('@')
+      ? { email: identifier.toLowerCase() }
+      : { matricNumber: identifier.toUpperCase() };
+
+    try {
+      setBusyAction('add-course-roster-student');
+      setMessage();
+      const response = await api.post(`/courses/${lecturerRosterCourseId}/enrollments/bulk`, { students: [studentPayload] });
+      const linkedCount = response.data.data?.count || 0;
+      const missing = response.data.data?.missing || [];
+
+      if (!linkedCount) {
+        setMessage('', missing.length ? `${missing[0]} was not found as an active student.` : 'No matching active student was found.');
+        return;
+      }
+
+      setLecturerRosterStudentIdentifier('');
+      setMessage('Student added to this course roster.');
+      await loadData(false);
+      await loadLecturerCourseRoster(lecturerRosterCourseId);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || actionError.message || 'Student could not be added.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleRemoveLecturerRosterStudent = async (enrollment) => {
+    if (!lecturerRosterCourseId || !enrollment?.id) {
+      return;
+    }
+
+    const studentName = fullName(enrollment.student);
+    if (!window.confirm(`Remove ${studentName} from this course roster?`)) {
+      return;
+    }
+
+    try {
+      setBusyAction(`remove-course-roster-${enrollment.id}`);
+      setMessage();
+      await api.delete(`/courses/${lecturerRosterCourseId}/enrollments/${enrollment.id}`);
+      setMessage('Student removed from this course roster.');
+      await loadData(false);
+      await loadLecturerCourseRoster(lecturerRosterCourseId);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || actionError.message || 'Student could not be removed.');
+    } finally {
+      setBusyAction('');
     }
   };
 
@@ -2231,6 +2368,14 @@ const Dashboard = () => {
   const selectedStudent = useMemo(
     () => students.find((entry) => String(entry.id) === String(selectedStudentId)) || null,
     [selectedStudentId, students]
+  );
+  const selectedLecturerRosterCourse = useMemo(
+    () => courses.find((entry) => String(entry.id) === String(lecturerRosterCourseId)) || lecturerCourseRoster.course || null,
+    [courses, lecturerCourseRoster.course, lecturerRosterCourseId]
+  );
+  const lecturerRosterEnrollments = useMemo(
+    () => lecturerCourseRoster.enrollments || [],
+    [lecturerCourseRoster.enrollments]
   );
   const groupedCourses = useMemo(() => {
     const departmentMap = new Map();
@@ -2584,6 +2729,61 @@ const Dashboard = () => {
       { title: 'Report export', subtitle: 'Faculty reports', time: '03:00 PM' },
     ];
   }, [courses, role, sessions]);
+
+  const mobileCommand = useMemo(() => {
+    const pendingQueries = queries.filter((query) => query.status === 'pending').length;
+    const respondedQueries = queries.filter((query) => query.status === 'responded').length;
+    const escalatedQueries = queries.filter((query) => query.escalationState === 'requested').length;
+    const latestAttendance = history[0];
+    const nextSession = activeSession || sessions[0] || null;
+    const nextCourse = courses[0] || null;
+
+    if (role === 'admin') {
+      return {
+        eyebrow: 'Mobile command',
+        title: escalatedQueries > 0 ? `${escalatedQueries} escalated query${escalatedQueries === 1 ? '' : 'ies'}` : 'Admin control center',
+        description: escalatedQueries > 0 ? 'Start with lecturer escalations before reports.' : 'Quickly check registry, courses, queries, and reports from your phone.',
+        primaryLabel: escalatedQueries > 0 || pendingQueries > 0 ? 'Review queries' : 'Open registry',
+        primaryTab: escalatedQueries > 0 || pendingQueries > 0 ? 'queries' : 'registry',
+        primaryIcon: escalatedQueries > 0 || pendingQueries > 0 ? MessageSquare : ShieldCheck,
+        items: [
+          { label: 'Registry', value: `${summary?.claimedRegistryRecords || 0}/${summary?.totalRegistryRecords || 0} claimed`, tab: 'registry', icon: ShieldCheck, tone: 'emerald' },
+          { label: 'Courses', value: `${summary?.totalCourses || courses.length || 0} active`, tab: 'courses', icon: BookOpen, tone: 'blue' },
+          { label: 'Reports', value: 'Export ready', tab: 'reports', icon: FileText, tone: 'slate' },
+        ],
+      };
+    }
+
+    if (role === 'lecturer') {
+      return {
+        eyebrow: 'Today on mobile',
+        title: activeSession ? `${activeSession.course?.courseCode || activeSession.sessionCode} is live` : 'Ready for your next class',
+        description: activeSession ? 'Monitor attendance and close the session when class ends.' : 'Start from sessions, then handle replies and exports.',
+        primaryLabel: activeSession ? 'Open session' : 'Start session',
+        primaryTab: 'sessions',
+        primaryIcon: Calendar,
+        items: [
+          { label: 'Queries', value: respondedQueries > 0 ? `${respondedQueries} need decision` : pendingQueries > 0 ? `${pendingQueries} waiting` : 'Clear', tab: 'queries', icon: MessageSquare, tone: respondedQueries > 0 ? 'amber' : 'blue' },
+          { label: 'Courses', value: `${summary?.totalCourses || courses.length || 0} assigned`, tab: 'courses', icon: BookOpen, tone: 'emerald' },
+          { label: 'Reports', value: 'Course exports', tab: 'reports', icon: FileText, tone: 'slate' },
+        ],
+      };
+    }
+
+    return {
+      eyebrow: 'Today at a glance',
+      title: pendingQueries > 0 ? `${pendingQueries} lecturer quer${pendingQueries === 1 ? 'y' : 'ies'} need reply` : 'Attendance ready',
+      description: nextCourse ? `${nextCourse.courseCode || 'Your next course'} is one tap away. Mark attendance when your lecturer opens class.` : 'Use the attendance tab when your class starts.',
+      primaryLabel: pendingQueries > 0 ? 'Reply now' : 'Mark attendance',
+      primaryTab: pendingQueries > 0 ? 'queries' : 'attendance',
+      primaryIcon: pendingQueries > 0 ? MessageSquare : CheckCircle2,
+      items: [
+        { label: 'Next class', value: nextCourse?.courseCode || nextSession?.course?.courseCode || 'No class yet', tab: 'courses', icon: BookOpen, tone: 'blue' },
+        { label: 'Latest mark', value: latestAttendance?.status || 'No mark yet', tab: 'attendance', icon: CheckCircle2, tone: latestAttendance?.status === 'late' ? 'amber' : 'emerald' },
+        { label: 'Reports', value: `${summary?.totalAttendanceMarks || history.length || 0} records`, tab: 'reports', icon: FileText, tone: 'slate' },
+      ],
+    };
+  }, [activeSession, courses, history, queries, role, sessions, summary]);
 
   const attendanceTrendValues = useMemo(() => {
     const series = role === 'student'
@@ -3000,6 +3200,8 @@ const Dashboard = () => {
                   {role === 'student' && 'Today at a glance.'}
                 </p>
               </section>
+
+              <MobileCommandCenter command={mobileCommand} onOpenTab={openWorkspaceTab} />
 
               <div className="dashboard-stat-grid">
                 {primaryStats.map((stat, index) => (
@@ -3840,11 +4042,76 @@ const Dashboard = () => {
                     </Panel>
                   )}
                   {role === 'lecturer' && (
-                    <Panel title="Import course roster" eyebrow="Lecturer student list">
-                      <div className="space-y-4">
-                        <Select label="Assigned course" value={lecturerRosterCourseId} onChange={(value) => setLecturerRosterCourseId(value)} options={[{ value: '', label: 'Choose course' }, ...courses.map((course) => ({ value: course.id, label: `${course.courseCode} - ${course.courseName}` }))]} />
-                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a CSV with matric number or email to enroll students.</p>
-                        <FileField label="Upload roster CSV" accept=".csv,text/csv" onChange={handleLecturerRosterCsvUpload} fileName={lecturerRosterFileName} />
+                    <Panel
+                      title="Course roster"
+                      eyebrow="Lecturer student list"
+                      action={<Badge tone={rosterLoading ? 'amber' : 'blue'}>{rosterLoading ? 'Loading' : `${lecturerRosterEnrollments.length} students`}</Badge>}
+                    >
+                      <div className="space-y-5">
+                        <div className="grid gap-4 lg:grid-cols-2">
+                          <Select label="Assigned course" value={lecturerRosterCourseId} onChange={(value) => setLecturerRosterCourseId(value)} options={[{ value: '', label: 'Choose course' }, ...courses.map((course) => ({ value: course.id, label: `${course.courseCode} - ${course.courseName}` }))]} />
+                          <form onSubmit={handleAddLecturerRosterStudent} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                            <Input label="Matric number or email" value={lecturerRosterStudentIdentifier} onChange={setLecturerRosterStudentIdentifier} placeholder="Matric number or email" />
+                            <ActionButton type="submit" disabled={busyAction === 'add-course-roster-student' || !lecturerRosterCourseId} className="justify-center">
+                              {busyAction === 'add-course-roster-student' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                              Add
+                            </ActionButton>
+                          </form>
+                        </div>
+
+                        <FileField label="Roster CSV" accept=".csv,text/csv" onChange={handleLecturerRosterCsvUpload} fileName={lecturerRosterFileName} />
+
+                        {selectedLecturerRosterCourse && (
+                          <div className="dashboard-callout rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-4 dark:border-blue-900/40 dark:bg-blue-950/30">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{selectedLecturerRosterCourse.courseCode} - {selectedLecturerRosterCourse.courseName}</p>
+                                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{selectedLecturerRosterCourse.semester} semester | {selectedLecturerRosterCourse.academicYear}</p>
+                              </div>
+                              <Badge tone="slate">{lecturerCourseRoster.count || lecturerRosterEnrollments.length} active</Badge>
+                            </div>
+                          </div>
+                        )}
+
+                        {rosterLoading ? (
+                          <div className="flex items-center gap-3 rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5 text-sm font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300">
+                            <LoaderCircle className="h-4 w-4 animate-spin" />
+                            Loading course roster
+                          </div>
+                        ) : lecturerRosterEnrollments.length > 0 ? (
+                          <div className="space-y-3">
+                            {lecturerRosterEnrollments.map((enrollment) => {
+                              const student = enrollment.student || {};
+                              return (
+                                <div key={enrollment.id} className="dashboard-record-card rounded-[1.25rem] border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/70">
+                                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="font-semibold text-slate-950 dark:text-slate-100">{fullName(student)}</p>
+                                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{student.matricNumber || 'No matric number'} | {student.email || 'No email'}</p>
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        <Badge tone="slate">{student.department || student.registryRecord?.department || 'No department'}</Badge>
+                                        <Badge tone="blue">{student.registryRecord?.level || 'No level'}</Badge>
+                                        <Badge tone="emerald">{enrollment.status}</Badge>
+                                      </div>
+                                    </div>
+                                    <ActionButton
+                                      type="button"
+                                      onClick={() => handleRemoveLecturerRosterStudent(enrollment)}
+                                      disabled={busyAction === `remove-course-roster-${enrollment.id}`}
+                                      variant="danger"
+                                      className="px-4 py-2"
+                                    >
+                                      {busyAction === `remove-course-roster-${enrollment.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                      Remove
+                                    </ActionButton>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <EmptyState title="No students linked" description={lecturerRosterCourseId ? 'This course roster is empty.' : 'Choose an assigned course.'} />
+                        )}
                       </div>
                     </Panel>
                   )}
@@ -4202,9 +4469,25 @@ const Dashboard = () => {
               </Panel>
             </div>
           )}
-        </div>
+            </div>
           </section>
         </main>
+        <nav className="dashboard-mobile-nav" aria-label="Mobile dashboard navigation">
+          {primaryTabs.slice(0, 5).map((tab) => {
+            const Icon = TAB_ICONS[tab] || LayoutDashboard;
+            return (
+              <button
+                type="button"
+                key={tab}
+                onClick={() => openWorkspaceTab(tab)}
+                className={`dashboard-mobile-nav__item ${activeTab === tab ? 'is-active' : ''}`}
+              >
+                <Icon className="h-5 w-5" />
+                <span>{TAB_LABELS[tab]}</span>
+              </button>
+            );
+          })}
+        </nav>
       </div>
     </div>
   );

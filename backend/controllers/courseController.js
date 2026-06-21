@@ -294,6 +294,51 @@ const courseInclude = [
   { model: CourseAudience, as: 'audiences', where: { isActive: true }, required: false },
 ];
 
+const rosterStudentInclude = [{
+  model: User,
+  as: 'student',
+  attributes: ['id', 'firstName', 'lastName', 'email', 'matricNumber', 'department', 'faculty', 'program', 'campus', 'isActive'],
+  where: { role: 'student', isActive: true },
+  include: [{
+    model: StudentRegistry,
+    as: 'registryRecord',
+    required: false,
+    attributes: ['id', 'level', 'program', 'department', 'faculty', 'campus'],
+  }],
+}];
+
+const assertCourseRosterAccess = async (courseId, user, options = {}) => {
+  const course = await Course.findByPk(courseId, {
+    include: options.includeDetails ? courseInclude : undefined,
+  });
+
+  if (!course) {
+    const error = new Error('Course not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (user.role === 'lecturer' && Number(course.lecturerId) !== Number(user.id)) {
+    const error = new Error('Not authorized to manage this course roster');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return course;
+};
+
+const dedupeRosterEnrollments = (enrollments = []) => {
+  const seen = new Set();
+  return enrollments.filter((enrollment) => {
+    if (!enrollment?.userId || seen.has(enrollment.userId)) {
+      return false;
+    }
+
+    seen.add(enrollment.userId);
+    return true;
+  });
+};
+
 const findLecturer = async ({ lecturerId, lecturerEmail }) => {
   if (lecturerId) {
     const lecturer = await User.findByPk(Number(lecturerId));
@@ -1064,16 +1109,52 @@ exports.clearCourseSchedules = async (req, res) => {
   }
 };
 
-exports.bulkEnrollStudentsForCourse = async (req, res) => {
+exports.getCourseEnrollments = async (req, res) => {
   try {
-    const course = await Course.findByPk(req.params.id);
-    if (!course) {
-      return res.status(404).json({ success: false, message: 'Course not found' });
+    const course = await assertCourseRosterAccess(req.params.id, req.user, { includeDetails: true });
+
+    const enrollmentQuery = {
+      where: {
+        courseId: course.id,
+        semester: course.semester,
+        academicYear: course.academicYear,
+        status: 'active',
+      },
+      include: rosterStudentInclude,
+      order: [['createdAt', 'ASC']],
+    };
+
+    let enrollments = await Enrollment.findAll(enrollmentQuery);
+
+    if (enrollments.length === 0) {
+      enrollments = await Enrollment.findAll({
+        where: {
+          courseId: course.id,
+          status: 'active',
+        },
+        include: rosterStudentInclude,
+        order: [['createdAt', 'ASC']],
+      });
     }
 
-    if (req.user.role === 'lecturer' && course.lecturerId !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Not authorized to enroll students for this course' });
-    }
+    const roster = dedupeRosterEnrollments(enrollments);
+
+    res.json({
+      success: true,
+      data: {
+        course,
+        count: roster.length,
+        enrollments: roster,
+      },
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, message: error.message });
+  }
+};
+
+exports.bulkEnrollStudentsForCourse = async (req, res) => {
+  try {
+    const course = await assertCourseRosterAccess(req.params.id, req.user);
 
     const { students, semester, academicYear } = req.body;
 
@@ -1155,6 +1236,51 @@ exports.bulkEnrollStudentsForCourse = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.removeCourseEnrollment = async (req, res) => {
+  try {
+    const course = await assertCourseRosterAccess(req.params.id, req.user);
+    const enrollment = await Enrollment.findOne({
+      where: {
+        id: req.params.enrollmentId,
+        courseId: course.id,
+      },
+      include: rosterStudentInclude,
+    });
+
+    if (!enrollment) {
+      return res.status(404).json({ success: false, message: 'Enrollment not found for this course' });
+    }
+
+    if (enrollment.status !== 'dropped') {
+      await enrollment.update({ status: 'dropped' });
+    }
+
+    await logAuditEvent({
+      req,
+      action: 'course.roster.student_removed',
+      targetType: 'enrollment',
+      targetId: enrollment.id,
+      campus: course.campus,
+      faculty: course.faculty,
+      department: course.department,
+      metadata: {
+        courseId: course.id,
+        courseCode: course.courseCode,
+        studentId: enrollment.userId,
+        matricNumber: enrollment.student?.matricNumber || null,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Student removed from course roster',
+      data: enrollment,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, message: error.message });
   }
 };
 

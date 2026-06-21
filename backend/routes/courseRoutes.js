@@ -13,7 +13,9 @@ router.post('/bulk', roleMiddleware('admin'), courseController.bulkUpsertCourses
 router.post('/timetable/pdf-import', roleMiddleware('admin'), courseController.importTimetablePdf);
 router.post('/schedules/bulk', roleMiddleware('admin'), courseController.bulkUpsertSchedules);
 router.delete('/schedules/:scheduleId', roleMiddleware('admin'), courseController.removeCourseSchedule);
+router.get('/:id/enrollments', roleMiddleware('admin', 'lecturer'), courseController.getCourseEnrollments);
 router.post('/:id/enrollments/bulk', roleMiddleware('admin', 'lecturer'), courseController.bulkEnrollStudentsForCourse);
+router.delete('/:id/enrollments/:enrollmentId', roleMiddleware('admin', 'lecturer'), courseController.removeCourseEnrollment);
 router.get('/:id', roleMiddleware('admin', 'lecturer'), courseController.getCourse);
 router.post('/', roleMiddleware('admin'), courseController.createCourse);
 router.put('/:id', roleMiddleware('admin'), courseController.updateCourse);
