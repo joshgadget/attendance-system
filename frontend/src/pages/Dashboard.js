@@ -19,6 +19,7 @@ import {
   LoaderCircle,
   LogOut,
   Mail,
+  Maximize2,
   Menu,
   MessageSquare,
   Moon,
@@ -673,7 +674,7 @@ const AdminRepairBay = ({
   );
 };
 
-const LiveClassConsole = ({ sessionDetail, qrDataUrl, busyAction, onCloseSession, onOpenQueries }) => {
+const LiveClassConsole = ({ sessionDetail, qrDataUrl, busyAction, onCloseSession, onOpenQueries, onOpenPresentation }) => {
   if (!sessionDetail) {
     return null;
   }
@@ -706,6 +707,10 @@ const LiveClassConsole = ({ sessionDetail, qrDataUrl, busyAction, onCloseSession
             <MessageSquare className="h-4 w-4" />
             Open follow-up
           </button>
+          <button type="button" onClick={onOpenPresentation} className="is-soft" disabled={!qrDataUrl}>
+            <Maximize2 className="h-4 w-4" />
+            Full-screen QR
+          </button>
         </div>
       </div>
       <div className="live-class-console__qr">
@@ -718,6 +723,44 @@ const LiveClassConsole = ({ sessionDetail, qrDataUrl, busyAction, onCloseSession
         <span>{sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'Attendance key unavailable'}</span>
       </div>
     </section>
+  );
+};
+
+const QrPresentationOverlay = ({ isOpen, sessionDetail, qrDataUrl, onClose }) => {
+  if (!isOpen || !sessionDetail) {
+    return null;
+  }
+
+  const stats = sessionDetail.attendanceStats || {};
+  const expected = Number(stats.expectedCount || 0);
+  const marked = Number(stats.markedCount || 0);
+
+  return (
+    <div className="qr-presentation" role="dialog" aria-modal="true" aria-label="Full-screen attendance QR code">
+      <button type="button" className="qr-presentation__close" onClick={onClose}>
+        <XCircle className="h-5 w-5" />
+        Close
+      </button>
+      <div className="qr-presentation__stage">
+        <div className="qr-presentation__qr">
+          {qrDataUrl ? (
+            <img src={qrDataUrl} alt="Attendance QR code" />
+          ) : (
+            <RadioTower className="h-24 w-24" />
+          )}
+        </div>
+        <div className="qr-presentation__stats">
+          <div>
+            <strong>{expected}</strong>
+            <span>expected students</span>
+          </div>
+          <div>
+            <strong>{marked}</strong>
+            <span>marked attendance</span>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -1119,6 +1162,7 @@ const Dashboard = () => {
   const [history, setHistory] = useState([]);
   const [sessionDetail, setSessionDetail] = useState(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
+  const [qrPresentationOpen, setQrPresentationOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [bulkRegistry, setBulkRegistry] = useState('');
   const [registryFileName, setRegistryFileName] = useState('');
@@ -1140,6 +1184,7 @@ const Dashboard = () => {
   const [studentEditForm, setStudentEditForm] = useState({ firstName: '', lastName: '', matricNumber: '', department: '', faculty: '', program: '' });
   const [enrollmentForm, setEnrollmentForm] = useState({ semester: 'rain', academicYear: new Date().getFullYear() + '/' + String(new Date().getFullYear() + 1).slice(-2), courseIds: [] });
   const [editingCourseId, setEditingCourseId] = useState('');
+  const [courseDirectoryCourseId, setCourseDirectoryCourseId] = useState('');
   const [courseEditForm, setCourseEditForm] = useState(initialCourseForm);
   const [reactivateDrafts, setReactivateDrafts] = useState({});
   const [linkForm, setLinkForm] = useState({ registryId: '', userId: '' });
@@ -1161,6 +1206,7 @@ const Dashboard = () => {
   const socketRef = useRef(null);
   const loadDataRef = useRef(null);
   const refreshTimerRef = useRef(null);
+  const createSessionPanelRef = useRef(null);
 
   const activeSession = useMemo(() => sessions.find((session) => session.status === 'active') || null, [sessions]);
 
@@ -1398,6 +1444,27 @@ const Dashboard = () => {
 
     return () => window.clearTimeout(timer);
   }, [liveNotification]);
+
+  useEffect(() => {
+    if (!qrPresentationOpen) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setQrPresentationOpen(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [qrPresentationOpen]);
+
+  useEffect(() => {
+    if (!sessionDetail) {
+      setQrPresentationOpen(false);
+    }
+  }, [sessionDetail]);
 
   useEffect(() => {
     setAccountMenuOpen(false);
@@ -1693,6 +1760,7 @@ const Dashboard = () => {
   };
  
   const handleStartCourseEdit = (course) => {
+    setCourseDirectoryCourseId(String(course.id));
     setEditingCourseId(String(course.id));
     setCourseEditForm({
       courseCode: course.courseCode || '',
@@ -1955,6 +2023,16 @@ const Dashboard = () => {
     return values.map((value) => value.replace(/^"|"$/g, ''));
   };
 
+  const parseTimeRange = (value = '') => {
+    const parts = String(value || '')
+      .trim()
+      .split(/\s*(?:-|–|—|\bto\b)\s*/i)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    return parts.length >= 2 ? [parts[0], parts[1]] : ['', ''];
+  };
+
   const fileToBase64 = async (file) => {
     const buffer = await file.arrayBuffer();
     const bytes = new Uint8Array(buffer);
@@ -2149,9 +2227,10 @@ const Dashboard = () => {
         });
 
         const courseCode = (row.coursecode || row.course || row.code || row.courseid || '').toUpperCase();
-        const dayOfWeek = row.dayofweek || row.weekday || row.day || '';
-        const startTime = row.starttime || row.start || row.timefrom || row.from || '';
-        const endTime = row.endtime || row.end || row.timeto || row.to || '';
+        const dayOfWeek = row.dayofweek || row.weekday || row.lectureday || row.day || '';
+        const [rangeStart, rangeEnd] = parseTimeRange(row.timerange || row.timeslot || row.period || row.time || row.hours || '');
+        const startTime = row.starttime || row.start || row.timefrom || row.from || rangeStart;
+        const endTime = row.endtime || row.end || row.timeto || row.to || rangeEnd;
         const academicYear = row.academicyear || row.academicsession || row.session || row.year || '';
         if (!courseCode || !dayOfWeek || !startTime || !endTime) {
           throw new Error('Each timetable row must include courseCode, dayOfWeek, startTime, and endTime');
@@ -2682,8 +2761,28 @@ const Dashboard = () => {
             level,
             items: items.sort((left, right) => String(left.courseCode || '').localeCompare(String(right.courseCode || ''))),
           })),
-      }));
+      })); 
   }, [filteredCourses]);
+  const courseDirectoryOptions = useMemo(() => groupedCourses.flatMap((departmentGroup) =>
+    departmentGroup.levels.flatMap((levelGroup) =>
+      levelGroup.items.map((course) => ({
+        value: String(course.id),
+        label: `${course.courseCode} - ${course.courseName} (${departmentGroup.department}, ${levelGroup.level})`,
+        course,
+      }))
+    )
+  ), [groupedCourses]);
+  const selectedDirectoryCourseId = useMemo(() => {
+    if (courseDirectoryCourseId && courseDirectoryOptions.some((option) => option.value === String(courseDirectoryCourseId))) {
+      return String(courseDirectoryCourseId);
+    }
+
+    return courseDirectoryOptions[0]?.value || '';
+  }, [courseDirectoryCourseId, courseDirectoryOptions]);
+  const selectedDirectoryCourse = useMemo(
+    () => courseDirectoryOptions.find((option) => option.value === selectedDirectoryCourseId)?.course || null,
+    [courseDirectoryOptions, selectedDirectoryCourseId]
+  );
   const groupedEnrollmentCourses = useMemo(() => {
     const currentYear = normalizeAcademicYearValue(enrollmentForm.academicYear);
     const relevantCourses = courses.filter((course) => {
@@ -3049,7 +3148,7 @@ const Dashboard = () => {
             title: activeSession ? 'Open live console' : 'Start session',
             description: activeSession ? `${activeSession.course?.courseCode || activeSession.sessionCode} is accepting attendance.` : 'Create the class session and generate the QR.',
             meta: 'Class control',
-            tab: 'sessions',
+            tab: activeSession ? 'sessions' : 'create-session',
             icon: RadioTower,
             tone: activeSession ? 'emerald' : 'blue',
           },
@@ -3202,7 +3301,14 @@ const Dashboard = () => {
   };
 
   const openWorkspaceTab = (tab) => {
-    setActiveTab(tab);
+    if (tab === 'create-session') {
+      setActiveTab('courses');
+      window.setTimeout(() => {
+        createSessionPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 120);
+    } else {
+      setActiveTab(tab);
+    }
     setAccountMenuOpen(false);
     setSidebarOpen(false);
   };
@@ -3440,6 +3546,12 @@ const Dashboard = () => {
           setLiveNotification(null);
         }}
         onClose={() => setLiveNotification(null)}
+      />
+      <QrPresentationOverlay
+        isOpen={qrPresentationOpen}
+        sessionDetail={sessionDetail}
+        qrDataUrl={qrDataUrl}
+        onClose={() => setQrPresentationOpen(false)}
       />
       <div className="dashboard-frame">
         <button
@@ -4513,6 +4625,7 @@ const Dashboard = () => {
                     </Panel>
                   )}
                   {role === 'lecturer' && (
+                    <div ref={createSessionPanelRef}>
                     <Panel title="Create an attendance session" eyebrow="Class operations">
                       <form onSubmit={handleCreateSession} className="dashboard-form-grid md:grid-cols-2">
                         <Select label="Course" value={sessionForm.courseId} onChange={(value) => setSessionForm((current) => ({ ...current, courseId: value }))} options={[{ value: '', label: 'Choose course' }, ...courses.map((course) => ({ value: course.id, label: `${course.courseCode} - ${course.courseName}` }))]} />
@@ -4546,6 +4659,7 @@ const Dashboard = () => {
                         </div>
                       </form>
                     </Panel>
+                    </div>
                   )}
                 </div>
               )}
@@ -4569,122 +4683,135 @@ const Dashboard = () => {
                       </div>
                     </div>
                   )}
-                  {groupedCourses.length > 0 ? groupedCourses.map((departmentGroup) => (
-                    <div key={`course-group-${departmentGroup.department}`} className="space-y-4">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-bold uppercase tracking-[0.18em] text-blue-600">{departmentGroup.department}</p>
-                          <p className="mt-1 text-sm text-slate-500">Grouped by department and level.</p>
+                  {courseDirectoryOptions.length > 0 ? (
+                    <>
+                      <div className="course-directory-picker">
+                        <Select
+                          label={role === 'student' ? 'Choose one of my courses' : 'Choose a course'}
+                          value={selectedDirectoryCourseId}
+                          onChange={(value) => {
+                            setCourseDirectoryCourseId(value);
+                            setEditingCourseId('');
+                          }}
+                          options={courseDirectoryOptions.map(({ value, label }) => ({ value, label }))}
+                        />
+                        <div className="course-directory-picker__meta">
+                          <Badge tone="slate">{courseDirectoryOptions.length} courses</Badge>
+                          <span>Pick a course to inspect lecturer, status, and timetable slots.</span>
                         </div>
-                        <Badge tone="slate">{departmentGroup.levels.reduce((sum, levelGroup) => sum + levelGroup.items.length, 0)} courses</Badge>
                       </div>
-                      {departmentGroup.levels.map((levelGroup) => (
-                        <div key={`course-level-${departmentGroup.department}-${levelGroup.level}`} className="space-y-3">
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{levelGroup.level}</p>
-                          <div className="space-y-4">
-                            {levelGroup.items.map((course) => (
-                              <div key={course.id} className="dashboard-record-card rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                  <div>
-                                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">{course.courseCode}</p>
-                                    <p className="mt-2 text-lg font-bold text-slate-950">{course.courseName}</p>
-                                    <p className="mt-2 text-sm text-slate-500">{course.semester} semester | {course.academicYear}</p>
-                                    {course.campus && <p className="mt-1 text-sm text-slate-500">Campus: {course.campus}</p>}
-                                    <p className="mt-1 text-sm text-slate-500">Lecturer: {course.lecturer ? fullName(course.lecturer) : 'Unassigned'}</p>
-                                    {course.enrollment && <p className="mt-1 text-sm text-slate-500">Enrollment status: {course.enrollment.status}</p>}
-                                    {course.schedules?.length > 0 && (
-                                      <div className="mt-3 space-y-3">
-                                        <div className="flex flex-wrap gap-2">
-                                        {course.schedules.map((schedule) => (
-                                          <span key={`${course.id}-${schedule.id}`} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                                            <span>{schedule.dayOfWeek} {formatTime(schedule.startTime)}-{formatTime(schedule.endTime)}{schedule.venue ? ` | ${schedule.venue}` : ''}</span>
-                                            {role === 'admin' && (
-                                              <button
-                                                type="button"
-                                                onClick={() => handleRemoveCourseSchedule(schedule.id)}
-                                                disabled={busyAction === `remove-schedule-${schedule.id}`}
-                                                className="inline-flex h-5 w-5 items-center justify-center rounded-full text-rose-600 transition hover:bg-rose-50 disabled:opacity-60"
-                                                aria-label={`Remove timetable slot for ${course.courseCode}`}
-                                              >
-                                                {busyAction === `remove-schedule-${schedule.id}` ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                                              </button>
-                                            )}
-                                          </span>
-                                        ))}
-                                        </div>
-                                        {role === 'admin' && (
-                                          <ActionButton onClick={() => handleClearCourseSchedules(course.id)} disabled={busyAction === `clear-course-schedules-${course.id}`} type="button" variant="danger" className="px-4 py-2">
-                                            {busyAction === `clear-course-schedules-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                                            Remove course timetable
-                                          </ActionButton>
-                                        )}
-                                      </div>
+
+                      {selectedDirectoryCourse && (
+                        <div key={selectedDirectoryCourse.id} className="dashboard-record-card rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-5">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">{selectedDirectoryCourse.courseCode}</p>
+                              <p className="mt-2 text-lg font-bold text-slate-950">{selectedDirectoryCourse.courseName}</p>
+                              <p className="mt-2 text-sm text-slate-500">{selectedDirectoryCourse.semester} semester | {selectedDirectoryCourse.academicYear}</p>
+                              {selectedDirectoryCourse.campus && <p className="mt-1 text-sm text-slate-500">Campus: {selectedDirectoryCourse.campus}</p>}
+                              <p className="mt-1 text-sm text-slate-500">Lecturer: {selectedDirectoryCourse.lecturer ? fullName(selectedDirectoryCourse.lecturer) : 'Unassigned'}</p>
+                              {selectedDirectoryCourse.enrollment && <p className="mt-1 text-sm text-slate-500">Enrollment status: {selectedDirectoryCourse.enrollment.status}</p>}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Badge tone={selectedDirectoryCourse.isActive === false ? 'rose' : 'emerald'}>{selectedDirectoryCourse.isActive === false ? 'archived' : 'active'}</Badge>
+                              {!selectedDirectoryCourse.lecturerId && !selectedDirectoryCourse.lecturer && <Badge tone="amber">unassigned</Badge>}
+                              {!selectedDirectoryCourse.schedules?.length && <Badge tone="rose">no timetable</Badge>}
+                              <Badge tone="slate">{getCourseDepartmentLabel(selectedDirectoryCourse)}</Badge>
+                              <Badge tone="blue">{getCourseLevelLabel(selectedDirectoryCourse)}</Badge>
+                              {selectedDirectoryCourse.enrollment && <Badge tone="blue">enrolled</Badge>}
+                            </div>
+                          </div>
+
+                          <div className="course-directory-timetable">
+                            <div className="course-directory-timetable__header">
+                              <div>
+                                <p>Timetable</p>
+                                <h3>{selectedDirectoryCourse.schedules?.length ? `${selectedDirectoryCourse.schedules.length} active slot${selectedDirectoryCourse.schedules.length === 1 ? '' : 's'}` : 'No timetable slots yet'}</h3>
+                              </div>
+                              {role === 'admin' && selectedDirectoryCourse.schedules?.length > 0 && (
+                                <ActionButton onClick={() => handleClearCourseSchedules(selectedDirectoryCourse.id)} disabled={busyAction === `clear-course-schedules-${selectedDirectoryCourse.id}`} type="button" variant="danger" className="px-4 py-2">
+                                  {busyAction === `clear-course-schedules-${selectedDirectoryCourse.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                  Remove timetable
+                                </ActionButton>
+                              )}
+                            </div>
+                            {selectedDirectoryCourse.schedules?.length > 0 ? (
+                              <div className="course-directory-timetable__slots">
+                                {selectedDirectoryCourse.schedules.map((schedule) => (
+                                  <span key={`${selectedDirectoryCourse.id}-${schedule.id}`} className="course-directory-timetable__slot">
+                                    <span>{schedule.dayOfWeek} {formatTime(schedule.startTime)}-{formatTime(schedule.endTime)}{schedule.venue ? ` | ${schedule.venue}` : ''}</span>
+                                    {role === 'admin' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveCourseSchedule(schedule.id)}
+                                        disabled={busyAction === `remove-schedule-${schedule.id}`}
+                                        aria-label={`Remove timetable slot for ${selectedDirectoryCourse.courseCode}`}
+                                      >
+                                        {busyAction === `remove-schedule-${schedule.id}` ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                                      </button>
                                     )}
-                                  </div>
-                                  <div className="flex flex-wrap gap-2">
-                                    <Badge tone={course.isActive === false ? 'rose' : 'emerald'}>{course.isActive === false ? 'archived' : 'active'}</Badge>
-                                    {!course.lecturerId && !course.lecturer && <Badge tone="amber">unassigned</Badge>}
-                                    {!course.schedules?.length && <Badge tone="rose">no timetable</Badge>}
-                                    <Badge tone="slate">{getCourseDepartmentLabel(course)}</Badge>
-                                    <Badge tone="blue">{getCourseLevelLabel(course)}</Badge>
-                                    {course.enrollment && <Badge tone="blue">enrolled</Badge>}
-                                  </div>
-                                </div>
-                                {role === 'admin' && (
-                                  <div className="mt-4 space-y-4">
-                                    <div className="flex flex-wrap gap-2">
-                                      {editingCourseId === String(course.id) ? (
-                                        <ActionButton onClick={handleCancelCourseEdit} type="button" variant="secondary" className="px-4 py-2">
-                                          Cancel edit
-                                        </ActionButton>
-                                      ) : (
-                                        <ActionButton onClick={() => handleStartCourseEdit(course)} type="button" variant="soft" className="px-4 py-2">
-                                          Edit course
-                                        </ActionButton>
-                                      )}
-                                      {course.isActive !== false && (
-                                        <ActionButton onClick={() => handleArchiveCourse(course.id)} disabled={busyAction === `archive-course-${course.id}`} variant="warning" className="px-4 py-2">
-                                          {busyAction === `archive-course-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
-                                          Archive course
-                                        </ActionButton>
-                                      )}
-                                    </div>
-                                    {editingCourseId === String(course.id) && (
-                                      <form onSubmit={(event) => handleUpdateCourse(event, course.id)} className="dashboard-form-grid dashboard-form-grid--nested rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-4 md:grid-cols-2">
-                                        <Input label="Course code" value={courseEditForm.courseCode} onChange={(value) => setCourseEditForm((current) => ({ ...current, courseCode: value.toUpperCase() }))} />
-                                        <Input label="Course name" value={courseEditForm.courseName} onChange={(value) => setCourseEditForm((current) => ({ ...current, courseName: value }))} />
-                                        <Select label="Semester" value={courseEditForm.semester} onChange={(value) => setCourseEditForm((current) => ({ ...current, semester: value }))} options={[{ value: 'rain', label: 'Rain' }, { value: 'harmattan', label: 'Harmattan' }]} />
-                                        <Select label="Academic year" value={courseEditForm.academicYear} onChange={(value) => setCourseEditForm((current) => ({ ...current, academicYear: value }))} options={buildSelectOptions(adminMetadataOptions.academicYears, 'Choose academic year', courseEditForm.academicYear)} />
-                                        <Select label="Faculty" value={courseEditForm.faculty} onChange={(value) => setCourseEditForm((current) => ({ ...current, faculty: value }))} options={buildSelectOptions(adminMetadataOptions.faculties, 'Choose faculty', courseEditForm.faculty)} />
-                                        <Select label="Department" value={courseEditForm.department} onChange={(value) => setCourseEditForm((current) => ({ ...current, department: value }))} options={buildSelectOptions(adminMetadataOptions.departments, 'Choose department', courseEditForm.department)} />
-                                        <Select label="Program" value={courseEditForm.program} onChange={(value) => setCourseEditForm((current) => ({ ...current, program: value }))} options={buildSelectOptions(adminMetadataOptions.programs, 'Choose program', courseEditForm.program)} />
-                                        <Select label="Campus" value={courseEditForm.campus} onChange={(value) => setCourseEditForm((current) => ({ ...current, campus: value }))} options={buildSelectOptions(adminMetadataOptions.campuses, 'Choose campus', courseEditForm.campus)} />
-                                        <Select label="Level" value={courseEditForm.level} onChange={(value) => setCourseEditForm((current) => ({ ...current, level: value }))} options={buildSelectOptions(adminMetadataOptions.levels, 'Choose level', courseEditForm.level)} />
-                                        <Select label="Assign lecturer" value={courseEditForm.lecturerId} onChange={(value) => setCourseEditForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Unassigned' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
-                                        <TextAreaField label="Description" value={courseEditForm.description} onChange={(value) => setCourseEditForm((current) => ({ ...current, description: value }))} />
-                                        <div className="md:col-span-2">
-                                          <ActionButton type="submit" disabled={busyAction === `update-course-${course.id}`}>
-                                            {busyAction === `update-course-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
-                                            Save course changes
-                                          </ActionButton>
-                                        </div>
-                                      </form>
-                                    )}
-                                  </div>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="course-directory-timetable__empty">
+                                Upload a timetable CSV/PDF or edit this course after import. Reminder cues cannot run until at least one active slot exists.
+                              </p>
+                            )}
+                          </div>
+
+                          {role === 'admin' && (
+                            <div className="mt-4 space-y-4">
+                              <div className="flex flex-wrap gap-2">
+                                {editingCourseId === String(selectedDirectoryCourse.id) ? (
+                                  <ActionButton onClick={handleCancelCourseEdit} type="button" variant="secondary" className="px-4 py-2">
+                                    Cancel edit
+                                  </ActionButton>
+                                ) : (
+                                  <ActionButton onClick={() => handleStartCourseEdit(selectedDirectoryCourse)} type="button" variant="soft" className="px-4 py-2">
+                                    Edit course
+                                  </ActionButton>
                                 )}
-                                {role === 'lecturer' && (
-                                  <div className="mt-4 flex flex-wrap gap-2">
-                                    <ActionButton onClick={() => handleDownloadReport(course.id, 'csv')} disabled={busyAction === `download-csv-${course.id}`} variant="soft" className="px-4 py-2">{busyAction === `download-csv-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download CSV</ActionButton>
-                                    <ActionButton onClick={() => handleDownloadReport(course.id, 'pdf')} disabled={busyAction === `download-pdf-${course.id}`} variant="secondary" className="px-4 py-2">{busyAction === `download-pdf-${course.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download PDF</ActionButton>
-                                  </div>
+                                {selectedDirectoryCourse.isActive !== false && (
+                                  <ActionButton onClick={() => handleArchiveCourse(selectedDirectoryCourse.id)} disabled={busyAction === `archive-course-${selectedDirectoryCourse.id}`} variant="warning" className="px-4 py-2">
+                                    {busyAction === `archive-course-${selectedDirectoryCourse.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                                    Archive course
+                                  </ActionButton>
                                 )}
                               </div>
-                            ))}
-                          </div>
+                              {editingCourseId === String(selectedDirectoryCourse.id) && (
+                                <form onSubmit={(event) => handleUpdateCourse(event, selectedDirectoryCourse.id)} className="dashboard-form-grid dashboard-form-grid--nested rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-4 md:grid-cols-2">
+                                  <Input label="Course code" value={courseEditForm.courseCode} onChange={(value) => setCourseEditForm((current) => ({ ...current, courseCode: value.toUpperCase() }))} />
+                                  <Input label="Course name" value={courseEditForm.courseName} onChange={(value) => setCourseEditForm((current) => ({ ...current, courseName: value }))} />
+                                  <Select label="Semester" value={courseEditForm.semester} onChange={(value) => setCourseEditForm((current) => ({ ...current, semester: value }))} options={[{ value: 'rain', label: 'Rain' }, { value: 'harmattan', label: 'Harmattan' }]} />
+                                  <Select label="Academic year" value={courseEditForm.academicYear} onChange={(value) => setCourseEditForm((current) => ({ ...current, academicYear: value }))} options={buildSelectOptions(adminMetadataOptions.academicYears, 'Choose academic year', courseEditForm.academicYear)} />
+                                  <Select label="Faculty" value={courseEditForm.faculty} onChange={(value) => setCourseEditForm((current) => ({ ...current, faculty: value }))} options={buildSelectOptions(adminMetadataOptions.faculties, 'Choose faculty', courseEditForm.faculty)} />
+                                  <Select label="Department" value={courseEditForm.department} onChange={(value) => setCourseEditForm((current) => ({ ...current, department: value }))} options={buildSelectOptions(adminMetadataOptions.departments, 'Choose department', courseEditForm.department)} />
+                                  <Select label="Program" value={courseEditForm.program} onChange={(value) => setCourseEditForm((current) => ({ ...current, program: value }))} options={buildSelectOptions(adminMetadataOptions.programs, 'Choose program', courseEditForm.program)} />
+                                  <Select label="Campus" value={courseEditForm.campus} onChange={(value) => setCourseEditForm((current) => ({ ...current, campus: value }))} options={buildSelectOptions(adminMetadataOptions.campuses, 'Choose campus', courseEditForm.campus)} />
+                                  <Select label="Level" value={courseEditForm.level} onChange={(value) => setCourseEditForm((current) => ({ ...current, level: value }))} options={buildSelectOptions(adminMetadataOptions.levels, 'Choose level', courseEditForm.level)} />
+                                  <Select label="Assign lecturer" value={courseEditForm.lecturerId} onChange={(value) => setCourseEditForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Unassigned' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
+                                  <TextAreaField label="Description" value={courseEditForm.description} onChange={(value) => setCourseEditForm((current) => ({ ...current, description: value }))} />
+                                  <div className="md:col-span-2">
+                                    <ActionButton type="submit" disabled={busyAction === `update-course-${selectedDirectoryCourse.id}`}>
+                                      {busyAction === `update-course-${selectedDirectoryCourse.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
+                                      Save course changes
+                                    </ActionButton>
+                                  </div>
+                                </form>
+                              )}
+                            </div>
+                          )}
+                          {role === 'lecturer' && (
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              <ActionButton onClick={() => handleDownloadReport(selectedDirectoryCourse.id, 'csv')} disabled={busyAction === `download-csv-${selectedDirectoryCourse.id}`} variant="soft" className="px-4 py-2">{busyAction === `download-csv-${selectedDirectoryCourse.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download CSV</ActionButton>
+                              <ActionButton onClick={() => handleDownloadReport(selectedDirectoryCourse.id, 'pdf')} disabled={busyAction === `download-pdf-${selectedDirectoryCourse.id}`} variant="secondary" className="px-4 py-2">{busyAction === `download-pdf-${selectedDirectoryCourse.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download PDF</ActionButton>
+                            </div>
+                          )}
                         </div>
-                      ))}
-                    </div>
-                  )) : <EmptyState title="No courses available" description={role === 'student' ? 'No active enrollments were found for your account yet.' : 'Create a course or update your search.'} />}
+                      )}
+                    </>
+                  ) : <EmptyState title="No courses available" description={role === 'student' ? 'No active enrollments were found for your account yet.' : 'Create a course or update your search.'} />}
                 </div>
               </Panel>
             </div>
@@ -4711,6 +4838,7 @@ const Dashboard = () => {
                     qrDataUrl={qrDataUrl}
                     busyAction={busyAction}
                     onCloseSession={handleCloseSession}
+                    onOpenPresentation={() => setQrPresentationOpen(true)}
                     onOpenQueries={() => {
                       setQueryForm((current) => ({ ...current, sessionId: String(sessionDetail.id) }));
                       setActiveTab('queries');

@@ -1203,6 +1203,208 @@
   text-transform: uppercase;
 }
 
+.qr-presentation {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 14% 18%, rgba(34, 211, 238, 0.20), transparent 26%),
+    radial-gradient(circle at 88% 8%, rgba(16, 185, 129, 0.22), transparent 22%),
+    linear-gradient(135deg, #020617 0%, #051d18 56%, #020617 100%);
+  color: #f8fafc;
+  padding: clamp(18px, 4vw, 48px);
+}
+
+.qr-presentation__close {
+  position: fixed;
+  right: clamp(16px, 3vw, 34px);
+  top: clamp(16px, 3vw, 34px);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.52);
+  color: #d1fae5;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 900;
+  padding: 12px 16px;
+  backdrop-filter: blur(16px);
+}
+
+.qr-presentation__stage {
+  display: grid;
+  width: min(94vw, 1180px);
+  gap: clamp(24px, 4vw, 42px);
+  justify-items: center;
+}
+
+.qr-presentation__qr {
+  display: grid;
+  width: min(68vh, 72vw, 620px);
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid rgba(167, 243, 208, 0.26);
+  border-radius: clamp(28px, 4vw, 56px);
+  background: #fff;
+  box-shadow:
+    0 34px 90px rgba(16, 185, 129, 0.24),
+    0 0 0 18px rgba(255, 255, 255, 0.04);
+  padding: clamp(18px, 3vw, 34px);
+}
+
+.qr-presentation__qr img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.qr-presentation__qr svg {
+  color: #047857;
+}
+
+.qr-presentation__stats {
+  display: grid;
+  width: min(860px, 100%);
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.qr-presentation__stats div {
+  border: 1px solid rgba(167, 243, 208, 0.18);
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.075);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  padding: clamp(18px, 3vw, 30px);
+  text-align: center;
+}
+
+.qr-presentation__stats strong,
+.qr-presentation__stats span {
+  display: block;
+}
+
+.qr-presentation__stats strong {
+  font-size: clamp(3rem, 8vw, 6.8rem);
+  font-weight: 950;
+  letter-spacing: -0.08em;
+  line-height: 0.9;
+}
+
+.qr-presentation__stats span {
+  margin-top: 12px;
+  color: #a7f3d0;
+  font-size: clamp(0.82rem, 1.6vw, 1.05rem);
+  font-weight: 950;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.course-directory-picker {
+  display: grid;
+  gap: 16px;
+  align-items: end;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 0.36fr);
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(14, 165, 233, 0.16), transparent 28%),
+    rgba(255, 255, 255, 0.035);
+  padding: 18px;
+}
+
+.course-directory-picker__meta {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.course-directory-picker__meta span:last-child {
+  color: #9aa2c5;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.course-directory-timetable {
+  margin-top: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 22px;
+  background: rgba(15, 23, 42, 0.18);
+  padding: 16px;
+}
+
+.course-directory-timetable__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.course-directory-timetable__header p {
+  margin: 0;
+  color: #38bdf8;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.course-directory-timetable__header h3 {
+  margin: 6px 0 0;
+  color: #f8fafc;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.course-directory-timetable__slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.course-directory-timetable__slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.09);
+  color: #dbeafe;
+  font-size: 0.78rem;
+  font-weight: 850;
+  padding: 8px 10px 8px 12px;
+}
+
+.course-directory-timetable__slot button {
+  display: inline-grid;
+  height: 22px;
+  width: 22px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(244, 63, 94, 0.12);
+  color: #fb7185;
+  cursor: pointer;
+}
+
+.course-directory-timetable__empty {
+  margin: 14px 0 0;
+  border: 1px dashed rgba(251, 191, 36, 0.28);
+  border-radius: 18px;
+  background: rgba(251, 191, 36, 0.08);
+  color: #fcd34d;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  padding: 14px;
+}
+
 .dashboard-panel {
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 24px;
@@ -1620,6 +1822,34 @@
   color: #0f172a;
 }
 
+.dashboard-shell--light .course-directory-picker,
+.dashboard-shell--light .course-directory-timetable {
+  border-color: rgba(148, 163, 184, 0.18);
+  background:
+    radial-gradient(circle at 92% 0%, rgba(14, 165, 233, 0.12), transparent 28%),
+    rgba(255, 255, 255, 0.74);
+}
+
+.dashboard-shell--light .course-directory-picker__meta span:last-child,
+.dashboard-shell--light .course-directory-timetable__empty {
+  color: #475569;
+}
+
+.dashboard-shell--light .course-directory-timetable__header h3 {
+  color: #0f172a;
+}
+
+.dashboard-shell--light .course-directory-timetable__slot {
+  border-color: rgba(37, 99, 235, 0.16);
+  background: rgba(37, 99, 235, 0.07);
+  color: #1e3a8a;
+}
+
+.dashboard-shell--light .course-directory-timetable__empty {
+  border-color: rgba(245, 158, 11, 0.26);
+  background: rgba(254, 243, 199, 0.52);
+}
+
 @media (max-width: 1279px) {
   .dashboard-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1891,7 +2121,8 @@
   .mission-control__grid,
   .admin-repair-bay__columns,
   .admin-repair-bay__imports,
-  .live-class-console {
+  .live-class-console,
+  .course-directory-picker {
     grid-template-columns: 1fr;
   }
 
@@ -1913,6 +2144,10 @@
 
   .live-class-console__qr {
     min-height: 0;
+  }
+
+  .course-directory-timetable__header {
+    display: grid;
   }
 
   .dashboard-stat-grid {
@@ -2063,7 +2298,12 @@
 
 @media (max-width: 520px) {
   .live-class-console__metrics,
-  .import-intel__metrics {
+  .import-intel__metrics,
+  .qr-presentation__stats {
     grid-template-columns: 1fr;
+  }
+
+  .qr-presentation__qr {
+    width: min(78vw, 430px);
   }
 }

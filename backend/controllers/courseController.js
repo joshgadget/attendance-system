@@ -31,7 +31,7 @@ const normalizeDayOfWeek = (value = '') => {
 };
 
 const normalizeTime = (value = '') => {
-  const trimmed = String(value).trim();
+  const trimmed = String(value).trim().toLowerCase().replace(/\./g, ':').replace(/\s+/g, ' ');
   if (!trimmed) {
     return '';
   }
@@ -44,7 +44,45 @@ const normalizeTime = (value = '') => {
     return `${trimmed}:00`;
   }
 
-  return '';
+  const match = trimmed.match(/^(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*(am|pm)?$/i);
+  if (!match) {
+    return '';
+  }
+
+  let hour = Number(match[1]);
+  const minute = Number(match[2] || '0');
+  const second = Number(match[3] || '0');
+  const meridian = match[4];
+
+  if (minute > 59 || second > 59) {
+    return '';
+  }
+
+  if (meridian) {
+    if (hour < 1 || hour > 12) {
+      return '';
+    }
+    if (meridian === 'pm' && hour !== 12) {
+      hour += 12;
+    }
+    if (meridian === 'am' && hour === 12) {
+      hour = 0;
+    }
+  } else if (hour > 23) {
+    return '';
+  }
+
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+};
+
+const parseTimeRange = (value = '') => {
+  const parts = String(value || '')
+    .trim()
+    .split(/\s*(?:-|–|—|\bto\b)\s*/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return parts.length >= 2 ? [parts[0], parts[1]] : ['', ''];
 };
 
 const formatTimeLabel = (value = '') => String(value).slice(0, 5);
@@ -657,9 +695,10 @@ exports.bulkUpsertSchedules = async (req, res) => {
 
     for (const entry of schedules) {
       const courseCode = normalizeCourseCode(entry.courseCode || '');
-      const dayOfWeek = normalizeDayOfWeek(entry.dayOfWeek);
-      const startTime = normalizeTime(entry.startTime);
-      const endTime = normalizeTime(entry.endTime);
+      const dayOfWeek = normalizeDayOfWeek(entry.dayOfWeek || entry.weekday || entry.lectureDay);
+      const [rangeStart, rangeEnd] = parseTimeRange(entry.timeRange || entry.timeSlot || entry.period || entry.time || entry.hours || '');
+      const startTime = normalizeTime(entry.startTime || entry.timeFrom || entry.from || rangeStart);
+      const endTime = normalizeTime(entry.endTime || entry.timeTo || entry.to || rangeEnd);
       const normalizedEntry = normalizeInstitutionPayload(entry, {
         academicYear: 'academicYear',
         faculty: 'faculty',
