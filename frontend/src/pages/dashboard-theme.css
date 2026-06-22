@@ -652,6 +652,557 @@
   line-height: 1.55;
 }
 
+.mission-control {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(56, 189, 248, 0.20), transparent 28%),
+    radial-gradient(circle at 92% 6%, rgba(250, 204, 21, 0.16), transparent 18%),
+    linear-gradient(145deg, rgba(12, 18, 31, 0.98), rgba(22, 27, 43, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 24px 70px rgba(2, 8, 23, 0.28);
+  padding: clamp(22px, 4vw, 34px);
+}
+
+.mission-control::after {
+  position: absolute;
+  inset: auto -8% -42% 42%;
+  height: 220px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.15);
+  filter: blur(22px);
+  content: '';
+}
+
+.mission-control__header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+}
+
+.mission-control__header p,
+.admin-repair-bay__hero p,
+.live-class-console__copy > p,
+.import-intel__eyebrow {
+  margin: 0;
+  color: #7dd3fc;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.mission-control__header h2,
+.admin-repair-bay__hero h2,
+.live-class-console__copy h2 {
+  margin: 10px 0 0;
+  color: #fbfdff;
+  font-size: clamp(1.6rem, 3.4vw, 2.55rem);
+  font-weight: 900;
+  letter-spacing: -0.065em;
+  line-height: 1.02;
+}
+
+.mission-control__header span,
+.admin-repair-bay__hero span,
+.live-class-console__copy > span {
+  display: block;
+  max-width: 62ch;
+  margin-top: 12px;
+  color: #aab7cd;
+  font-size: 0.98rem;
+  line-height: 1.65;
+}
+
+.mission-control__signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(125, 211, 252, 0.24);
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.12);
+  color: #e0f2fe;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 10px 14px;
+  white-space: nowrap;
+}
+
+.mission-control__grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 26px;
+}
+
+.mission-control__card {
+  position: relative;
+  overflow: hidden;
+  min-height: 190px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.045);
+  color: inherit;
+  cursor: pointer;
+  padding: 20px;
+  text-align: left;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.mission-control__card:hover {
+  border-color: rgba(125, 211, 252, 0.36);
+  background: rgba(255, 255, 255, 0.07);
+  transform: translateY(-3px);
+}
+
+.mission-control__card::before {
+  position: absolute;
+  right: -38px;
+  top: -42px;
+  height: 118px;
+  width: 118px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.22);
+  content: '';
+}
+
+.mission-control__card.tone-amber::before {
+  background: rgba(245, 158, 11, 0.24);
+}
+
+.mission-control__card.tone-emerald::before {
+  background: rgba(16, 185, 129, 0.22);
+}
+
+.mission-control__card.tone-rose::before {
+  background: rgba(244, 63, 94, 0.22);
+}
+
+.mission-control__card.tone-slate::before {
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.mission-control__step {
+  display: inline-flex;
+  color: rgba(226, 232, 240, 0.62);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
+.mission-control__icon {
+  display: grid;
+  height: 46px;
+  width: 46px;
+  margin-top: 22px;
+  place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #2563eb, #0ea5e9);
+  color: #fff;
+}
+
+.mission-control__card.tone-amber .mission-control__icon {
+  background: linear-gradient(145deg, #f59e0b, #d97706);
+}
+
+.mission-control__card.tone-emerald .mission-control__icon {
+  background: linear-gradient(145deg, #10b981, #059669);
+}
+
+.mission-control__card.tone-rose .mission-control__icon {
+  background: linear-gradient(145deg, #f43f5e, #be123c);
+}
+
+.mission-control__card.tone-slate .mission-control__icon {
+  background: linear-gradient(145deg, #64748b, #334155);
+}
+
+.mission-control__card strong,
+.mission-control__card small,
+.mission-control__card em {
+  position: relative;
+  z-index: 1;
+  display: block;
+}
+
+.mission-control__card strong {
+  margin-top: 16px;
+  color: #f8fafc;
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.mission-control__card small {
+  margin-top: 8px;
+  color: #b4c0d2;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.mission-control__card em {
+  margin-top: 16px;
+  color: #7dd3fc;
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.admin-repair-bay {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(251, 191, 36, 0.22);
+  border-radius: 30px;
+  background:
+    linear-gradient(135deg, rgba(69, 26, 3, 0.55), rgba(15, 23, 42, 0.92) 44%, rgba(8, 47, 73, 0.72)),
+    radial-gradient(circle at 88% 0%, rgba(251, 191, 36, 0.22), transparent 24%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 24px 70px rgba(15, 23, 42, 0.28);
+  padding: clamp(22px, 4vw, 32px);
+}
+
+.admin-repair-bay__hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+}
+
+.admin-repair-bay__hero p {
+  color: #fbbf24;
+}
+
+.admin-repair-bay__hero button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.34);
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.12);
+  color: #fef3c7;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 900;
+  padding: 11px 15px;
+  white-space: nowrap;
+}
+
+.admin-repair-bay__columns {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 24px;
+}
+
+.repair-column,
+.import-intel {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  background: rgba(2, 6, 23, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  padding: 18px;
+}
+
+.repair-column__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.repair-column__header svg {
+  color: #fbbf24;
+}
+
+.repair-column__header h3,
+.import-intel h3 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.repair-column__header p {
+  margin: 5px 0 0;
+  color: #aebbd0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.repair-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.repair-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.55fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+  color: inherit;
+  padding: 13px;
+}
+
+.repair-item--button {
+  width: 100%;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.repair-item strong,
+.repair-item small {
+  display: block;
+}
+
+.repair-item strong {
+  color: #f8fafc;
+  font-size: 0.95rem;
+}
+
+.repair-item small {
+  margin-top: 4px;
+  color: #aab7cd;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.repair-item select {
+  min-width: 0;
+  border: 1px solid rgba(251, 191, 36, 0.22);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #f8fafc;
+  outline: none;
+  padding: 10px 12px;
+}
+
+.repair-item--button > span {
+  justify-self: end;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.12);
+  color: #bae6fd;
+  font-size: 0.78rem;
+  font-weight: 900;
+  padding: 7px 10px;
+}
+
+.repair-empty {
+  border: 1px dashed rgba(148, 163, 184, 0.28);
+  border-radius: 18px;
+  color: #b4c0d2;
+  font-size: 0.9rem;
+  padding: 16px;
+}
+
+.admin-repair-bay__imports {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.admin-repair-bay__imports:empty {
+  display: none;
+}
+
+.import-intel__metrics {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.import-intel__metrics span {
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #aebbd0;
+  font-size: 0.78rem;
+  padding: 10px;
+}
+
+.import-intel__metrics strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 1.2rem;
+}
+
+.import-intel__warning {
+  margin: 14px 0 0;
+  border-radius: 16px;
+  background: rgba(251, 191, 36, 0.12);
+  color: #fde68a;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  padding: 12px;
+}
+
+.live-class-console {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 22px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.45fr);
+  border: 1px solid rgba(52, 211, 153, 0.22);
+  border-radius: 32px;
+  background:
+    radial-gradient(circle at 16% 16%, rgba(52, 211, 153, 0.24), transparent 24%),
+    linear-gradient(145deg, rgba(6, 78, 59, 0.92), rgba(15, 23, 42, 0.96) 58%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 24px 70px rgba(6, 78, 59, 0.28);
+  padding: clamp(22px, 4vw, 32px);
+}
+
+.live-class-console::before {
+  position: absolute;
+  right: -80px;
+  top: -80px;
+  height: 220px;
+  width: 220px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.16);
+  content: '';
+}
+
+.live-class-console.is-live .live-class-console__copy > p::before {
+  display: inline-block;
+  height: 8px;
+  width: 8px;
+  margin-right: 8px;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 0 7px rgba(52, 211, 153, 0.16);
+  content: '';
+}
+
+.live-class-console__copy,
+.live-class-console__qr {
+  position: relative;
+  z-index: 1;
+}
+
+.live-class-console__copy > p {
+  color: #a7f3d0;
+}
+
+.live-class-console__metrics {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 24px;
+}
+
+.live-class-console__metrics div {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 16px;
+}
+
+.live-class-console__metrics strong,
+.live-class-console__metrics small {
+  display: block;
+}
+
+.live-class-console__metrics strong {
+  color: #f8fafc;
+  font-size: clamp(1.55rem, 3vw, 2.2rem);
+  font-weight: 950;
+  letter-spacing: -0.06em;
+}
+
+.live-class-console__metrics small {
+  margin-top: 3px;
+  color: #a7f3d0;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.live-class-console__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.live-class-console__actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 18px;
+  background: #ecfdf5;
+  color: #064e3b;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 900;
+  padding: 13px 16px;
+}
+
+.live-class-console__actions button.is-soft {
+  border: 1px solid rgba(167, 243, 208, 0.26);
+  background: rgba(255, 255, 255, 0.08);
+  color: #d1fae5;
+}
+
+.live-class-console__qr {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.08);
+  min-height: 260px;
+  padding: 18px;
+  text-align: center;
+}
+
+.live-class-console__qr img {
+  display: block;
+  width: min(220px, 100%);
+  border-radius: 22px;
+  background: #fff;
+  padding: 10px;
+}
+
+.live-class-console__qr svg {
+  color: #a7f3d0;
+}
+
+.live-class-console__qr p {
+  margin: 14px 0 0;
+  color: #f8fafc;
+  font-size: 1.2rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+}
+
+.live-class-console__qr span {
+  display: block;
+  margin-top: 5px;
+  color: #a7f3d0;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .dashboard-panel {
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 24px;
@@ -981,6 +1532,94 @@
   background: linear-gradient(180deg, rgba(239, 246, 255, 0.92) 0%, rgba(219, 234, 254, 0.82) 100%);
 }
 
+.dashboard-shell--light .mission-control {
+  border-color: rgba(37, 99, 235, 0.12);
+  background:
+    radial-gradient(circle at 12% 12%, rgba(14, 165, 233, 0.14), transparent 28%),
+    radial-gradient(circle at 92% 6%, rgba(245, 158, 11, 0.14), transparent 18%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.92));
+  box-shadow: 0 22px 58px rgba(148, 163, 184, 0.2);
+}
+
+.dashboard-shell--light .mission-control__header h2,
+.dashboard-shell--light .admin-repair-bay__hero h2,
+.dashboard-shell--light .live-class-console__copy h2,
+.dashboard-shell--light .repair-column__header h3,
+.dashboard-shell--light .import-intel h3,
+.dashboard-shell--light .repair-item strong,
+.dashboard-shell--light .mission-control__card strong,
+.dashboard-shell--light .live-class-console__metrics strong {
+  color: #0f172a;
+}
+
+.dashboard-shell--light .mission-control__header span,
+.dashboard-shell--light .admin-repair-bay__hero span,
+.dashboard-shell--light .live-class-console__copy > span,
+.dashboard-shell--light .repair-column__header p,
+.dashboard-shell--light .repair-item small,
+.dashboard-shell--light .mission-control__card small,
+.dashboard-shell--light .import-intel__metrics span {
+  color: #475569;
+}
+
+.dashboard-shell--light .mission-control__card,
+.dashboard-shell--light .repair-column,
+.dashboard-shell--light .repair-item,
+.dashboard-shell--light .import-intel,
+.dashboard-shell--light .live-class-console__metrics div,
+.dashboard-shell--light .live-class-console__qr {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.dashboard-shell--light .admin-repair-bay {
+  border-color: rgba(245, 158, 11, 0.24);
+  background:
+    radial-gradient(circle at 92% 0%, rgba(245, 158, 11, 0.18), transparent 22%),
+    linear-gradient(135deg, rgba(255, 251, 235, 0.96), rgba(240, 249, 255, 0.94));
+  box-shadow: 0 22px 58px rgba(148, 163, 184, 0.18);
+}
+
+.dashboard-shell--light .admin-repair-bay__hero button {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.1);
+  color: #92400e;
+}
+
+.dashboard-shell--light .repair-empty {
+  color: #64748b;
+}
+
+.dashboard-shell--light .repair-item select {
+  border-color: rgba(245, 158, 11, 0.24);
+  background: rgba(255, 255, 255, 0.88);
+  color: #0f172a;
+}
+
+.dashboard-shell--light .live-class-console {
+  border-color: rgba(16, 185, 129, 0.22);
+  background:
+    radial-gradient(circle at 16% 16%, rgba(16, 185, 129, 0.14), transparent 24%),
+    linear-gradient(145deg, rgba(236, 253, 245, 0.96), rgba(240, 249, 255, 0.94) 58%);
+  box-shadow: 0 22px 58px rgba(148, 163, 184, 0.18);
+}
+
+.dashboard-shell--light .live-class-console__copy > p,
+.dashboard-shell--light .live-class-console__metrics small,
+.dashboard-shell--light .live-class-console__qr span {
+  color: #047857;
+}
+
+.dashboard-shell--light .live-class-console__actions button.is-soft {
+  border-color: rgba(16, 185, 129, 0.22);
+  background: rgba(16, 185, 129, 0.08);
+  color: #047857;
+}
+
+.dashboard-shell--light .live-class-console__qr p {
+  color: #0f172a;
+}
+
 @media (max-width: 1279px) {
   .dashboard-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1231,6 +1870,51 @@
     font-size: 0.82rem;
   }
 
+  .mission-control,
+  .admin-repair-bay,
+  .live-class-console {
+    border-radius: 24px;
+    padding: 20px;
+  }
+
+  .mission-control__header,
+  .admin-repair-bay__hero {
+    display: grid;
+    gap: 16px;
+  }
+
+  .mission-control__signal,
+  .admin-repair-bay__hero button {
+    justify-self: start;
+  }
+
+  .mission-control__grid,
+  .admin-repair-bay__columns,
+  .admin-repair-bay__imports,
+  .live-class-console {
+    grid-template-columns: 1fr;
+  }
+
+  .mission-control__card {
+    min-height: 0;
+  }
+
+  .repair-item {
+    grid-template-columns: 1fr;
+  }
+
+  .repair-item--button > span {
+    justify-self: start;
+  }
+
+  .live-class-console__metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .live-class-console__qr {
+    min-height: 0;
+  }
+
   .dashboard-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1374,5 +2058,12 @@
   .dashboard-shell--light .dashboard-mobile-nav__item.is-active {
     background: linear-gradient(135deg, rgba(37, 99, 235, 0.15), rgba(14, 165, 233, 0.08));
     color: #0f172a;
+  }
+}
+
+@media (max-width: 520px) {
+  .live-class-console__metrics,
+  .import-intel__metrics {
+    grid-template-columns: 1fr;
   }
 }

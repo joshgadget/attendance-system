@@ -7,6 +7,7 @@ import {
   Calendar,
   Camera,
   CheckCircle2,
+  ClipboardCheck,
   Clock3,
   CircleHelp,
   Download,
@@ -24,6 +25,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  Sparkles,
   Settings2,
   Sun,
   Trash2,
@@ -32,6 +34,9 @@ import {
   UserPlus,
   Users,
   MapPin,
+  RadioTower,
+  TriangleAlert,
+  WandSparkles,
   XCircle,
 } from 'lucide-react';
 import QRCode from 'qrcode';
@@ -506,6 +511,216 @@ const MobileCommandCenter = ({ command, onOpenTab }) => {
   );
 };
 
+const MissionControlDeck = ({ title, eyebrow, description, actions, onOpenTab }) => (
+  <section className="mission-control" aria-label="Next best actions">
+    <div className="mission-control__header">
+      <div>
+        <p>{eyebrow}</p>
+        <h2>{title}</h2>
+        <span>{description}</span>
+      </div>
+      <div className="mission-control__signal">
+        <WandSparkles className="h-5 w-5" />
+        <span>Guided workflow</span>
+      </div>
+    </div>
+    <div className="mission-control__grid">
+      {actions.map((action, index) => {
+        const Icon = action.icon || LayoutDashboard;
+        return (
+          <button
+            type="button"
+            key={action.title}
+            className={`mission-control__card tone-${action.tone || 'blue'}`}
+            onClick={() => onOpenTab(action.tab)}
+          >
+            <span className="mission-control__step">0{index + 1}</span>
+            <span className="mission-control__icon"><Icon className="h-5 w-5" /></span>
+            <strong>{action.title}</strong>
+            <small>{action.description}</small>
+            <em>{action.meta}</em>
+          </button>
+        );
+      })}
+    </div>
+  </section>
+);
+
+const ImportResultCard = ({ result }) => {
+  if (!result) {
+    return null;
+  }
+
+  const missingCourses = result.missingCourses || [];
+  const departments = result.departments || [];
+
+  return (
+    <div className="import-intel">
+      <div>
+        <p className="import-intel__eyebrow">Last import readout</p>
+        <h3>{result.fileName || 'Recent timetable import'}</h3>
+      </div>
+      <div className="import-intel__metrics">
+        <span><strong>{result.courseCount || result.count || 0}</strong> courses</span>
+        <span><strong>{result.syncedEnrollments || 0}</strong> enrollments synced</span>
+        <span><strong>{result.unassignedCount || 0}</strong> unassigned</span>
+        <span><strong>{departments.length}</strong> departments</span>
+      </div>
+      {missingCourses.length > 0 && (
+        <p className="import-intel__warning">
+          Missing catalog details: {missingCourses.slice(0, 6).join(', ')}
+          {missingCourses.length > 6 ? ` and ${missingCourses.length - 6} more` : ''}.
+        </p>
+      )}
+    </div>
+  );
+};
+
+const AdminRepairBay = ({
+  unassignedCourses,
+  coursesWithoutTimetable,
+  lecturers,
+  busyAction,
+  onAssignCourse,
+  onEditCourse,
+  onOpenTab,
+  timetableImportResult,
+  courseImportResult,
+}) => {
+  const urgentCount = unassignedCourses.length + coursesWithoutTimetable.length;
+
+  return (
+    <section className="admin-repair-bay" aria-label="Academic setup repair bay">
+      <div className="admin-repair-bay__hero">
+        <div>
+          <p>Academic repair bay</p>
+          <h2>{urgentCount > 0 ? `${urgentCount} setup gaps before class feels smooth` : 'Course setup is clean'}</h2>
+          <span>Fix unassigned courses and timetable gaps from one focused control surface.</span>
+        </div>
+        <button type="button" onClick={() => onOpenTab('reports')}>
+          <Sparkles className="h-4 w-4" />
+          Audit-ready
+        </button>
+      </div>
+
+      <div className="admin-repair-bay__columns">
+        <div className="repair-column">
+          <div className="repair-column__header">
+            <TriangleAlert className="h-5 w-5" />
+            <div>
+              <h3>Unassigned courses</h3>
+              <p>{unassignedCourses.length} need a lecturer before sessions can run cleanly.</p>
+            </div>
+          </div>
+
+          <div className="repair-list">
+            {unassignedCourses.length > 0 ? unassignedCourses.slice(0, 6).map((course) => (
+              <div key={course.id} className="repair-item">
+                <div>
+                  <strong>{course.courseCode}</strong>
+                  <small>{course.courseName}</small>
+                </div>
+                <select
+                  value=""
+                  onChange={(event) => onAssignCourse(course, event.target.value)}
+                  disabled={busyAction === `assign-course-${course.id}`}
+                  aria-label={`Assign lecturer to ${course.courseCode}`}
+                >
+                  <option value="">Assign lecturer</option>
+                  {lecturers.map((lecturer) => (
+                    <option key={lecturer.id} value={lecturer.id}>
+                      {fullName(lecturer)}{lecturer.department ? ` - ${lecturer.department}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )) : (
+              <div className="repair-empty">Every active course has a lecturer.</div>
+            )}
+          </div>
+        </div>
+
+        <div className="repair-column">
+          <div className="repair-column__header">
+            <Clock3 className="h-5 w-5" />
+            <div>
+              <h3>No timetable slots</h3>
+              <p>{coursesWithoutTimetable.length} courses cannot trigger reminder cues yet.</p>
+            </div>
+          </div>
+
+          <div className="repair-list">
+            {coursesWithoutTimetable.length > 0 ? coursesWithoutTimetable.slice(0, 6).map((course) => (
+              <button type="button" key={course.id} className="repair-item repair-item--button" onClick={() => onEditCourse(course)}>
+                <div>
+                  <strong>{course.courseCode}</strong>
+                  <small>{course.courseName}</small>
+                </div>
+                <span>Edit</span>
+              </button>
+            )) : (
+              <div className="repair-empty">All visible courses have timetable slots.</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="admin-repair-bay__imports">
+        <ImportResultCard result={courseImportResult} />
+        <ImportResultCard result={timetableImportResult} />
+      </div>
+    </section>
+  );
+};
+
+const LiveClassConsole = ({ sessionDetail, qrDataUrl, busyAction, onCloseSession, onOpenQueries }) => {
+  if (!sessionDetail) {
+    return null;
+  }
+
+  const stats = sessionDetail.attendanceStats || {};
+  const marked = Number(stats.markedCount || 0);
+  const expected = Number(stats.expectedCount || 0);
+  const percentage = expected > 0 ? Math.round((marked / expected) * 100) : 0;
+  const isActive = sessionDetail.status === 'active';
+
+  return (
+    <section className={`live-class-console ${isActive ? 'is-live' : ''}`} aria-label="Live class console">
+      <div className="live-class-console__copy">
+        <p>{isActive ? 'Live class mode' : 'Session console'}</p>
+        <h2>{sessionDetail.course?.courseCode || sessionDetail.sessionCode}</h2>
+        <span>{sessionDetail.course?.courseName || 'Attendance session'} | {formatDate(sessionDetail.date)} at {formatTime(sessionDetail.startTime)}</span>
+        <div className="live-class-console__metrics">
+          <div><strong>{marked}</strong><small>marked</small></div>
+          <div><strong>{expected}</strong><small>expected</small></div>
+          <div><strong>{percentage}%</strong><small>coverage</small></div>
+        </div>
+        <div className="live-class-console__actions">
+          {isActive && (
+            <button type="button" onClick={() => onCloseSession(sessionDetail.id)} disabled={busyAction === `close-session-${sessionDetail.id}`}>
+              {busyAction === `close-session-${sessionDetail.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Close and auto-query absentees
+            </button>
+          )}
+          <button type="button" onClick={onOpenQueries} className="is-soft">
+            <MessageSquare className="h-4 w-4" />
+            Open follow-up
+          </button>
+        </div>
+      </div>
+      <div className="live-class-console__qr">
+        {qrDataUrl ? (
+          <img src={qrDataUrl} alt="Live session QR code" />
+        ) : (
+          <RadioTower className="h-12 w-12" />
+        )}
+        <p>{sessionDetail.sessionCode}</p>
+        <span>{sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'Attendance key unavailable'}</span>
+      </div>
+    </section>
+  );
+};
+
 const Avatar = ({ person, photo, className = '' }) => (
   <div className={`dashboard-avatar ${className}`.trim()}>
     {photo ? <img src={photo} alt={`${fullName(person)} avatar`} className="dashboard-avatar__image" /> : <span className="dashboard-avatar__fallback">{initialsFor(person)}</span>}
@@ -909,6 +1124,8 @@ const Dashboard = () => {
   const [registryFileName, setRegistryFileName] = useState('');
   const [courseCatalogFileName, setCourseCatalogFileName] = useState('');
   const [timetableFileName, setTimetableFileName] = useState('');
+  const [courseImportResult, setCourseImportResult] = useState(null);
+  const [timetableImportResult, setTimetableImportResult] = useState(null);
   const [lecturerRosterFileName, setLecturerRosterFileName] = useState('');
   const [lecturerRosterCourseId, setLecturerRosterCourseId] = useState('');
   const [lecturerCourseRoster, setLecturerCourseRoster] = useState({ course: null, count: 0, enrollments: [] });
@@ -1487,6 +1704,7 @@ const Dashboard = () => {
       faculty: course.faculty || '',
       department: course.department || '',
       program: course.program || '',
+      campus: course.campus || '',
       level: course.level || '',
     });
   };
@@ -1516,6 +1734,25 @@ const Dashboard = () => {
       await loadData(true);
     } catch (actionError) {
       setMessage('', actionError.response?.data?.message || 'Course could not be updated.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleQuickAssignCourse = async (course, lecturerId) => {
+    if (!course?.id || !lecturerId) {
+      return;
+    }
+
+    try {
+      setBusyAction(`assign-course-${course.id}`);
+      setMessage();
+      await api.put(`/courses/${course.id}`, { lecturerId });
+      const lecturer = lecturers.find((entry) => String(entry.id) === String(lecturerId));
+      setMessage(`${course.courseCode} assigned to ${fullName(lecturer)}.`);
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Course lecturer could not be assigned.');
     } finally {
       setBusyAction('');
     }
@@ -1829,32 +2066,36 @@ const Dashboard = () => {
           row[header] = values[index] || '';
         });
 
-        const courseCode = (row.coursecode || row.code || '').toUpperCase();
-        const courseName = row.coursename || row.title || row.name || '';
-        const lecturerEmail = row.lectureremail || row.lecturer || row.email || '';
+        const courseCode = (row.coursecode || row.course || row.code || row.courseid || '').toUpperCase();
+        const courseName = row.coursename || row.coursetitle || row.title || row.name || courseCode;
+        const academicYear = row.academicyear || row.academicsession || row.session || row.year || '';
+        const lecturerEmail = row.lectureremail || row.lecturer || row.email || row.staffemail || '';
         const lecturerId = row.lecturerid || '';
 
-        if (!courseCode || !courseName || !(lecturerEmail || lecturerId) || !row.semester || !row.academicyear) {
-          throw new Error('Each course row must include courseCode, courseName, semester, academicYear, and lecturerEmail or lecturerId');
+        if (!courseCode || !courseName || !row.semester || !academicYear) {
+          throw new Error('Each course row must include courseCode, courseName, semester, and academicYear. Lecturer is optional and can be assigned later.');
         }
 
         return {
           courseCode,
           courseName,
           semester: row.semester.toLowerCase(),
-          academicYear: row.academicyear,
+          academicYear,
           lecturerEmail,
           lecturerId,
           description: row.description || '',
           faculty: row.faculty || '',
           department: row.department || '',
           program: row.program || '',
+          campus: row.campus || '',
           level: row.level || '',
         };
       });
 
       const response = await api.post('/courses/bulk', { courses: coursesPayload });
-      setMessage(`Course catalog imported successfully from ${file.name}. ${response.data.data?.count || coursesPayload.length} course rows processed.`);
+      setCourseImportResult({ fileName: file.name, ...(response.data.data || {}) });
+      const unassignedCount = response.data.data?.unassignedCount || 0;
+      setMessage(`Course catalog imported from ${file.name}. ${response.data.data?.count || coursesPayload.length} courses processed${unassignedCount ? `, ${unassignedCount} still need lecturers.` : '.'}`);
       await loadData(true);
     } catch (actionError) {
       setMessage('', actionError.response?.data?.message || actionError.message || 'Course catalog import failed.');
@@ -1886,7 +2127,9 @@ const Dashboard = () => {
         const importedDepartments = response.data.data?.departments?.length || 0;
         const importedCourses = response.data.data?.courseCount || 0;
         const syncedEnrollments = response.data.data?.syncedEnrollments || 0;
-        setMessage(`Timetable PDF imported from ${file.name}. ${importedDepartments} departments matched, ${importedCourses} course records updated, ${syncedEnrollments} student course enrollments synced.`);
+        const unassignedCount = response.data.data?.unassignedCount || 0;
+        setTimetableImportResult({ fileName: file.name, ...(response.data.data || {}) });
+        setMessage(`Timetable PDF imported from ${file.name}. ${importedDepartments} departments matched, ${importedCourses} course records updated, ${syncedEnrollments} student course enrollments synced${unassignedCount ? `, ${unassignedCount} courses need lecturer assignment.` : '.'}`);
         await loadData(true);
         return;
       }
@@ -1905,26 +2148,49 @@ const Dashboard = () => {
           row[header] = values[index] || '';
         });
 
-        const courseCode = (row.coursecode || row.code || '').toUpperCase();
-        const dayOfWeek = row.dayofweek || row.day || '';
-        const startTime = row.starttime || row.start || '';
-        const endTime = row.endtime || row.end || '';
+        const courseCode = (row.coursecode || row.course || row.code || row.courseid || '').toUpperCase();
+        const dayOfWeek = row.dayofweek || row.weekday || row.day || '';
+        const startTime = row.starttime || row.start || row.timefrom || row.from || '';
+        const endTime = row.endtime || row.end || row.timeto || row.to || '';
+        const academicYear = row.academicyear || row.academicsession || row.session || row.year || '';
         if (!courseCode || !dayOfWeek || !startTime || !endTime) {
           throw new Error('Each timetable row must include courseCode, dayOfWeek, startTime, and endTime');
         }
 
         return {
           courseCode,
+          courseName: row.coursename || row.coursetitle || row.title || row.name || courseCode,
           dayOfWeek,
           startTime,
           endTime,
-          venue: row.venue || row.location || '',
+          venue: row.venue || row.location || row.room || row.hall || '',
           notifyMinutesBefore: row.notifyminutesbefore || row.notifybefore || '30',
+          semester: row.semester || '',
+          academicYear,
+          faculty: row.faculty || '',
+          department: row.department || '',
+          program: row.program || '',
+          campus: row.campus || '',
+          level: row.level || '',
         };
       });
 
       const response = await api.post('/courses/schedules/bulk', { schedules });
-      setMessage(`Timetable imported successfully from ${file.name}. ${response.data.data?.count || schedules.length} schedule rows processed.`);
+      setTimetableImportResult({ fileName: file.name, ...(response.data.data || {}) });
+      const missingCourses = response.data.data?.missingCourses || [];
+      const createdCourseCount = response.data.data?.createdCourseCount || 0;
+      const unassignedCount = response.data.data?.unassignedCount || 0;
+      const importNotes = [];
+      if (createdCourseCount) {
+        importNotes.push(`${createdCourseCount} missing course${createdCourseCount === 1 ? '' : 's'} created as unassigned`);
+      }
+      if (unassignedCount) {
+        importNotes.push(`${unassignedCount} touched course${unassignedCount === 1 ? '' : 's'} still need lecturer assignment`);
+      }
+      if (missingCourses.length) {
+        importNotes.push(`${missingCourses.length} row${missingCourses.length === 1 ? '' : 's'} need course catalog details`);
+      }
+      setMessage(`Timetable imported from ${file.name}. ${response.data.data?.count || schedules.length} schedule rows processed${importNotes.length ? `. ${importNotes.join('. ')}.` : '.'}`);
       await loadData(true);
     } catch (actionError) {
       setMessage('', actionError.response?.data?.message || actionError.message || 'Timetable import failed.');
@@ -2358,6 +2624,9 @@ const Dashboard = () => {
 
   const filteredUsers = useMemo(() => (!search ? users : users.filter((entry) => [entry.firstName, entry.lastName, entry.email, entry.role, entry.department, entry.matricNumber].some((value) => includesSearch(value, search)))), [search, users]);
   const filteredCourses = useMemo(() => (!search ? courses : courses.filter((entry) => [entry.courseCode, entry.courseName, entry.academicYear, entry.semester, fullName(entry.lecturer)].some((value) => includesSearch(value, search)))), [courses, search]);
+  const activeCourses = useMemo(() => courses.filter((course) => course.isActive !== false), [courses]);
+  const unassignedCourses = useMemo(() => activeCourses.filter((course) => !course.lecturerId && !course.lecturer), [activeCourses]);
+  const coursesWithoutTimetable = useMemo(() => activeCourses.filter((course) => !course.schedules?.length), [activeCourses]);
   const filteredBuildings = useMemo(
     () =>
       !search
@@ -2729,6 +2998,113 @@ const Dashboard = () => {
       { title: 'Report export', subtitle: 'Faculty reports', time: '03:00 PM' },
     ];
   }, [courses, role, sessions]);
+
+  const missionControl = useMemo(() => {
+    const pendingQueries = queries.filter((query) => query.status === 'pending').length;
+    const respondedQueries = queries.filter((query) => query.status === 'responded').length;
+    const escalatedQueries = queries.filter((query) => query.escalationState === 'requested').length;
+    const latestAttendance = history[0];
+
+    if (role === 'admin') {
+      return {
+        eyebrow: 'Operator sequence',
+        title: unassignedCourses.length || coursesWithoutTimetable.length ? 'Clean the academic setup before class starts' : 'System is ready for operations',
+        description: 'The dashboard now points you to the setup issue that can actually break attendance flow.',
+        actions: [
+          {
+            title: unassignedCourses.length ? 'Assign lecturers' : 'Lecturers covered',
+            description: unassignedCourses.length ? `${unassignedCourses.length} active courses still need ownership.` : 'Every active course has an owner.',
+            meta: 'Course repair',
+            tab: 'courses',
+            icon: UserPlus,
+            tone: unassignedCourses.length ? 'amber' : 'emerald',
+          },
+          {
+            title: coursesWithoutTimetable.length ? 'Fix timetable gaps' : 'Timetable mapped',
+            description: coursesWithoutTimetable.length ? `${coursesWithoutTimetable.length} courses have no active schedule slots.` : 'Reminder cues have timetable sources.',
+            meta: 'Schedule health',
+            tab: 'courses',
+            icon: Clock3,
+            tone: coursesWithoutTimetable.length ? 'blue' : 'emerald',
+          },
+          {
+            title: escalatedQueries ? 'Review escalations' : 'Audit reports',
+            description: escalatedQueries ? `${escalatedQueries} lecturer escalations need admin attention.` : 'Export clean system evidence when needed.',
+            meta: escalatedQueries ? 'Admin review' : 'Evidence pack',
+            tab: escalatedQueries ? 'queries' : 'reports',
+            icon: escalatedQueries ? MessageSquare : FileText,
+            tone: escalatedQueries ? 'rose' : 'slate',
+          },
+        ],
+      };
+    }
+
+    if (role === 'lecturer') {
+      return {
+        eyebrow: 'Class runbook',
+        title: activeSession ? 'You have a live class running' : 'Run class in three moves',
+        description: 'Start from roster/course setup, open the QR, then close the session so absentees are handled automatically.',
+        actions: [
+          {
+            title: activeSession ? 'Open live console' : 'Start session',
+            description: activeSession ? `${activeSession.course?.courseCode || activeSession.sessionCode} is accepting attendance.` : 'Create the class session and generate the QR.',
+            meta: 'Class control',
+            tab: 'sessions',
+            icon: RadioTower,
+            tone: activeSession ? 'emerald' : 'blue',
+          },
+          {
+            title: respondedQueries ? 'Decide responses' : 'Query inbox',
+            description: respondedQueries ? `${respondedQueries} student replies need a decision.` : `${pendingQueries} queries waiting in the workflow.`,
+            meta: 'Follow-up',
+            tab: 'queries',
+            icon: MessageSquare,
+            tone: respondedQueries ? 'amber' : 'slate',
+          },
+          {
+            title: 'Course roster',
+            description: `${courses.length} assigned courses. Keep rosters clean before attendance.`,
+            meta: 'Student list',
+            tab: 'courses',
+            icon: ClipboardCheck,
+            tone: 'blue',
+          },
+        ],
+      };
+    }
+
+    return {
+      eyebrow: 'Student flow',
+      title: pendingQueries ? 'Reply to lecturer before it becomes a problem' : 'You are ready for the next class',
+      description: 'The student dashboard should feel like a checklist, not a maze.',
+      actions: [
+        {
+          title: pendingQueries ? 'Reply now' : 'Mark attendance',
+          description: pendingQueries ? `${pendingQueries} lecturer queries need your response.` : 'Scan the QR or enter the attendance code when class opens.',
+          meta: pendingQueries ? 'Action required' : 'Class check-in',
+          tab: pendingQueries ? 'queries' : 'attendance',
+          icon: pendingQueries ? MessageSquare : CheckCircle2,
+          tone: pendingQueries ? 'amber' : 'emerald',
+        },
+        {
+          title: 'Course list',
+          description: `${courses.length} active courses linked to your account.`,
+          meta: 'Semester setup',
+          tab: 'courses',
+          icon: BookOpen,
+          tone: 'blue',
+        },
+        {
+          title: latestAttendance ? 'Attendance receipt' : 'No marks yet',
+          description: latestAttendance ? `${latestAttendance.session?.course?.courseCode || 'Course'} marked ${latestAttendance.status}.` : 'Your first attendance mark will appear here.',
+          meta: 'Proof',
+          tab: 'reports',
+          icon: FileText,
+          tone: 'slate',
+        },
+      ],
+    };
+  }, [activeSession, courses, coursesWithoutTimetable, history, queries, role, unassignedCourses]);
 
   const mobileCommand = useMemo(() => {
     const pendingQueries = queries.filter((query) => query.status === 'pending').length;
@@ -3203,6 +3579,14 @@ const Dashboard = () => {
 
               <MobileCommandCenter command={mobileCommand} onOpenTab={openWorkspaceTab} />
 
+              <MissionControlDeck
+                title={missionControl.title}
+                eyebrow={missionControl.eyebrow}
+                description={missionControl.description}
+                actions={missionControl.actions}
+                onOpenTab={openWorkspaceTab}
+              />
+
               <div className="dashboard-stat-grid">
                 {primaryStats.map((stat, index) => (
                   <article key={stat.label} className="dashboard-stat-card">
@@ -3319,7 +3703,7 @@ const Dashboard = () => {
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   {analyticsHighlights.length > 0 ? analyticsHighlights.map((item) => (
                     <SummaryTile key={item.label} label={item.label} value={item.value} helper={item.helper} />
-                  )) : <EmptyState title="Analytics not ready" description="We could not load advanced analytics for this role yet." />}
+                  )) : <EmptyState title="Analytics are waiting for activity" description="Start with courses, sessions, attendance marks, or query responses and this space becomes your evidence board." />}
                 </div>
               </Panel>
 
@@ -3358,7 +3742,7 @@ const Dashboard = () => {
                     </Panel>
                   )) : (
                     <Panel title="Operational detail" eyebrow="Operational detail">
-                      <EmptyState title="No detailed tables yet" description="Detailed analytics will appear here later." />
+                      <EmptyState title="No detailed tables to summarize" description="Once records exist, this will show the operational trail by course, department, query, and attendance status." />
                     </Panel>
                   )}
                 </div>
@@ -3970,7 +4354,7 @@ const Dashboard = () => {
                           <Select label="Program" value={courseForm.program} onChange={(value) => setCourseForm((current) => ({ ...current, program: value }))} options={buildSelectOptions(adminMetadataOptions.programs, 'Choose program', courseForm.program)} />
                           <Select label="Campus" value={courseForm.campus} onChange={(value) => setCourseForm((current) => ({ ...current, campus: value }))} options={buildSelectOptions(adminMetadataOptions.campuses, 'Choose campus', courseForm.campus)} />
                           <Select label="Level" value={courseForm.level} onChange={(value) => setCourseForm((current) => ({ ...current, level: value }))} options={buildSelectOptions(adminMetadataOptions.levels, 'Choose level', courseForm.level)} />
-                          <Select label="Assign lecturer" value={courseForm.lecturerId} onChange={(value) => setCourseForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Choose lecturer' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
+                          <Select label="Assign lecturer (optional)" value={courseForm.lecturerId} onChange={(value) => setCourseForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Leave unassigned for now' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
                           <TextAreaField label="Description" value={courseForm.description} onChange={(value) => setCourseForm((current) => ({ ...current, description: value }))} />
                           <div className="md:col-span-2">
                             <ActionButton type="submit" disabled={busyAction === 'create-course'}>
@@ -3984,18 +4368,31 @@ const Dashboard = () => {
                   {role === 'admin' && (
                     <Panel title="Import course catalog" eyebrow="Faculty course list">
                       <div className="space-y-4">
-                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a CSV with course details.</p>
-                        <FileField label="Upload course CSV" accept=".csv,text/csv" onChange={handleCourseCatalogCsvUpload} fileName={courseCatalogFileName} />
+                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a CSV with course details. Lecturer columns are optional; missing assignments appear in the repair bay instead of silently attaching to the wrong person.</p>
+                        <FileField label="Upload course CSV" accept=".csv,text/csv" onChange={handleCourseCatalogCsvUpload} fileName={courseCatalogFileName} helper="Required: courseCode, courseName, semester, academicYear. Optional: lecturerEmail, department, level, campus." />
                       </div>
                     </Panel>
                   )}
                   {role === 'admin' && (
                     <Panel title="Import timetable" eyebrow="Schedule upload">
                       <div className="space-y-4">
-                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a timetable <span className="font-mono">PDF</span> or <span className="font-mono">CSV</span> to map courses and class times. Removing timetable slots from a course card stops future reminder alerts automatically.</p>
-                        <FileField label="Upload timetable file" accept=".pdf,.csv,text/csv,application/pdf" onChange={handleTimetableCsvUpload} fileName={timetableFileName} />
+                        <p className="dashboard-section-copy text-sm leading-7 text-slate-600">Upload a timetable <span className="font-mono">PDF</span> or <span className="font-mono">CSV</span> to map courses and class times. CSV rows can now include courseName, semester and academicYear so missing catalog courses can be created as unassigned and repaired below.</p>
+                        <FileField label="Upload timetable file" accept=".pdf,.csv,text/csv,application/pdf" onChange={handleTimetableCsvUpload} fileName={timetableFileName} helper="Recommended CSV columns: courseCode, courseName, dayOfWeek, startTime, endTime, venue, semester, academicYear, department, level." />
                       </div>
                     </Panel>
+                  )}
+                  {role === 'admin' && (
+                    <AdminRepairBay
+                      unassignedCourses={unassignedCourses}
+                      coursesWithoutTimetable={coursesWithoutTimetable}
+                      lecturers={lecturers}
+                      busyAction={busyAction}
+                      onAssignCourse={handleQuickAssignCourse}
+                      onEditCourse={handleStartCourseEdit}
+                      onOpenTab={openWorkspaceTab}
+                      timetableImportResult={timetableImportResult}
+                      courseImportResult={courseImportResult}
+                    />
                   )}
                   {role === 'admin' && (
                     <Panel title="Building geofences" eyebrow="Location setup">
@@ -4193,7 +4590,7 @@ const Dashboard = () => {
                                     <p className="mt-2 text-lg font-bold text-slate-950">{course.courseName}</p>
                                     <p className="mt-2 text-sm text-slate-500">{course.semester} semester | {course.academicYear}</p>
                                     {course.campus && <p className="mt-1 text-sm text-slate-500">Campus: {course.campus}</p>}
-                                    <p className="mt-1 text-sm text-slate-500">Lecturer: {fullName(course.lecturer)}</p>
+                                    <p className="mt-1 text-sm text-slate-500">Lecturer: {course.lecturer ? fullName(course.lecturer) : 'Unassigned'}</p>
                                     {course.enrollment && <p className="mt-1 text-sm text-slate-500">Enrollment status: {course.enrollment.status}</p>}
                                     {course.schedules?.length > 0 && (
                                       <div className="mt-3 space-y-3">
@@ -4226,6 +4623,8 @@ const Dashboard = () => {
                                   </div>
                                   <div className="flex flex-wrap gap-2">
                                     <Badge tone={course.isActive === false ? 'rose' : 'emerald'}>{course.isActive === false ? 'archived' : 'active'}</Badge>
+                                    {!course.lecturerId && !course.lecturer && <Badge tone="amber">unassigned</Badge>}
+                                    {!course.schedules?.length && <Badge tone="rose">no timetable</Badge>}
                                     <Badge tone="slate">{getCourseDepartmentLabel(course)}</Badge>
                                     <Badge tone="blue">{getCourseLevelLabel(course)}</Badge>
                                     {course.enrollment && <Badge tone="blue">enrolled</Badge>}
@@ -4261,7 +4660,7 @@ const Dashboard = () => {
                                         <Select label="Program" value={courseEditForm.program} onChange={(value) => setCourseEditForm((current) => ({ ...current, program: value }))} options={buildSelectOptions(adminMetadataOptions.programs, 'Choose program', courseEditForm.program)} />
                                         <Select label="Campus" value={courseEditForm.campus} onChange={(value) => setCourseEditForm((current) => ({ ...current, campus: value }))} options={buildSelectOptions(adminMetadataOptions.campuses, 'Choose campus', courseEditForm.campus)} />
                                         <Select label="Level" value={courseEditForm.level} onChange={(value) => setCourseEditForm((current) => ({ ...current, level: value }))} options={buildSelectOptions(adminMetadataOptions.levels, 'Choose level', courseEditForm.level)} />
-                                        <Select label="Assign lecturer" value={courseEditForm.lecturerId} onChange={(value) => setCourseEditForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Choose lecturer' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
+                                        <Select label="Assign lecturer" value={courseEditForm.lecturerId} onChange={(value) => setCourseEditForm((current) => ({ ...current, lecturerId: value }))} options={[{ value: '', label: 'Unassigned' }, ...lecturers.map((lecturer) => ({ value: lecturer.id, label: `${fullName(lecturer)} (${lecturer.department || 'No dept'})` }))]} />
                                         <TextAreaField label="Description" value={courseEditForm.description} onChange={(value) => setCourseEditForm((current) => ({ ...current, description: value }))} />
                                         <div className="md:col-span-2">
                                           <ActionButton type="submit" disabled={busyAction === `update-course-${course.id}`}>
@@ -4306,6 +4705,18 @@ const Dashboard = () => {
                 </div>
               </Panel>
               <div className="grid gap-8">
+                {sessionDetail && (
+                  <LiveClassConsole
+                    sessionDetail={sessionDetail}
+                    qrDataUrl={qrDataUrl}
+                    busyAction={busyAction}
+                    onCloseSession={handleCloseSession}
+                    onOpenQueries={() => {
+                      setQueryForm((current) => ({ ...current, sessionId: String(sessionDetail.id) }));
+                      setActiveTab('queries');
+                    }}
+                  />
+                )}
                 <Panel title="Selected session detail" eyebrow="Live attendance">
                   {sessionDetail ? (
                     <div className="space-y-6">
@@ -4323,7 +4734,6 @@ const Dashboard = () => {
                           Geofence active: center {sessionDetail.geofenceLatitude}, {sessionDetail.geofenceLongitude} with {sessionDetail.geofenceRadiusMeters}m radius.
                         </div>
                       )}
-                      {qrDataUrl && <div className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-5"><div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between"><div className="max-w-2xl"><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">QR code</p><p className="mt-2 text-sm leading-7 text-slate-600">Scan to open attendance with the session filled in.</p><p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Fallback pair: {sessionDetail.sessionCode} + {sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'COURSE CODE'}</p></div><div className="shrink-0 self-center rounded-[1.75rem] border border-white bg-white p-4 shadow-sm"><img src={qrDataUrl} alt="Session QR code" className="block h-52 w-52 shrink-0 rounded-[1.25rem] object-contain sm:h-56 sm:w-56" /></div></div></div>}
                       <div className="flex flex-wrap gap-3">
                         {sessionDetail.status === 'active' && <ActionButton onClick={() => handleCloseSession(sessionDetail.id)} disabled={busyAction === `close-session-${sessionDetail.id}`} variant="contrast">{busyAction === `close-session-${sessionDetail.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Close session and auto-send queries</ActionButton>}
                         <button onClick={() => { setQueryForm((current) => ({ ...current, sessionId: String(sessionDetail.id) })); setActiveTab('queries'); }} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100"><Bell className="h-4 w-4" />Open query composer</button>

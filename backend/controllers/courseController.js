@@ -458,16 +458,18 @@ exports.createCourse = async (req, res) => {
     const { academicYear, faculty, department, program, campus, level } = normalizedStructure;
     const normalizedAcademicYear = buildAcademicYear(academicYear);
 
-    if (!courseCode || !courseName || !semester || !normalizedAcademicYear || !lecturerId) {
+    if (!courseCode || !courseName || !semester || !normalizedAcademicYear) {
       return res.status(400).json({
         success: false,
-        message: 'courseCode, courseName, semester, academicYear and lecturerId are required',
+        message: 'courseCode, courseName, semester and academicYear are required',
       });
     }
 
-    const lecturer = await User.findByPk(lecturerId);
-    if (!lecturer || lecturer.role !== 'lecturer') {
-      return res.status(404).json({ success: false, message: 'Assigned lecturer not found' });
+    if (lecturerId) {
+      const lecturer = await User.findByPk(lecturerId);
+      if (!lecturer || lecturer.role !== 'lecturer') {
+        return res.status(404).json({ success: false, message: 'Assigned lecturer not found' });
+      }
     }
 
     const normalizedCode = normalizeCourseCode(courseCode);
@@ -482,7 +484,7 @@ exports.createCourse = async (req, res) => {
       description: String(description || '').trim() || null,
       semester,
       academicYear: normalizedAcademicYear,
-      lecturerId,
+      lecturerId: lecturerId ? Number(lecturerId) : null,
       campus: normalizeCampus(campus) || null,
       faculty: normalizeInstitutionText(faculty, 'faculty') || null,
       department: normalizeInstitutionText(department, 'department') || null,
@@ -525,14 +527,7 @@ exports.bulkUpsertCourses = async (req, res) => {
 
     const results = [];
     const existingCourseLookup = await buildCourseLookup();
-    const fallbackLecturer = await resolveFallbackLecturer(req.user?.id);
-
-    if (!fallbackLecturer) {
-      return res.status(400).json({
-        success: false,
-        message: 'No active lecturer or admin account is available to own imported courses yet.',
-      });
-    }
+    let unassignedCount = 0;
 
     for (const entry of courses) {
       const courseCode = normalizeCourseCode(entry.courseCode || '');
@@ -561,7 +556,7 @@ exports.bulkUpsertCourses = async (req, res) => {
 
       const lecturer = (entry.lecturerId || entry.lecturerEmail)
         ? await findLecturer({ lecturerId: entry.lecturerId, lecturerEmail: entry.lecturerEmail })
-        : fallbackLecturer;
+        : null;
       if ((entry.lecturerId || entry.lecturerEmail) && !lecturer) {
         return res.status(400).json({ success: false, message: `Assigned lecturer not found for ${courseCode}` });
       }
@@ -569,6 +564,7 @@ exports.bulkUpsertCourses = async (req, res) => {
       const lookupKey = courseCodeKey(courseCode);
       let course = existingCourseLookup.get(lookupKey) || null;
       let created = false;
+      const assignedLecturerId = lecturer?.id || course?.lecturerId || null;
 
       if (!course) {
         course = await Course.create({
@@ -577,7 +573,7 @@ exports.bulkUpsertCourses = async (req, res) => {
           description: String(entry.description || '').trim() || null,
           semester,
           academicYear,
-          lecturerId: lecturer?.id || fallbackLecturer.id,
+          lecturerId: assignedLecturerId,
           campus: normalizeCampus(normalizedEntry.campus) || null,
           faculty: normalizedEntry.faculty || null,
           department: normalizeUpper(normalizedEntry.department) || null,
@@ -595,7 +591,7 @@ exports.bulkUpsertCourses = async (req, res) => {
           description: String(entry.description || '').trim() || null,
           semester,
           academicYear,
-          lecturerId: lecturer?.id || course.lecturerId || fallbackLecturer.id,
+          lecturerId: assignedLecturerId,
           campus: normalizeCampus(normalizedEntry.campus) || null,
           faculty: normalizedEntry.faculty || null,
           department: normalizeUpper(normalizedEntry.department) || null,
@@ -613,7 +609,16 @@ exports.bulkUpsertCourses = async (req, res) => {
         level: normalizedEntry.level || null,
       });
 
-      results.push({ courseCode, action: created ? 'created' : 'updated', courseId: course.id });
+      if (!assignedLecturerId) {
+        unassignedCount += 1;
+      }
+
+      results.push({
+        courseCode,
+        action: created ? 'created' : 'updated',
+        courseId: course.id,
+        assignment: assignedLecturerId ? 'assigned' : 'unassigned',
+      });
     }
 
     await logAuditEvent({
@@ -621,10 +626,16 @@ exports.bulkUpsertCourses = async (req, res) => {
       action: 'course.catalog.bulk_upsert',
       targetType: 'course_catalog',
       targetId: 'bulk',
-      metadata: { count: results.length },
+      metadata: { count: results.length, unassignedCount },
     });
 
-    res.json({ success: true, message: 'Course catalog imported successfully', data: { count: results.length, results } });
+    res.json({
+      success: true,
+      message: unassignedCount > 0
+        ? 'Course catalog imported. Some courses still need lecturer assignment.'
+        : 'Course catalog imported successfully',
+      data: { count: results.length, unassignedCount, results },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -639,13 +650,27 @@ exports.bulkUpsertSchedules = async (req, res) => {
     }
 
     const results = [];
+    const missingCourses = [];
     const existingCourseLookup = await buildCourseLookup();
+    const touchedCourseIds = new Set();
+    let createdCourseCount = 0;
 
     for (const entry of schedules) {
       const courseCode = normalizeCourseCode(entry.courseCode || '');
       const dayOfWeek = normalizeDayOfWeek(entry.dayOfWeek);
       const startTime = normalizeTime(entry.startTime);
       const endTime = normalizeTime(entry.endTime);
+      const normalizedEntry = normalizeInstitutionPayload(entry, {
+        academicYear: 'academicYear',
+        faculty: 'faculty',
+        department: 'department',
+        program: 'program',
+        campus: 'campus',
+        level: 'level',
+      });
+      const courseName = String(entry.courseName || entry.title || entry.name || courseCode || '').trim();
+      const semester = String(entry.semester || '').trim().toLowerCase();
+      const academicYear = buildAcademicYear(normalizedEntry.academicYear || '');
 
       if (!courseCode || !dayOfWeek || !startTime || !endTime) {
         return res.status(400).json({
@@ -654,9 +679,36 @@ exports.bulkUpsertSchedules = async (req, res) => {
         });
       }
 
-      const course = existingCourseLookup.get(courseCodeKey(courseCode)) || null;
+      let course = existingCourseLookup.get(courseCodeKey(courseCode)) || null;
       if (!course) {
-        return res.status(400).json({ success: false, message: `Course not found for schedule entry: ${courseCode}` });
+        if (!courseName || !semester || !academicYear || !['rain', 'harmattan'].includes(semester)) {
+          missingCourses.push(courseCode);
+          continue;
+        }
+
+        course = await Course.create({
+          courseCode,
+          courseName,
+          description: 'Created from timetable CSV. Assign a lecturer before class starts.',
+          semester,
+          academicYear,
+          lecturerId: null,
+          campus: normalizeCampus(normalizedEntry.campus) || null,
+          faculty: normalizedEntry.faculty || null,
+          department: normalizeUpper(normalizedEntry.department) || null,
+          program: normalizedEntry.program || null,
+          level: normalizeLevel(normalizedEntry.level) || null,
+          isActive: true,
+        });
+        existingCourseLookup.set(courseCodeKey(courseCode), course);
+        createdCourseCount += 1;
+        await upsertCourseAudience(course.id, {
+          campus: normalizedEntry.campus || null,
+          faculty: normalizedEntry.faculty || null,
+          department: normalizedEntry.department || null,
+          program: normalizedEntry.program || null,
+          level: normalizedEntry.level || null,
+        });
       }
 
       const [schedule, created] = await CourseSchedule.findOrCreate({
@@ -686,10 +738,36 @@ exports.bulkUpsertSchedules = async (req, res) => {
         });
       }
 
+      touchedCourseIds.add(course.id);
       results.push({ courseCode, scheduleId: schedule.id, action: created ? 'created' : 'updated' });
     }
 
-    res.json({ success: true, message: 'Timetable imported successfully', data: { count: results.length, results } });
+    if (!results.length && missingCourses.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'No timetable rows were imported because the referenced courses are missing. Add courseName, semester and academicYear columns or import the course catalog first.',
+        data: { missingCourses: [...new Set(missingCourses)] },
+      });
+    }
+
+    const touchedCourses = results.length
+      ? await Course.findAll({ where: { id: [...touchedCourseIds] } })
+      : [];
+    const unassignedCount = touchedCourses.filter((course) => !course.lecturerId).length;
+
+    res.json({
+      success: true,
+      message: missingCourses.length
+        ? 'Timetable imported with some course rows needing catalog details.'
+        : 'Timetable imported successfully',
+      data: {
+        count: results.length,
+        createdCourseCount,
+        unassignedCount,
+        missingCourses: [...new Set(missingCourses)],
+        results,
+      },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -730,13 +808,6 @@ exports.importTimetablePdf = async (req, res) => {
     }
 
     const existingCourseLookup = await buildCourseLookup();
-    const fallbackLecturer = await resolveFallbackLecturer(req.user?.id);
-    if (!fallbackLecturer) {
-      return res.status(400).json({
-        success: false,
-        message: 'No active lecturer or admin account is available to own timetable-imported courses yet.',
-      });
-    }
     const touchedCourseIds = new Set();
     const touchedDepartments = [];
     let audienceCount = 0;
@@ -760,7 +831,7 @@ exports.importTimetablePdf = async (req, res) => {
             description: `Imported from timetable PDF${fileName ? ` (${fileName})` : ''}`,
             semester: extractedSemester,
             academicYear: extractedAcademicYear,
-            lecturerId: fallbackLecturer.id,
+            lecturerId: null,
             campus: extractedCampus || null,
             faculty: extractedFaculty || null,
             department: null,
@@ -773,7 +844,7 @@ exports.importTimetablePdf = async (req, res) => {
           await course.update({
             semester: extractedSemester,
             academicYear: extractedAcademicYear,
-            lecturerId: course.lecturerId || fallbackLecturer.id,
+            lecturerId: course.lecturerId || null,
             campus: course.campus || extractedCampus || null,
             faculty: course.faculty || extractedFaculty || null,
             isActive: true,
@@ -797,6 +868,7 @@ exports.importTimetablePdf = async (req, res) => {
       where: { id: [...touchedCourseIds] },
       include: courseInclude,
     });
+    const unassignedCount = touchedCourses.filter((course) => !course.lecturerId).length;
 
     const syncedEnrollments = autoAssignClaimedStudents ? await syncClaimedStudentEnrollments(touchedCourses) : 0;
 
@@ -813,6 +885,7 @@ exports.importTimetablePdf = async (req, res) => {
         courseCount: touchedCourses.length,
         audienceCount,
         syncedEnrollments,
+        unassignedCount,
       },
     });
 
@@ -829,6 +902,7 @@ exports.importTimetablePdf = async (req, res) => {
         courseCount: touchedCourses.length,
         audienceCount,
         syncedEnrollments,
+        unassignedCount,
       },
     });
   } catch (error) {
@@ -1304,6 +1378,9 @@ exports.updateCourse = async (req, res) => {
     };
     if (payload.academicYear) {
       payload.academicYear = buildAcademicYear(payload.academicYear);
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'lecturerId')) {
+      payload.lecturerId = payload.lecturerId ? Number(payload.lecturerId) : null;
     }
     if (Object.prototype.hasOwnProperty.call(payload, 'campus')) {
       payload.campus = normalizeCampus(payload.campus) || null;
