@@ -46,6 +46,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { io as createSocket } from 'socket.io-client';
 import api from '../services/api';
+import { getSocketBaseUrl } from '../services/apiConfig';
 import { logout } from '../redux/slices/authSlice';
 import { useTheme } from '../theme/ThemeContext';
 import './dashboard-theme.css';
@@ -262,23 +263,7 @@ const canEscalateQueryInDashboard = (query, role, user) => {
 
   return role === 'admin' && isLecturerOriginatedQuery(query);
 };
-const SOCKET_BASE_URL = (() => {
-  const fallback = 'http://localhost:5000';
-  const raw = String(process.env.REACT_APP_API_URL || '').trim();
-  if (!raw) {
-    return fallback;
-  }
-
-  try {
-    const parsed = new URL(raw);
-    parsed.pathname = parsed.pathname.replace(/\/api\/?$/, '').replace(/\/+$/, '');
-    parsed.search = '';
-    parsed.hash = '';
-    return parsed.toString().replace(/\/+$/, '');
-  } catch (error) {
-    return raw.replace(/\/api\/?$/, '').replace(/\/+$/, '') || fallback;
-  }
-})();
+const SOCKET_BASE_URL = getSocketBaseUrl(process.env.REACT_APP_API_URL);
 
 const collectUniqueValues = (...collections) => {
   const values = new Set();
@@ -1379,11 +1364,15 @@ const Dashboard = () => {
 
     const socket = createSocket(SOCKET_BASE_URL, {
       auth: { token },
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'],
       withCredentials: false,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 15000,
+      timeout: 12000,
     });
 
     socketRef.current = socket;
+    let lastSocketErrorMessage = '';
 
     const handleNotification = (notification) => {
       if (!notification) {
@@ -1415,8 +1404,20 @@ const Dashboard = () => {
 
     socket.on('notification:new', handleNotification);
     socket.on('dashboard:refresh', handleRefresh);
+    socket.on('connect', () => {
+      lastSocketErrorMessage = '';
+    });
     socket.on('connect_error', (socketError) => {
-      console.warn('Realtime notification connection failed:', socketError.message);
+      const socketMessage = socketError?.message || 'connection failed';
+      if (socketMessage === 'Authentication required') {
+        socket.disconnect();
+        return;
+      }
+
+      if (socketMessage !== lastSocketErrorMessage) {
+        lastSocketErrorMessage = socketMessage;
+        console.warn('Realtime notification connection failed:', socketMessage);
+      }
     });
 
     return () => {
@@ -1702,6 +1703,16 @@ const Dashboard = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setError('');
+      queueDashboardRefresh();
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [queueDashboardRefresh]);
 
   useEffect(() => {
     if (role !== 'lecturer' || !queryForm.sessionId) {

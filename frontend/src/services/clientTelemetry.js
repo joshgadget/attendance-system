@@ -1,20 +1,4 @@
-const normalizeApiUrl = (value) => {
-  const fallback = 'http://localhost:5000/api';
-  const raw = String(value || '').trim();
-  if (!raw) {
-    return fallback;
-  }
-
-  try {
-    const parsed = new URL(raw);
-    const pathname = parsed.pathname.replace(/\/+$/, '');
-    parsed.pathname = pathname.endsWith('/api') ? pathname : `${pathname || ''}/api`;
-    return parsed.toString().replace(/\/+$/, '');
-  } catch (error) {
-    const trimmed = raw.replace(/\/+$/, '');
-    return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
-  }
-};
+import { normalizeApiUrl } from './apiConfig';
 
 const API_URL = normalizeApiUrl(process.env.REACT_APP_API_URL);
 const RELEASE = process.env.REACT_APP_RELEASE || process.env.REACT_APP_GIT_SHA || 'web';

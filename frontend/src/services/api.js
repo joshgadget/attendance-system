@@ -1,24 +1,35 @@
 import axios from 'axios';
-
-const normalizeApiUrl = (value) => {
-  const fallback = 'http://localhost:5000/api';
-  const raw = String(value || '').trim();
-  if (!raw) {
-    return fallback;
-  }
-
-  try {
-    const parsed = new URL(raw);
-    const pathname = parsed.pathname.replace(/\/+$/, '');
-    parsed.pathname = pathname.endsWith('/api') ? pathname : `${pathname || ''}/api`;
-    return parsed.toString().replace(/\/+$/, '');
-  } catch (error) {
-    const trimmed = raw.replace(/\/+$/, '');
-    return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
-  }
-};
+import { normalizeApiUrl } from './apiConfig';
 
 const API_URL = normalizeApiUrl(process.env.REACT_APP_API_URL);
+const NETWORK_RETRY_DELAYS_MS = [750, 1800];
+const RETRYABLE_METHODS = new Set(['get', 'head', 'options']);
+
+const wait = (delayMs) => new Promise((resolve) => {
+  setTimeout(resolve, delayMs);
+});
+
+const isRetryableNetworkError = (error) => {
+  if (!error?.config || error.response) {
+    return false;
+  }
+
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return false;
+  }
+
+  const method = String(error.config.method || 'get').toLowerCase();
+  if (!RETRYABLE_METHODS.has(method)) {
+    return false;
+  }
+
+  if (error.code === 'ECONNABORTED') {
+    return false;
+  }
+
+  const detail = `${error.code || ''} ${error.message || ''}`;
+  return /ERR_NETWORK|ERR_NETWORK_CHANGED|Network Error|Failed to fetch|Load failed/i.test(detail);
+};
 
 const api = axios.create({
   baseURL: API_URL,
@@ -44,14 +55,25 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    if (isRetryableNetworkError(error)) {
+      const retryCount = error.config.__networkRetryCount || 0;
+      const nextDelay = NETWORK_RETRY_DELAYS_MS[retryCount];
+
+      if (nextDelay) {
+        error.config.__networkRetryCount = retryCount + 1;
+        await wait(nextDelay);
+        return api(error.config);
+      }
+    }
+
     if (error.code === 'ECONNABORTED') {
       error.userMessage = 'The request took too long. Please try again.';
       return Promise.reject(error);
     }
 
     if (!error.response) {
-      error.userMessage = 'Unable to reach the server. Check your connection and try again.';
+      error.userMessage = 'The attendance server could not be reached. Please refresh in a moment.';
       return Promise.reject(error);
     }
 

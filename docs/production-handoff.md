@@ -27,7 +27,7 @@
    - `JWT_REFRESH_SECRET`
    - `CORS_ORIGIN`
    - `FRONTEND_URL`
-4. Keep `REACT_APP_API_URL=https://api.attendancesystem.xyz` on the frontend.
+4. Keep `REACT_APP_API_URL=https://attendance-backend-xjiw.onrender.com` on the frontend until `https://api.attendancesystem.xyz` responds reliably again.
 5. Verify `Enforce HTTPS` remains enabled on the GitHub Pages custom domain.
 6. Rotate any secrets that were previously pasted or shared.
 
@@ -42,8 +42,8 @@
    - camera-link QR opens the attendance entry flow
 5. Mark one valid attendance and one invalid attendance attempt.
 6. Confirm reports, dashboard summaries, and notifications load.
-7. Open `https://api.attendancesystem.xyz/api/health` and confirm the API responds.
-8. Open `https://api.attendancesystem.xyz/api/ready` and confirm the database readiness check responds.
+7. Open `https://attendance-backend-xjiw.onrender.com/api/health` and confirm the API responds.
+8. Open `https://attendance-backend-xjiw.onrender.com/api/ready` and confirm the database readiness check responds.
 9. Confirm student users cannot escalate absence queries and lecturers/admins can only escalate allowed lecturer-originated queries.
 
 ## Recommended next hardening
