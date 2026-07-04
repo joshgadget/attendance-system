@@ -329,7 +329,7 @@ const register = async (req, res) => {
       faculty: faculty || null,
       program: program || null,
       campus: normalizeCampus(campus) || null,
-      matricNumber: matricNumber || null,
+      matricNumber: matricNumber ? matricNumber.trim().toUpperCase() : null,
     });
 
     try {
@@ -356,7 +356,7 @@ const register = async (req, res) => {
 
 const studentLookup = async (req, res) => {
   try {
-    const matricNumber = (req.params.matricNumber || '').trim();
+    const matricNumber = (req.params.matricNumber || '').trim().toUpperCase();
     const record = await StudentRegistry.findOne({ where: { matricNumber, isActive: true } });
 
     if (!record) {
@@ -435,7 +435,8 @@ const studentSignup = async (req, res) => {
       });
     }
 
-    const registryRecord = await StudentRegistry.findOne({ where: { matricNumber, isActive: true } });
+    const normalizedMatricNumber = matricNumber.trim().toUpperCase();
+    const registryRecord = await StudentRegistry.findOne({ where: { matricNumber: normalizedMatricNumber, isActive: true } });
     if (!registryRecord) {
       return res.status(404).json({ success: false, message: 'Matric number not found in school registry' });
     }

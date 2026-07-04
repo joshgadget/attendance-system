@@ -1,10 +1,3 @@
-const crypto = require('crypto');
-
-// Generate random session code (10 characters)
-const generateSessionCode = () => {
-  return crypto.randomBytes(5).toString('hex').toUpperCase();
-};
-
 // Format date for display
 const formatDate = (date) => {
   return new Date(date).toLocaleDateString('en-US', {
@@ -29,7 +22,6 @@ const calculateAttendancePercentage = (present, total) => {
 };
 
 module.exports = {
-  generateSessionCode,
   formatDate,
   formatTime,
   calculateAttendancePercentage

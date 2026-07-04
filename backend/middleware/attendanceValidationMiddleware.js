@@ -1,5 +1,6 @@
 const { Session, Attendance } = require('../models');
 const { Op } = require('sequelize');
+const logger = require('../utils/logger');
 
 /**
  * CRITICAL SECURITY MIDDLEWARE
@@ -10,9 +11,9 @@ const { Op } = require('sequelize');
 // Validate session code and check if session is active
 const validateSessionAccess = async (req, res, next) => {
   try {
-    const { session_code } = req.body;
+    const { sessionCode } = req.body;
     
-    if (!session_code) {
+    if (!sessionCode) {
       return res.status(400).json({
         success: false,
         message: 'Session code is required.'
@@ -22,7 +23,7 @@ const validateSessionAccess = async (req, res, next) => {
     // Find active session with this code
     const session = await Session.findOne({
       where: {
-        session_code: session_code.toUpperCase().trim(),
+        sessionCode: sessionCode.toUpperCase().trim(),
         status: 'active'
       }
     });
@@ -34,11 +35,11 @@ const validateSessionAccess = async (req, res, next) => {
       });
     }
 
-    // Check if session time is valid (can only sign within session duration + 15 min grace)
-    const sessionStart = new Date(`${session.date}T${session.start_time}`);
-    const sessionEnd = new Date(sessionStart.getTime() + session.duration_minutes * 60000);
+    // Check if session time is valid (can only sign within session duration + grace period)
+    const sessionStart = new Date(`${session.date}T${session.startTime}`);
+    const sessionEnd = new Date(`${session.date}T${session.endTime}`);
     const now = new Date();
-    const gracePeriod = 15 * 60000; // 15 minutes grace period after session ends
+    const gracePeriod = (session.maxAttendanceTime || 15) * 60000;
 
     if (now < sessionStart) {
       return res.status(403).json({
@@ -59,7 +60,7 @@ const validateSessionAccess = async (req, res, next) => {
     
     next();
   } catch (error) {
-    console.error('Session validation error:', error);
+    logger.error('Session validation error:', error);
     return res.status(500).json({
       success: false,
       message: 'Error validating session.'
@@ -75,8 +76,8 @@ const checkDuplicateAttendance = async (req, res, next) => {
 
     const existingAttendance = await Attendance.findOne({
       where: {
-        session_id: session.id,
-        student_id: studentId
+        sessionId: session.id,
+        studentId
       }
     });
 
@@ -86,14 +87,14 @@ const checkDuplicateAttendance = async (req, res, next) => {
         message: 'You have already marked attendance for this session.',
         data: {
           status: existingAttendance.status,
-          marked_at: existingAttendance.marked_at
+          markedAt: existingAttendance.markedAt
         }
       });
     }
 
     next();
   } catch (error) {
-    console.error('Duplicate check error:', error);
+    logger.error('Duplicate check error:', error);
     return res.status(500).json({
       success: false,
       message: 'Error checking attendance status.'
@@ -109,8 +110,8 @@ const preventRapidMarking = async (req, res, next) => {
 
     const recentAttendance = await Attendance.findOne({
       where: {
-        student_id: studentId,
-        marked_at: {
+        studentId,
+        markedAt: {
           [Op.gte]: fiveMinutesAgo
         }
       }
@@ -125,7 +126,7 @@ const preventRapidMarking = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error('Rapid marking check error:', error);
+    logger.error('Rapid marking check error:', error);
     return res.status(500).json({
       success: false,
       message: 'Error checking attendance frequency.'
@@ -141,16 +142,17 @@ const validateDeviceConsistency = async (req, res, next) => {
 
     // Get last 5 attendances for this student
     const recentAttendances = await Attendance.findAll({
-      where: { student_id: studentId },
-      order: [['marked_at', 'DESC']],
+      where: { studentId },
+      order: [['markedAt', 'DESC']],
       limit: 5
     });
 
     if (recentAttendances.length >= 3) {
       // Check if IP is consistent (allow 2 different IPs max - for mobile/WiFi switching)
-      const uniqueIPs = [...new Set(recentAttendances.map(a => a.device_ip))];
+      const deviceInfoList = recentAttendances.map(a => a.deviceInfo || a.location).filter(Boolean);
+      const uniqueDevices = [...new Set(deviceInfoList)];
       
-      if (uniqueIPs.length > 2 && !uniqueIPs.includes(currentIP)) {
+      if (uniqueDevices.length > 2 && !uniqueDevices.includes(currentIP)) {
         // Flag for review but don't block (could be legitimate network change)
         req.deviceFlagged = true;
       }
@@ -158,7 +160,7 @@ const validateDeviceConsistency = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error('Device validation error:', error);
+    logger.error('Device validation error:', error);
     // Don't block on error, just continue
     next();
   }
