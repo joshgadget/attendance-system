@@ -3,7 +3,7 @@ const env = require('../utils/env');
 
 const authRateLimiter = rateLimit({
   windowMs: env.rateLimitWindowMs,
-  max: 5,
+  max: 20,
   message: { success: false, message: 'Too many auth attempts' }
 });
 
