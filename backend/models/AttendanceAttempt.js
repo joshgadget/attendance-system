@@ -55,6 +55,15 @@ const AttendanceAttempt = sequelize.define('AttendanceAttempt', {
     type: DataTypes.STRING(500),
     allowNull: true,
   },
+  attemptNumber: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 1,
+  },
+  attendanceMethod: {
+    type: DataTypes.ENUM('qr', 'key'),
+    allowNull: true,
+  },
   metadata: {
     type: DataTypes.TEXT,
     allowNull: true,

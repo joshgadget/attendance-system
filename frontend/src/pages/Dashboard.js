@@ -55,10 +55,10 @@ import './dashboard-theme.css';
 const initialUserForm = { firstName: '', lastName: '', email: '', password: '', role: 'student', department: '', faculty: '', program: '', campus: '', matricNumber: '' };
 const initialCourseForm = { courseCode: '', courseName: '', description: '', semester: 'rain', academicYear: '', lecturerId: '', faculty: '', department: '', program: '', campus: '', level: '' };
 const initialRegistryForm = { matricNumber: '', firstName: '', lastName: '', otherName: '', faculty: '', department: '', program: '', campus: '', level: '', admissionYear: '' };
-const initialSessionForm = { courseId: '', date: '', startTime: '', durationMinutes: '120', venue: '', maxAttendanceTime: '15', buildingId: '' };
+const initialSessionForm = { courseId: '', date: '', startTime: '', durationMinutes: '120', venue: '', lecturerLatitude: '', lecturerLongitude: '', lecturerLocationAccuracy: '' };
 const initialBuildingForm = { name: '', tag: '', campus: '', latitude: '', longitude: '', radiusMeters: '80' };
 const initialQueryForm = { studentId: '', sessionId: '', title: '', message: '' };
-const initialAttendanceForm = { sessionCode: '', attendancePass: '', useLocation: true };
+const initialAttendanceForm = { sessionKey: '', courseCode: '', attendancePass: '', useLocation: true };
 const initialSiteMaintenanceForm = {
   isMaintenanceEnabled: false,
   badge: 'Temporary maintenance',
@@ -249,7 +249,6 @@ const getCourseLevelLabel = (course) => {
   return digits ? `${digits} LEVEL` : rawLevel.toUpperCase();
 };
 
-const getAttendanceKeyForCourse = (course) => String(course?.courseCode || '').trim().toUpperCase();
 const PENDING_ATTENDANCE_STORAGE_KEY = 'attendance-system-pending-entry';
 const DEFAULT_LEVEL_OPTIONS = ['100', '200', '300', '400', '500', '600'];
 const MAX_EVIDENCE_BYTES = 3 * 1024 * 1024;
@@ -334,65 +333,33 @@ const createEvidencePayload = async (file, note = '') => {
 };
 
 const extractAttendancePayload = (decodedText) => {
-  const fallback = { sessionCode: '', attendancePass: '' };
   const compactText = String(decodedText || '').trim();
-  const readAttendanceParams = (params) => {
-    const sessionCode = (params.get('sessionCode') || params.get('s') || '').trim().toUpperCase();
-    if (!sessionCode) {
-      return null;
-    }
+  if (!compactText) return { attendancePass: '' };
 
-    return {
-      sessionCode,
-      attendancePass: (params.get('attendancePass') || params.get('p') || params.get('attendanceKey') || params.get('k') || '').trim().toUpperCase(),
-    };
-  };
-
-  if (compactText.toUpperCase().startsWith('ATD|')) {
-    const [, sessionCode = '', attendanceKey = ''] = compactText.split('|');
-    return {
-      sessionCode: String(sessionCode || '').trim().toUpperCase(),
-      attendancePass: String(attendanceKey || '').trim().toUpperCase(),
-    };
+  // JWT tokens start with eyJ (base64url-encoded JSON)
+  if (compactText.startsWith('eyJ')) {
+    return { attendancePass: compactText };
   }
 
   try {
     const parsedUrl = new URL(compactText);
-    const directParams = readAttendanceParams(parsedUrl.searchParams);
-    if (directParams) {
-      return directParams;
+    const tokenParam = parsedUrl.searchParams.get('token') || parsedUrl.searchParams.get('t') || '';
+    if (tokenParam && tokenParam.startsWith('eyJ')) {
+      return { attendancePass: tokenParam };
     }
-
     const hashQueryIndex = parsedUrl.hash.indexOf('?');
     if (hashQueryIndex >= 0) {
       const hashParams = new URLSearchParams(parsedUrl.hash.slice(hashQueryIndex + 1));
-      const hashPayload = readAttendanceParams(hashParams);
-      if (hashPayload) {
-        return hashPayload;
+      const hashToken = hashParams.get('token') || hashParams.get('t') || '';
+      if (hashToken && hashToken.startsWith('eyJ')) {
+        return { attendancePass: hashToken };
       }
     }
-  } catch (error) {
-    // not a full absolute URL, keep trying other formats
+  } catch {
+    // not a URL
   }
 
-  if (compactText.includes('sessionCode=') || compactText.includes('s=')) {
-    const queryString = compactText.includes('?') ? compactText.slice(compactText.indexOf('?') + 1) : compactText;
-    const params = new URLSearchParams(queryString);
-    const queryPayload = readAttendanceParams(params);
-    if (queryPayload) {
-      return queryPayload;
-    }
-  }
-
-  try {
-    const parsed = JSON.parse(compactText);
-    return {
-      sessionCode: String(parsed.sessionCode || '').trim().toUpperCase(),
-      attendancePass: String(parsed.attendancePass || parsed.attendanceKey || '').trim().toUpperCase(),
-    };
-  } catch (error) {
-    return { ...fallback, sessionCode: compactText.toUpperCase() };
-  }
+  return { attendancePass: compactText };
 };
 
 const Panel = ({ title, eyebrow, action, children }) => {
@@ -677,6 +644,11 @@ const LiveClassConsole = ({ sessionDetail, qrDataUrl, busyAction, onCloseSession
   const expected = Number(stats.expectedCount || 0);
   const percentage = expected > 0 ? Math.round((marked / expected) * 100) : 0;
   const isActive = sessionDetail.status === 'active';
+  const expiresAt = sessionDetail.expiresAt ? new Date(sessionDetail.expiresAt) : null;
+  const now = new Date();
+  const msRemaining = expiresAt ? Math.max(0, expiresAt - now) : 0;
+  const minutesRemaining = Math.floor(msRemaining / 60000);
+  const secondsRemaining = Math.floor((msRemaining % 60000) / 1000);
 
   return (
     <section className={`live-class-console ${isActive ? 'is-live' : ''}`} aria-label="Live class console">
@@ -684,6 +656,11 @@ const LiveClassConsole = ({ sessionDetail, qrDataUrl, busyAction, onCloseSession
         <p>{isActive ? 'Live class mode' : 'Session console'}</p>
         <h2>{sessionDetail.course?.courseCode || sessionDetail.sessionCode}</h2>
         <span>{sessionDetail.course?.courseName || 'Attendance session'} | {formatDate(sessionDetail.date)} at {formatTime(sessionDetail.startTime)}</span>
+        {isActive && expiresAt && (
+          <p className="mt-2 text-sm font-semibold text-amber-600">
+            Expires in {minutesRemaining}m {secondsRemaining}s
+          </p>
+        )}
         <div className="live-class-console__metrics">
           <div><strong>{marked}</strong><small>marked</small></div>
           <div><strong>{expected}</strong><small>expected</small></div>
@@ -712,8 +689,10 @@ const LiveClassConsole = ({ sessionDetail, qrDataUrl, busyAction, onCloseSession
         ) : (
           <RadioTower className="h-12 w-12" />
         )}
-        <p>{sessionDetail.sessionCode}</p>
-        <span>{sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'Attendance key unavailable'}</span>
+        <p>{sessionDetail.sessionKey || sessionDetail.sessionCode}</p>
+        {sessionDetail.sessionKey && (
+          <span className="text-xs text-slate-500">Session key: {sessionDetail.sessionKey}</span>
+        )}
       </div>
     </section>
   );
@@ -727,6 +706,11 @@ const QrPresentationOverlay = ({ isOpen, sessionDetail, qrDataUrl, onClose }) =>
   const stats = sessionDetail.attendanceStats || {};
   const expected = Number(stats.expectedCount || 0);
   const marked = Number(stats.markedCount || 0);
+  const expiresAt = sessionDetail.expiresAt ? new Date(sessionDetail.expiresAt) : null;
+  const now = new Date();
+  const msRemaining = expiresAt ? Math.max(0, expiresAt - now) : 0;
+  const minutesRemaining = Math.floor(msRemaining / 60000);
+  const secondsRemaining = Math.floor((msRemaining % 60000) / 1000);
 
   return (
     <div className="qr-presentation" role="dialog" aria-modal="true" aria-label="Full-screen attendance QR code">
@@ -740,6 +724,12 @@ const QrPresentationOverlay = ({ isOpen, sessionDetail, qrDataUrl, onClose }) =>
             <img src={qrDataUrl} alt="Attendance QR code" />
           ) : (
             <RadioTower className="h-24 w-24" />
+          )}
+          {sessionDetail.sessionKey && (
+            <p className="mt-4 text-lg font-bold">Key: {sessionDetail.sessionKey}</p>
+          )}
+          {sessionDetail.expiresAt && msRemaining > 0 && (
+            <p className="mt-2 text-sm text-amber-600">Expires in {minutesRemaining}m {secondsRemaining}s</p>
           )}
         </div>
         <div className="qr-presentation__stats">
@@ -1346,22 +1336,25 @@ const Dashboard = () => {
 
     try {
       const pendingEntry = JSON.parse(rawPendingEntry);
-      const sessionCode = String(pendingEntry?.sessionCode || '').trim().toUpperCase();
-      const attendancePass = String(pendingEntry?.attendancePass || '').trim().toUpperCase();
-      if (!sessionCode) {
+      const attendancePass = String(pendingEntry?.attendancePass || '').trim();
+      const sessionKey = String(pendingEntry?.sessionKey || pendingEntry?.sessionCode || '').trim().toUpperCase();
+      const courseCode = String(pendingEntry?.courseCode || pendingEntry?.attendanceKey || '').trim().toUpperCase();
+
+      if (!sessionKey && !attendancePass) {
         window.localStorage.removeItem(PENDING_ATTENDANCE_STORAGE_KEY);
         return;
       }
 
       setAttendanceForm((current) => ({
         ...current,
-        sessionCode,
-        attendancePass,
+        attendancePass: attendancePass || current.attendancePass,
+        sessionKey: sessionKey || current.sessionKey,
+        courseCode: courseCode || current.courseCode,
       }));
       setAttendanceEntrySource(String(pendingEntry?.sourcePath || 'QR link'));
       setActiveTab('attendance');
       window.localStorage.removeItem(PENDING_ATTENDANCE_STORAGE_KEY);
-      setMessage('Attendance link loaded. Review the details below and tap "Mark with code" to complete attendance.');
+      setMessage('Attendance link loaded. Review the details and complete attendance.');
     } catch (error) {
       window.localStorage.removeItem(PENDING_ATTENDANCE_STORAGE_KEY);
     }
@@ -1565,10 +1558,8 @@ const Dashboard = () => {
     const detail = response.data.data;
     setSessionDetail(detail);
 
-    if (detail?.sessionCode) {
-      const attendanceKey = detail.attendanceKey || getAttendanceKeyForCourse(detail.course) || '';
-      const qrPayload = `${window.location.origin}${window.location.pathname}#/attendance-entry?sessionCode=${encodeURIComponent(detail.sessionCode)}&attendanceKey=${encodeURIComponent(attendanceKey)}`;
-      const dataUrl = await QRCode.toDataURL(qrPayload, {
+    if (detail?.qrToken) {
+      const dataUrl = await QRCode.toDataURL(detail.qrToken, {
         width: 420,
         margin: 1,
         errorCorrectionLevel: 'L',
@@ -2500,9 +2491,21 @@ const Dashboard = () => {
     try {
       setBusyAction('create-session');
       setMessage();
-      const response = await api.post('/attendance/sessions', sessionForm);
+      const location = await getCurrentLocation();
+      if (!location) {
+        setMessage('', 'Location permission is required before creating an attendance session. Enable GPS and try again.');
+        setBusyAction('');
+        return;
+      }
+      const payload = {
+        ...sessionForm,
+        lecturerLatitude: location.latitude,
+        lecturerLongitude: location.longitude,
+        lecturerLocationAccuracy: location.accuracy,
+      };
+      const response = await api.post('/attendance/sessions', payload);
       setSessionForm(initialSessionForm);
-      setMessage(`Attendance session created. Session code: ${response.data.data.sessionCode}`);
+      setMessage(`Attendance session created. Session key: ${response.data.data.sessionKey}`);
       await loadData(true);
       await loadSessionDetail(response.data.data.session.id);
       setActiveTab('sessions');
@@ -2607,26 +2610,21 @@ const Dashboard = () => {
     }
 
     try {
-      const resolvedPayload = typeof overridePayload === 'string'
-        ? { sessionCode: overridePayload, attendancePass: '' }
-        : (overridePayload || {});
-      const sessionCode = String(resolvedPayload.sessionCode || attendanceForm.sessionCode || '').trim().toUpperCase();
-      const attendancePass = String(resolvedPayload.attendancePass || attendanceForm.attendancePass || '').trim();
-      if (resolvedPayload.sessionCode || resolvedPayload.attendancePass) {
+      const resolvedPayload = overridePayload || {};
+      const attendancePass = String(resolvedPayload.attendancePass || '').trim();
+      const sessionKey = String(resolvedPayload.sessionKey || attendanceForm.sessionKey || '').trim().toUpperCase();
+      const courseCode = String(resolvedPayload.courseCode || attendanceForm.courseCode || '').trim().toUpperCase();
+
+      if (resolvedPayload.sessionKey || resolvedPayload.courseCode) {
         setAttendanceForm((current) => ({
           ...current,
-          sessionCode: sessionCode || current.sessionCode,
-          attendancePass: attendancePass || current.attendancePass,
+          sessionKey: sessionKey || current.sessionKey,
+          courseCode: courseCode || current.courseCode,
         }));
       }
-      if (!sessionCode) {
-        const message = 'Enter or scan a valid session code before marking attendance.';
-        setMessage('', message);
-        return { success: false, message };
-      }
 
-      if (!attendancePass) {
-        const message = 'Attendance key is missing. Scan the lecturer QR code or enter the session code with the course short code.';
+      if (!attendancePass && (!sessionKey || !courseCode)) {
+        const message = 'Scan the QR code or enter the session key with your course code to mark attendance.';
         setMessage('', message);
         return { success: false, message };
       }
@@ -2635,30 +2633,41 @@ const Dashboard = () => {
       setBusyAction('mark-attendance');
       setMessage();
       const location = attendanceForm.useLocation ? await getCurrentLocation() : null;
-      const response = await api.post('/attendance/mark', {
-        sessionCode,
-        attendancePass,
+      const body = {
         latitude: location?.latitude,
         longitude: location?.longitude,
         accuracy: location?.accuracy,
         locationTimestamp: location?.locationTimestamp,
         deviceInfo: navigator.userAgent,
-      });
+      };
+
+      if (attendancePass) {
+        body.attendancePass = attendancePass;
+      } else {
+        body.sessionKey = sessionKey;
+        body.courseCode = courseCode;
+      }
+
+      const response = await api.post('/attendance/mark', body);
       setAttendanceForm(initialAttendanceForm);
       setAttendanceEntrySource('');
-      const message = response.data?.message || 'Attendance marked successfully.';
+      const message = response.data?.message || 'Attendance has been recorded successfully.';
       setMessage(message);
       await loadData(true);
-      return { success: true, message };
+      return { success: true, message, data: response.data?.data };
     } catch (actionError) {
       const message = actionError.response?.data?.message || 'Attendance could not be marked.';
       setMessage('', message);
+      const data = actionError.response?.data?.data;
+      if (data?.canRetry) {
+        return { success: false, message, canRetry: true, distanceMeters: data.distanceMeters };
+      }
       return { success: false, message };
     } finally {
       attendanceRequestRef.current = false;
       setBusyAction('');
     }
-  }, [attendanceForm.attendancePass, attendanceForm.sessionCode, attendanceForm.useLocation, loadData]);
+  }, [attendanceForm.sessionKey, attendanceForm.courseCode, attendanceForm.useLocation, loadData]);
 
   const handleDeactivateUser = async (userId) => {
     try {
@@ -4786,29 +4795,14 @@ const Dashboard = () => {
                         <Input label="Date" type="date" value={sessionForm.date} onChange={(value) => setSessionForm((current) => ({ ...current, date: value }))} />
                         <Input label="Start time" type="time" value={sessionForm.startTime} onChange={(value) => setSessionForm((current) => ({ ...current, startTime: value }))} />
                         <Input label="Duration (minutes)" type="number" value={sessionForm.durationMinutes} onChange={(value) => setSessionForm((current) => ({ ...current, durationMinutes: value }))} />
-                        <Select
-                          label="Lecture building geofence"
-                          value={sessionForm.buildingId}
-                          onChange={(value) => setSessionForm((current) => ({ ...current, buildingId: value }))}
-                          options={[
-                            { value: '', label: 'Choose building' },
-                            ...buildings
-                              .filter((building) => building.isActive !== false)
-                              .map((building) => ({
-                                value: building.id,
-                                label: `${building.name}${building.tag ? ` (${building.tag})` : ''} - ${building.radiusMeters}m`,
-                              })),
-                          ]}
-                        />
-                        <Input label="Venue" value={sessionForm.venue} onChange={(value) => setSessionForm((current) => ({ ...current, venue: value }))} />
-                        <Input label="Grace period (minutes)" type="number" value={sessionForm.maxAttendanceTime} onChange={(value) => setSessionForm((current) => ({ ...current, maxAttendanceTime: value }))} />
+                        <Input label="Venue (optional)" value={sessionForm.venue} onChange={(value) => setSessionForm((current) => ({ ...current, venue: value }))} />
                         <div className="dashboard-callout md:col-span-2 rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-slate-700">
-                          Geofence is auto-applied from the selected building. Students outside that building radius cannot mark attendance.
+                          Your live GPS location will be captured when you create the session. This location becomes the attendance centre (35-metre radius). Make sure you are in the classroom before creating the session.
                         </div>
                         <div className="md:col-span-2">
                           <ActionButton type="submit" disabled={busyAction === 'create-session'}>
-                            {busyAction === 'create-session' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />}
-                            Create session
+                            {busyAction === 'create-session' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
+                            Verify location and create session
                           </ActionButton>
                         </div>
                       </form>
@@ -5005,17 +4999,21 @@ const Dashboard = () => {
                       <div className="grid gap-4 md:grid-cols-2">
                         <SummaryTile label="Course" value={sessionDetail.course?.courseCode || 'Not set'} helper={sessionDetail.course?.courseName || 'Linked course'} />
                         <SummaryTile label="Session code" value={sessionDetail.sessionCode} helper={`${formatDate(sessionDetail.date)} at ${formatTime(sessionDetail.startTime)}`} />
-                        <SummaryTile label="Attendance key" value={sessionDetail.attendanceKey || getAttendanceKeyForCourse(sessionDetail.course) || 'Unavailable'} helper={sessionDetail.attendancePassExpiresAt ? `Fallback uses the course short code until ${formatDateTime(sessionDetail.attendancePassExpiresAt)}.` : 'Fallback uses the course short code.'} />
+                        <SummaryTile label="Session key" value={sessionDetail.sessionKey || 'N/A'} helper="Students enter this key with their course code to mark attendance." />
                         <SummaryTile label="Expected students" value={sessionDetail.attendanceStats?.expectedCount || 0} helper="Expected count" />
                         <SummaryTile label="Marked attendance" value={sessionDetail.attendanceStats?.markedCount || 0} helper="Present or late" />
                         <SummaryTile label="Present on time" value={sessionDetail.attendanceStats?.presentCount || 0} helper="Marked in time" />
                         <SummaryTile label="Absent students" value={sessionDetail.attendanceStats?.absentCount || 0} helper="Will get follow-up" />
                       </div>
-                      {(sessionDetail.geofenceLatitude && sessionDetail.geofenceLongitude && sessionDetail.geofenceRadiusMeters) && (
-                        <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4 text-sm text-blue-900">
-                          Geofence active: center {sessionDetail.geofenceLatitude}, {sessionDetail.geofenceLongitude} with {sessionDetail.geofenceRadiusMeters}m radius.
+                      {(sessionDetail.lecturerLatitude && sessionDetail.lecturerLongitude) ? (
+                        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
+                          Lecturer location: {sessionDetail.lecturerLatitude}, {sessionDetail.lecturerLongitude} | Radius: {sessionDetail.attendanceRadiusMeters || 35}m
                         </div>
-                      )}
+                      ) : sessionDetail.geofenceLatitude ? (
+                        <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4 text-sm text-blue-900">
+                          Legacy geofence: {sessionDetail.geofenceLatitude}, {sessionDetail.geofenceLongitude} with {sessionDetail.geofenceRadiusMeters}m radius.
+                        </div>
+                      ) : null}
                       <div className="flex flex-wrap gap-3">
                         {sessionDetail.status === 'active' && <ActionButton onClick={() => handleCloseSession(sessionDetail.id)} disabled={busyAction === `close-session-${sessionDetail.id}`} variant="contrast">{busyAction === `close-session-${sessionDetail.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Close session and auto-send queries</ActionButton>}
                         <button onClick={() => { setQueryForm((current) => ({ ...current, sessionId: String(sessionDetail.id) })); setActiveTab('queries'); }} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100"><Bell className="h-4 w-4" />Open query composer</button>
@@ -5166,20 +5164,20 @@ const Dashboard = () => {
                 <Panel title="Mark attendance" eyebrow="Student check-in">
                   <div className="space-y-5">
                     {attendanceEntrySource && <div className="rounded-[1.5rem] border border-emerald-200 bg-emerald-50/80 px-5 py-4 text-sm text-emerald-800">Attendance details were loaded from {attendanceEntrySource}. Confirm the session code and tap <span className="font-semibold">Mark with code</span>.</div>}
-                    <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-5"><p className="text-sm leading-7 text-slate-600">Use the scanner, or enter the session code and course short code manually.</p></div>
+                    <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-5"><p className="text-sm leading-7 text-slate-600">Scan the lecturer QR code, or enter the session key and course code manually.</p></div>
                     <div className="grid gap-4">
-                      <Input label="Session code" value={attendanceForm.sessionCode} onChange={(value) => setAttendanceForm((current) => ({ ...current, sessionCode: value.toUpperCase() }))} />
-                      <Input label="Attendance key (course short code)" value={attendanceForm.attendancePass} onChange={(value) => setAttendanceForm((current) => ({ ...current, attendancePass: value.toUpperCase() }))} />
+                      <Input label="Session key" value={attendanceForm.sessionKey} onChange={(value) => setAttendanceForm((current) => ({ ...current, sessionKey: value.toUpperCase() }))} placeholder="e.g. A3F9K2" />
+                      <Input label="Course code" value={attendanceForm.courseCode} onChange={(value) => setAttendanceForm((current) => ({ ...current, courseCode: value.toUpperCase() }))} placeholder="e.g. CSC101" />
                       <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700"><input type="checkbox" checked={attendanceForm.useLocation} onChange={(event) => setAttendanceForm((current) => ({ ...current, useLocation: event.target.checked }))} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />Include device location when available for stronger attendance verification.</label>
                     </div>
                     <div className="flex flex-wrap gap-3">
-                      <button onClick={() => handleMarkAttendance()} disabled={busyAction === 'mark-attendance'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'mark-attendance' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Mark with code</button>
+                      <button onClick={() => handleMarkAttendance()} disabled={busyAction === 'mark-attendance'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'mark-attendance' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}Mark with key</button>
                       <button onClick={() => setScannerOpen(true)} disabled={busyAction === 'mark-attendance' || scannerOpen} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-60"><Camera className="h-4 w-4" />Scan QR code</button>
                     </div>
                   </div>
                 </Panel>
                 <Panel title="Attendance tips" eyebrow="Verification">
-                  <div className="space-y-4"><ActionTile title="Arrive early" description="Marks made after the session grace period are recorded as late." /><ActionTile title="Keep your course list current" description="Absent-student checks rely on your registered semester courses." /><ActionTile title="Reply to absence queries" description="If you miss class, a lecturer can review your reason directly in the system." /></div>
+                  <div className="space-y-4"><ActionTile title="Stay close to the lecturer" description="You must be within 35 metres of the lecturer's verified location to be marked present." /><ActionTile title="One retry if outside radius" description="If you are outside the 35-metre radius, you get one more attempt to move closer." /><ActionTile title="Keep your course list current" description="Absent-student checks rely on your registered semester courses." /></div>
                 </Panel>
               </div>
               <Panel title="Attendance history" eyebrow="Your records">

@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { Op, UniqueConstraintError } = require('sequelize');
-const { AbsenceQuery, Session, Attendance, Course, User, Building, Enrollment, AttendanceAttempt } = require('../models');
-const { pointNearPolygon, validateGpsAccuracy, validateLocationTimestamp, isMockedLocation } = require('../utils/geoValidation');
+const { AbsenceQuery, Session, Attendance, Course, User, Enrollment, AttendanceAttempt } = require('../models');
+const { haversineDistance, validateGpsAccuracy, validateLocationTimestamp, isMockedLocation, isInsideNigeriaBounds } = require('../utils/geoValidation');
 const crypto = require('crypto');
 const authConfig = require('../config/auth');
 const { sendEmail } = require('../utils/mailer');
@@ -10,8 +10,16 @@ const { findEnrollmentsForCourse } = require('../utils/enrollmentLookup');
 const { broadcastNotification, buildNotificationPayload } = require('../utils/realtimeNotifications');
 
 const generateSessionCode = () => crypto.randomBytes(5).toString('hex').toUpperCase();
-const SESSION_SUMMARY_ATTRIBUTES = ['id', 'courseId', 'lecturerId', 'sessionCode', 'date', 'startTime', 'endTime', 'venue', 'status', 'maxAttendanceTime', 'createdAt', 'updatedAt'];
-const ATTENDANCE_PASS_TTL_SECONDS = 120;
+const generateSessionKey = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let key = '';
+  for (let i = 0; i < 6; i++) {
+    key += chars[crypto.randomInt(chars.length)];
+  }
+  return key;
+};
+const SESSION_SUMMARY_ATTRIBUTES = ['id', 'courseId', 'lecturerId', 'sessionCode', 'sessionKey', 'date', 'startTime', 'endTime', 'venue', 'status', 'maxAttendanceTime', 'lecturerLatitude', 'lecturerLongitude', 'lecturerLocationAccuracy', 'expiresAt', 'attendanceRadiusMeters', 'createdAt', 'updatedAt'];
+const ATTENDANCE_RADIUS_METERS = 35;
 const APP_TIMEZONE = 'Africa/Lagos';
 
 const buildEndTime = (startTime, durationMinutes) => {
@@ -22,18 +30,12 @@ const buildEndTime = (startTime, durationMinutes) => {
   return `${endHours}:${endMinutes}:00`;
 };
 
-const hasGeofence = (session) =>
-  session.geofenceLatitude !== null &&
-  session.geofenceLongitude !== null &&
-  session.geofenceRadiusMeters !== null;
-
 const toRadians = (value) => (Number(value) * Math.PI) / 180;
 
 const distanceMeters = (lat1, lon1, lat2, lon2) => {
   const earthRadius = 6371000;
   const dLat = toRadians(lat2 - lat1);
   const dLon = toRadians(lon2 - lon1);
-
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
@@ -59,7 +61,6 @@ const getCurrentLagosTimeParts = () => {
     second: '2-digit',
     hourCycle: 'h23',
   });
-
   const parts = Object.fromEntries(formatter.formatToParts(new Date()).map((part) => [part.type, part.value]));
   return {
     dateKey: `${parts.year}-${parts.month}-${parts.day}`,
@@ -68,28 +69,15 @@ const getCurrentLagosTimeParts = () => {
   };
 };
 
-const isInsideNigeriaBounds = (latitude, longitude) =>
-  latitude >= 4.0 &&
-  latitude <= 14.0 &&
-  longitude >= 2.5 &&
-  longitude <= 15.0;
-
 const buildDeviceFingerprint = (req) => crypto
   .createHash('sha256')
   .update(req.get('user-agent') || 'unknown-device')
   .digest('hex')
   .slice(0, 32);
 
-const buildAttendancePassPayload = (session) => ({
-  t: 'a',
-  sid: session.id,
-  sc: session.sessionCode,
-  lid: session.lecturerId,
-});
-
-const signAttendancePass = (session) => {
-  const token = jwt.sign(buildAttendancePassPayload(session), authConfig.jwt.secret, {
-    expiresIn: ATTENDANCE_PASS_TTL_SECONDS,
+const signQrToken = (sessionId, sessionKey, ttlSeconds) => {
+  const token = jwt.sign({ t: 'att', sid: sessionId, key: sessionKey }, authConfig.jwt.secret, {
+    expiresIn: ttlSeconds,
   });
   const decoded = jwt.decode(token);
   return {
@@ -98,88 +86,43 @@ const signAttendancePass = (session) => {
   };
 };
 
-const getCourseAttendanceKey = (courseCode = '') => String(courseCode || '').trim().toUpperCase();
-
-const verifyAttendancePass = (token, session, courseCode = '') => {
-  if (!token) {
-    const error = new Error('Attendance key is required. Scan the lecturer QR code again or enter the course short code for this class.');
-    error.statusCode = 403;
-    throw error;
-  }
-
-  const normalizedToken = String(token || '').trim().toUpperCase();
-  const normalizedCourseCode = getCourseAttendanceKey(courseCode);
-  if (normalizedCourseCode && normalizedToken === normalizedCourseCode) {
-    return { type: 'course-code-fallback' };
-  }
-
-  let decoded;
-  try {
-    decoded = jwt.verify(token, authConfig.jwt.secret);
-  } catch (error) {
-    const authError = new Error('Attendance key expired or invalid. Scan the lecturer QR code again.');
-    authError.statusCode = 403;
-    throw authError;
-  }
-
-  if (
-    decoded?.t !== 'a' ||
-    Number(decoded?.sid) !== Number(session.id) ||
-    String(decoded?.sc || '').trim().toUpperCase() !== String(session.sessionCode || '').trim().toUpperCase()
-  ) {
-    const mismatchError = new Error('Attendance key does not match this session. Scan the active QR code in class again.');
-    mismatchError.statusCode = 403;
-    throw mismatchError;
-  }
-
-  return decoded;
-};
-
 exports.createSession = async (req, res) => {
   try {
     const {
       courseId,
-      course_id,
       date,
       startTime,
-      start_time,
       durationMinutes,
-      duration_minutes,
       venue,
-      maxAttendanceTime,
-      geofenceLatitude,
-      geofenceLongitude,
-      geofenceRadiusMeters,
-      buildingId,
-      building_id,
+      lecturerLatitude,
+      lecturerLongitude,
+      lecturerLocationAccuracy,
     } = req.body;
-    const resolvedCourseId = courseId || course_id;
-    const resolvedStartTime = startTime || start_time;
-    const resolvedDuration = Number(durationMinutes || duration_minutes || 120);
 
-    if (!resolvedCourseId || !date || !resolvedStartTime) {
-      return res.status(400).json({
-        success: false,
-        message: 'courseId, date and startTime are required'
-      });
+    if (!courseId || !date || !startTime) {
+      return res.status(400).json({ success: false, message: 'courseId, date and startTime are required' });
     }
 
-    const resolvedBuildingId = buildingId || building_id;
-
-    if (!resolvedBuildingId) {
-      return res.status(400).json({
-        success: false,
-        message: 'buildingId is required. Select a geofenced building.',
-      });
+    if (lecturerLatitude === undefined || lecturerLongitude === undefined) {
+      return res.status(400).json({ success: false, message: 'Lecturer location is required. Enable GPS and try again.' });
     }
 
-    const building = await Building.findOne({ where: { id: resolvedBuildingId, isActive: true } });
-    if (!building) {
-      return res.status(404).json({ success: false, message: 'Selected building geofence was not found or is inactive.' });
+    const parsedLat = Number(lecturerLatitude);
+    const parsedLng = Number(lecturerLongitude);
+    const parsedAccuracy = lecturerLocationAccuracy === undefined || lecturerLocationAccuracy === null
+      ? null
+      : Number(lecturerLocationAccuracy);
+
+    if (Number.isNaN(parsedLat) || Number.isNaN(parsedLng)) {
+      return res.status(400).json({ success: false, message: 'Invalid lecturer location coordinates.' });
     }
 
-    const course = await Course.findByPk(resolvedCourseId);
+    const accuracyCheck = validateGpsAccuracy(parsedAccuracy);
+    if (!accuracyCheck.valid) {
+      return res.status(403).json({ success: false, message: `Your location accuracy is too low. ${accuracyCheck.reason}` });
+    }
 
+    const course = await Course.findByPk(courseId);
     if (!course) {
       return res.status(404).json({ success: false, message: 'Course not found' });
     }
@@ -188,62 +131,84 @@ exports.createSession = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
+    const resolvedDuration = Number(durationMinutes || 120);
+    const resolvedStartTime = startTime.length === 5 ? `${startTime}:00` : startTime;
+
     let sessionCode;
     let isUnique = false;
     while (!isUnique) {
       sessionCode = generateSessionCode();
       const existing = await Session.findOne({ where: { sessionCode } });
-      if (!existing) {
-        isUnique = true;
-      }
+      if (!existing) isUnique = true;
     }
 
-    const buildingPolygon = building.polygonCoordinates;
-    const sessionPolygon = buildingPolygon && Array.isArray(buildingPolygon) && buildingPolygon.length >= 3
-      ? buildingPolygon
-      : null;
-    const buildingTolerance = building.geofenceToleranceMeters || 10;
+    let sessionKey;
+    let keyUnique = false;
+    while (!keyUnique) {
+      sessionKey = generateSessionKey();
+      const existing = await Session.findOne({ where: { sessionKey } });
+      if (!existing) keyUnique = true;
+    }
+
+    const expiresAt = new Date(Date.now() + resolvedDuration * 60 * 1000);
+    const qrBundle = signQrToken(null, null, resolvedDuration * 60); // placeholder, we sign with real id after create
+    const attendanceRadius = ATTENDANCE_RADIUS_METERS;
 
     const session = await Session.create({
-      courseId: resolvedCourseId,
+      courseId,
       lecturerId: course.lecturerId,
       date,
-      startTime: resolvedStartTime.length === 5 ? `${resolvedStartTime}:00` : resolvedStartTime,
+      startTime: resolvedStartTime,
       endTime: buildEndTime(resolvedStartTime, resolvedDuration),
       sessionCode,
-      venue: venue || building.name,
+      sessionKey,
+      venue: venue || course.courseName || '',
       status: 'active',
-      maxAttendanceTime: Number(maxAttendanceTime || 15),
-      geofenceLatitude: Number(building.latitude),
-      geofenceLongitude: Number(building.longitude),
-      geofenceRadiusMeters: Number(building.radiusMeters),
-      polygonCoordinates: sessionPolygon,
-      geofenceToleranceMeters: buildingTolerance,
+      maxAttendanceTime: 0,
+      lecturerLatitude: parsedLat,
+      lecturerLongitude: parsedLng,
+      lecturerLocationAccuracy: parsedAccuracy,
+      expiresAt,
+      attendanceRadiusMeters: attendanceRadius,
     });
+
+    // Sign the QR token with the real session id
+    const qrToken = signQrToken(session.id, sessionKey, resolvedDuration * 60);
+    session.qrToken = qrToken.token;
+    await session.save();
 
     await logAuditEvent({
       req,
       action: 'attendance.session.created',
       targetType: 'session',
       targetId: session.id,
-      campus: building.campus || course.campus || null,
+      campus: course.campus || null,
       faculty: course.faculty || null,
       department: course.department || null,
       metadata: {
         courseId: course.id,
         courseCode: course.courseCode,
-        buildingId: building.id,
-        buildingName: building.name,
         date,
         startTime: session.startTime,
         endTime: session.endTime,
+        expiresAt,
+        hasLocation: true,
+        radiusMeters: attendanceRadius,
       },
     });
 
     res.status(201).json({
       success: true,
-      message: 'Session created',
-      data: { session, sessionCode }
+      message: 'Session created successfully',
+      data: {
+        session,
+        sessionCode,
+        sessionKey,
+        qrToken: qrToken.token,
+        qrTokenExpiresAt: qrToken.expiresAt,
+        expiresAt,
+        attendanceRadiusMeters: attendanceRadius,
+      }
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -306,13 +271,14 @@ exports.getSession = async (req, res) => {
       .filter((entry) => !presentStudentIds.has(entry.userId))
       .map((entry) => entry.student);
     const markedStudents = session.attendances.length;
-    const attendancePassBundle = session.status === 'active' ? signAttendancePass(session) : null;
+    const qrBundle = session.status === 'active' && session.sessionKey && session.expiresAt && new Date(session.expiresAt) > new Date()
+      ? signQrToken(session.id, session.sessionKey, Math.max(60, Math.floor((new Date(session.expiresAt) - Date.now()) / 1000)))
+      : null;
 
     const payload = {
       ...session.toJSON(),
-      attendanceKey: getCourseAttendanceKey(session.course?.courseCode),
-      attendancePass: attendancePassBundle?.token || null,
-      attendancePassExpiresAt: attendancePassBundle?.expiresAt || null,
+      qrToken: qrBundle?.token || null,
+      qrTokenExpiresAt: qrBundle?.expiresAt || null,
       attendanceStats: {
         expectedCount: enrollments.length,
         markedCount: markedStudents,
@@ -333,33 +299,78 @@ exports.getSession = async (req, res) => {
 
 exports.markAttendance = async (req, res) => {
   try {
-    const { sessionCode, session_code, attendancePass, attendance_pass, latitude, longitude, accuracy } = req.body;
-    const resolvedSessionCode = sessionCode || session_code;
-    if (!resolvedSessionCode) {
-      return res.status(400).json({ success: false, message: 'sessionCode is required' });
-    }
+    const { attendancePass, sessionKey, courseCode, latitude, longitude, accuracy } = req.body;
+    const { locationTimestamp, deviceInfo } = req.body;
 
-    const session = await Session.findOne({ where: { sessionCode: resolvedSessionCode, status: 'active' } });
+    let session;
+    let course;
+    let attendanceMethod;
 
-    if (!session) {
-      return res.status(404).json({ success: false, message: 'Invalid or expired session code' });
-    }
+    if (attendancePass) {
+      // Mode 1: QR code scan - attendancePass is a JWT
+      attendanceMethod = 'qr';
+      let decoded;
+      try {
+        decoded = jwt.verify(attendancePass, authConfig.jwt.secret);
+      } catch {
+        return res.status(403).json({ success: false, message: 'This QR code is invalid or has expired.' });
+      }
 
-    const course = await Course.findByPk(session.courseId, { attributes: ['id', 'courseCode', 'semester', 'academicYear', 'campus', 'faculty', 'department'] });
+      if (decoded?.t !== 'att' || !decoded?.sid || !decoded?.key) {
+        return res.status(403).json({ success: false, message: 'This QR code is invalid or has expired.' });
+      }
 
-    try {
-      verifyAttendancePass(attendancePass || attendance_pass, session, course?.courseCode || '');
-    } catch (verificationError) {
-      await logAuditEvent({
-        req,
-        action: 'attendance.mark.rejected.invalid_pass',
-        targetType: 'session',
-        targetId: session.id,
-        metadata: { sessionCode: resolvedSessionCode },
+      session = await Session.findByPk(decoded.sid);
+      if (!session) {
+        return res.status(404).json({ success: false, message: 'This attendance session could not be found.' });
+      }
+
+      if (session.sessionKey !== decoded.key) {
+        return res.status(403).json({ success: false, message: 'This QR code is invalid or has expired.' });
+      }
+    } else if (sessionKey && courseCode) {
+      // Mode 2: Manual entry - sessionKey + courseCode
+      attendanceMethod = 'key';
+      session = await Session.findOne({ where: { sessionKey: String(sessionKey).trim().toUpperCase() } });
+      if (!session) {
+        return res.status(404).json({ success: false, message: 'The session key is invalid.' });
+      }
+
+      course = await Course.findByPk(session.courseId);
+      if (!course) {
+        return res.status(404).json({ success: false, message: 'Course not found.' });
+      }
+
+      const normalizedCourseCode = String(courseCode || '').trim().toUpperCase();
+      const sessionCourseCode = String(course.courseCode || '').trim().toUpperCase();
+      if (normalizedCourseCode !== sessionCourseCode) {
+        return res.status(403).json({ success: false, message: 'The course code does not match this attendance session.' });
+      }
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Scan the QR code or enter the session key with your course code to mark attendance.',
       });
-      return res.status(verificationError.statusCode || 403).json({ success: false, message: verificationError.message });
     }
 
+    // Find course if not already fetched
+    if (!course) {
+      course = await Course.findByPk(session.courseId, { attributes: ['id', 'courseCode', 'semester', 'academicYear', 'campus', 'faculty', 'department'] });
+    }
+
+    // Check session is active
+    if (session.status !== 'active') {
+      return res.status(403).json({ success: false, message: 'This attendance session has expired.' });
+    }
+
+    // Check session has not expired
+    if (session.expiresAt && new Date(session.expiresAt) <= new Date()) {
+      session.status = 'closed';
+      await session.save();
+      return res.status(403).json({ success: false, message: 'This attendance session has expired.' });
+    }
+
+    // Check duplicate attendance
     const existing = await Attendance.findOne({ where: { sessionId: session.id, studentId: req.user.id } });
     if (existing) {
       await logAuditEvent({
@@ -371,26 +382,20 @@ exports.markAttendance = async (req, res) => {
       });
       return res.status(200).json({
         success: true,
-        message: 'Attendance already recorded for this session.',
+        message: 'You have already marked attendance for this session.',
         data: existing,
       });
     }
 
+    // Check enrollment
     const enrollment = await Enrollment.findOne({
       where: {
         userId: req.user.id,
         courseId: session.courseId,
         status: 'active',
         [Op.or]: [
-          {
-            semester: course?.semester || null,
-            academicYear: course?.academicYear || null,
-          },
-          {
-            courseId: session.courseId,
-            userId: req.user.id,
-            status: 'active',
-          },
+          { semester: course?.semester || null, academicYear: course?.academicYear || null },
+          { courseId: session.courseId, userId: req.user.id, status: 'active' },
         ],
       },
     });
@@ -399,76 +404,33 @@ exports.markAttendance = async (req, res) => {
       await logAuditEvent({
         req,
         action: 'attendance.mark.rejected.not_enrolled',
-        targetType: 'session',
-        targetId: session.id,
+        targetType: 'session', targetId: session.id,
         metadata: { courseId: session.courseId },
       });
-      return res.status(403).json({
-        success: false,
-        message: 'You are not registered for this course, so attendance cannot be marked.',
-      });
+      return res.status(403).json({ success: false, message: 'You are not registered for this course, so attendance cannot be marked.' });
     }
 
-    const sessionDateKey = toDateKey(session.date);
-    const startMinutes = parseClockMinutes(session.startTime);
-    const endMinutes = parseClockMinutes(session.endTime);
-    const earliestMarkMinutes = startMinutes - 5;
-    const closingDeadlineMinutes = endMinutes + 15;
-    const lagosNow = getCurrentLagosTimeParts();
-
-    if (lagosNow.dateKey < sessionDateKey || (lagosNow.dateKey === sessionDateKey && lagosNow.minutes < earliestMarkMinutes)) {
-      return res.status(403).json({
-        success: false,
-        message: `This session has not opened yet. Attendance opens shortly before ${session.startTime}.`,
-      });
-    }
-
-    if (lagosNow.dateKey > sessionDateKey || (lagosNow.dateKey === sessionDateKey && lagosNow.minutes > closingDeadlineMinutes)) {
-      return res.status(403).json({
-        success: false,
-        message: 'The attendance window for this session has closed.',
-      });
-    }
-
-    const diffMinutes = lagosNow.minutes - startMinutes;
-    const status = diffMinutes > session.maxAttendanceTime ? 'late' : 'present';
-
-    if (!hasGeofence(session)) {
-      return res.status(403).json({
-        success: false,
-        message: 'This session has no verified building geofence. Contact your lecturer to re-create the session properly.',
-      });
-    }
-
+    // Validate GPS location
     if (latitude === undefined || longitude === undefined) {
       await logAuditEvent({
         req,
         action: 'attendance.mark.rejected.location_missing',
-        targetType: 'session',
-        targetId: session.id,
+        targetType: 'session', targetId: session.id,
         metadata: { courseId: session.courseId },
       });
-      return res.status(403).json({
-        success: false,
-        message: 'This class requires location verification. Enable location and try again.',
-      });
+      return res.status(403).json({ success: false, message: 'Location permission is required. Enable GPS and try again.' });
     }
 
     const parsedLatitude = Number(latitude);
     const parsedLongitude = Number(longitude);
-    const parsedAccuracy = accuracy === undefined || accuracy === null || accuracy === ''
-      ? null
-      : Number(accuracy);
+    const parsedAccuracy = accuracy === undefined || accuracy === null || accuracy === '' ? null : Number(accuracy);
 
     if (Number.isNaN(parsedLatitude) || Number.isNaN(parsedLongitude)) {
-      return res.status(400).json({ success: false, message: 'Invalid location coordinates supplied' });
+      return res.status(400).json({ success: false, message: 'Invalid location coordinates supplied.' });
     }
 
     if (!isInsideNigeriaBounds(parsedLatitude, parsedLongitude)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Your GPS coordinates appear to be outside Nigeria. Attendance cannot be marked.',
-      });
+      return res.status(403).json({ success: false, message: 'Your GPS coordinates appear to be outside Nigeria. Attendance cannot be marked.' });
     }
 
     const accuracyCheck = validateGpsAccuracy(parsedAccuracy);
@@ -476,7 +438,6 @@ exports.markAttendance = async (req, res) => {
       return res.status(403).json({ success: false, message: accuracyCheck.reason });
     }
 
-    const { locationTimestamp, deviceInfo } = req.body;
     if (locationTimestamp) {
       const timeCheck = validateLocationTimestamp(locationTimestamp);
       if (!timeCheck.valid) {
@@ -486,43 +447,40 @@ exports.markAttendance = async (req, res) => {
 
     if (isMockedLocation(parsedLatitude, parsedLongitude, parsedAccuracy, locationTimestamp, deviceInfo)) {
       await logAuditEvent({
-        req,
-        action: 'attendance.mark.rejected.mock_location',
-        targetType: 'session',
-        targetId: session.id,
+        req, action: 'attendance.mark.rejected.mock_location',
+        targetType: 'session', targetId: session.id,
         metadata: { courseId: session.courseId, latitude: parsedLatitude, longitude: parsedLongitude },
       });
-      return res.status(403).json({
-        success: false,
-        message: 'Suspicious location detected. Turn off any location simulation apps and try again.',
-      });
+      return res.status(403).json({ success: false, message: 'Suspicious location detected. Turn off any location simulation apps and try again.' });
     }
 
-    const usePolygon = Array.isArray(session.polygonCoordinates) && session.polygonCoordinates.length >= 3;
-    const tolerance = session.geofenceToleranceMeters || 10;
+    // Calculate distance from lecturer's saved location
+    // If session has lecturerLatitude (new-style), use that; otherwise fall back to geofenceLatitude
+    const hasLecturerLocation = session.lecturerLatitude !== null && session.lecturerLongitude !== null;
+    const radiusMeters = session.attendanceRadiusMeters || ATTENDANCE_RADIUS_METERS;
 
-    let insideZone = false;
-    let distanceMetersValue = null;
+    let distanceMetersValue;
+    let centerLat;
+    let centerLng;
 
-    if (usePolygon) {
-      insideZone = pointNearPolygon(parsedLatitude, parsedLongitude, session.polygonCoordinates, tolerance);
-      const centroid = session.polygonCoordinates.reduce(
-        (acc, [lng, lat]) => [acc[0] + lat, acc[1] + lng],
-        [0, 0]
-      );
-      const centerLat = centroid[0] / session.polygonCoordinates.length;
-      const centerLng = centroid[1] / session.polygonCoordinates.length;
-      distanceMetersValue = Math.round(distanceMeters(parsedLatitude, parsedLongitude, centerLat, centerLng));
+    if (hasLecturerLocation) {
+      centerLat = Number(session.lecturerLatitude);
+      centerLng = Number(session.lecturerLongitude);
     } else {
-      distanceMetersValue = Math.round(distanceMeters(
-        parsedLatitude,
-        parsedLongitude,
-        Number(session.geofenceLatitude),
-        Number(session.geofenceLongitude)
-      ));
-      insideZone = distanceMetersValue <= Number(session.geofenceRadiusMeters) + tolerance;
+      centerLat = Number(session.geofenceLatitude);
+      centerLng = Number(session.geofenceLongitude);
     }
 
+    distanceMetersValue = Math.round(distanceMeters(parsedLatitude, parsedLongitude, centerLat, centerLng));
+    const insideRadius = distanceMetersValue <= radiusMeters;
+
+    // Check previous attempt count
+    const previousAttempts = await AttendanceAttempt.count({
+      where: { studentId: req.user.id, sessionId: session.id },
+    });
+    const attemptNumber = previousAttempts + 1;
+
+    // Create attempt log
     const attemptPayload = {
       studentId: req.user.id,
       sessionId: session.id,
@@ -530,62 +488,83 @@ exports.markAttendance = async (req, res) => {
       latitude: parsedLatitude,
       longitude: parsedLongitude,
       accuracy: parsedAccuracy,
-      insidePolygon: insideZone,
       deviceInfo: req.get('user-agent') || null,
       locationTimestamp: locationTimestamp ? new Date(locationTimestamp) : null,
-      metadata: {
-        usePolygon,
-        tolerance,
-        distanceMeters: distanceMetersValue,
-        polygonVertexCount: usePolygon ? session.polygonCoordinates.length : null,
-        geofenceRadius: usePolygon ? null : Number(session.geofenceRadiusMeters),
-      },
+      attemptNumber,
+      attendanceMethod,
     };
 
-    if (!insideZone) {
+    if (!insideRadius) {
       attemptPayload.accepted = false;
-      if (usePolygon) {
-        attemptPayload.rejectionReason = 'You are outside the approved attendance building boundary. Move closer to the building and try again.';
-      } else {
-        attemptPayload.rejectionReason = `Outside allowed attendance zone. Distance is ${distanceMetersValue}m, max allowed is ${session.geofenceRadiusMeters}m.`;
-      }
+      attemptPayload.rejectionReason = `You are outside the required ${radiusMeters}-metre attendance radius. Your distance is ${distanceMetersValue}m.`;
 
       await AttendanceAttempt.create(attemptPayload);
 
       await logAuditEvent({
-        req,
-        action: 'attendance.mark.rejected.outside_geofence',
-        targetType: 'session',
-        targetId: session.id,
-        metadata: {
-          courseId: session.courseId,
-          distanceMeters: distanceMetersValue,
-          usePolygon,
-          polygonVertexCount: usePolygon ? session.polygonCoordinates.length : null,
-          allowedRadiusMeters: usePolygon ? null : Number(session.geofenceRadiusMeters),
-          locationAccuracy: parsedAccuracy,
-        },
+        req, action: 'attendance.mark.rejected.outside_radius',
+        targetType: 'session', targetId: session.id,
+        metadata: { courseId: session.courseId, distanceMeters: distanceMetersValue, allowedRadiusMeters: radiusMeters, attemptNumber },
       });
-      return res.status(403).json({
-        success: false,
-        message: attemptPayload.rejectionReason,
+
+      if (attemptNumber < 2) {
+        return res.status(403).json({
+          success: false,
+          message: `You are outside the required ${radiusMeters}-metre attendance radius. Move closer to the lecturer and try again. You have one attempt remaining.`,
+          data: { distanceMeters: distanceMetersValue, radiusMeters, attemptNumber, canRetry: true },
+        });
+      }
+
+      // Second attempt and still outside: mark as late
+      attemptPayload.accepted = true;
+      await AttendanceAttempt.create(attemptPayload);
+
+      let attendance;
+      try {
+        attendance = await Attendance.create({
+          sessionId: session.id,
+          studentId: req.user.id,
+          courseId: session.courseId,
+          status: 'late',
+          markedAt: new Date(),
+          markedBy: 'self',
+          verificationMethod: attendanceMethod === 'qr' ? 'qr' : 'code',
+          deviceInfo: req.get('user-agent') || null,
+          location: `${parsedLatitude},${parsedLongitude}`,
+          locationAccuracy: parsedAccuracy,
+          distanceFromClass: distanceMetersValue,
+        });
+      } catch (createError) {
+        if (createError instanceof UniqueConstraintError) {
+          const recordedAttendance = await Attendance.findOne({ where: { sessionId: session.id, studentId: req.user.id } });
+          return res.status(200).json({ success: true, message: 'You have already marked attendance for this session.', data: recordedAttendance });
+        }
+        throw createError;
+      }
+
+      await logAuditEvent({
+        req, action: 'attendance.marked',
+        targetType: 'attendance', targetId: attendance.id,
+        campus: course?.campus || null, faculty: course?.faculty || null, department: course?.department || null,
+        metadata: { sessionId: session.id, courseId: session.courseId, status: 'late', distanceFromClass: distanceMetersValue, attemptNumber },
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: `You are outside the ${radiusMeters}-metre radius. Your attendance has been marked as late.`,
+        data: { attendance, distanceMeters: distanceMetersValue, status: 'late' },
       });
     }
 
+    // Inside radius: mark as present
     attemptPayload.accepted = true;
     await AttendanceAttempt.create(attemptPayload);
 
-    const student = await User.findByPk(req.user.id, {
-      attributes: ['id', 'lastKnownDeviceHash', 'lastKnownIp'],
-    });
+    const student = await User.findByPk(req.user.id, { attributes: ['id', 'lastKnownDeviceHash', 'lastKnownIp'] });
     const deviceHash = buildDeviceFingerprint(req);
     const currentIp = req.ip || req.get('x-forwarded-for') || req.connection?.remoteAddress || null;
     const deviceFlagged = Boolean(
-      student &&
-      student.lastKnownDeviceHash &&
-      student.lastKnownIp &&
-      student.lastKnownDeviceHash !== deviceHash &&
-      student.lastKnownIp !== currentIp
+      student && student.lastKnownDeviceHash && student.lastKnownIp &&
+      student.lastKnownDeviceHash !== deviceHash && student.lastKnownIp !== currentIp
     );
 
     let attendance;
@@ -594,10 +573,10 @@ exports.markAttendance = async (req, res) => {
         sessionId: session.id,
         studentId: req.user.id,
         courseId: session.courseId,
-        status,
+        status: 'present',
         markedAt: new Date(),
         markedBy: 'self',
-        verificationMethod: 'qr',
+        verificationMethod: attendanceMethod === 'qr' ? 'qr' : 'code',
         deviceInfo: req.get('user-agent') || null,
         location: `${parsedLatitude},${parsedLongitude}`,
         locationAccuracy: parsedAccuracy,
@@ -607,34 +586,9 @@ exports.markAttendance = async (req, res) => {
     } catch (createError) {
       if (createError instanceof UniqueConstraintError) {
         const recordedAttendance = await Attendance.findOne({ where: { sessionId: session.id, studentId: req.user.id } });
-        return res.status(200).json({
-          success: true,
-          message: 'Attendance already recorded for this session.',
-          data: recordedAttendance,
-        });
+        return res.status(200).json({ success: true, message: 'You have already marked attendance for this session.', data: recordedAttendance });
       }
-
       throw createError;
-    }
-
-    const duplicateAttendances = await Attendance.findAll({
-      where: { sessionId: session.id, studentId: req.user.id },
-      order: [['createdAt', 'ASC'], ['id', 'ASC']],
-    });
-
-    if (duplicateAttendances.length > 1) {
-      const primaryAttendance = duplicateAttendances[0];
-      const duplicateIds = duplicateAttendances.slice(1).map((entry) => entry.id);
-
-      if (duplicateIds.length) {
-        await Attendance.destroy({ where: { id: duplicateIds } });
-      }
-
-      return res.status(200).json({
-        success: true,
-        message: 'Attendance already recorded for this session.',
-        data: primaryAttendance,
-      });
     }
 
     if (student) {
@@ -644,25 +598,13 @@ exports.markAttendance = async (req, res) => {
     }
 
     await logAuditEvent({
-      req,
-      action: 'attendance.marked',
-      targetType: 'attendance',
-      targetId: attendance.id,
-      campus: course?.campus || null,
-      faculty: course?.faculty || null,
-      department: course?.department || null,
-      metadata: {
-        sessionId: session.id,
-        courseId: session.courseId,
-        status,
-        verificationMethod: 'qr+pass+geofence',
-        locationAccuracy: parsedAccuracy,
-        distanceFromClass: distanceMetersValue,
-        deviceFlagged,
-      },
+      req, action: 'attendance.marked',
+      targetType: 'attendance', targetId: attendance.id,
+      campus: course?.campus || null, faculty: course?.faculty || null, department: course?.department || null,
+      metadata: { sessionId: session.id, courseId: session.courseId, status: 'present', distanceFromClass: distanceMetersValue, attemptNumber, deviceFlagged },
     });
 
-    res.status(201).json({ success: true, message: `Attendance marked as ${status}`, data: attendance });
+    res.status(201).json({ success: true, message: 'Attendance has been recorded successfully.', data: attendance });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

@@ -89,6 +89,36 @@ const Session = sequelize.define('Session', {
     allowNull: false,
     defaultValue: 10,
   },
+  lecturerLatitude: {
+    type: DataTypes.DECIMAL(10, 7),
+    allowNull: true,
+  },
+  lecturerLongitude: {
+    type: DataTypes.DECIMAL(10, 7),
+    allowNull: true,
+  },
+  lecturerLocationAccuracy: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  sessionKey: {
+    type: DataTypes.STRING(10),
+    allowNull: true,
+    unique: true,
+  },
+  qrToken: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
+  expiresAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  attendanceRadiusMeters: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 35,
+  },
 }, {
   tableName: 'sessions',
   timestamps: true
