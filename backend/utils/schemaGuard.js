@@ -197,20 +197,6 @@ const ensureSchemaGuard = async (sequelize) => {
     appliedChanges.push('attendance(sessionId, studentId) unique index');
   }
 
-  if (await ensureColumn(queryInterface, 'attendance_attempts', 'trustedDeviceId', {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    references: { model: 'trusted_devices', key: 'id' },
-  })) {
-    appliedChanges.push('attendance_attempts.trustedDeviceId');
-  }
-
-  if (await ensureIndex(queryInterface, 'attendance', 'attendance_device_flagged_idx', {
-    fields: ['deviceFlagged'],
-  })) {
-    appliedChanges.push('attendance(deviceFlagged) index');
-  }
-
   const newTableColumns = {
     trusted_devices: [
       ['userId', { type: DataTypes.INTEGER, allowNull: false }],
@@ -264,6 +250,20 @@ const ensureSchemaGuard = async (sequelize) => {
         }
       }
     }
+  }
+
+  // Add trustedDeviceId to attendance_attempts AFTER trusted_devices table exists
+  if (await ensureColumn(queryInterface, 'attendance_attempts', 'trustedDeviceId', {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  })) {
+    appliedChanges.push('attendance_attempts.trustedDeviceId');
+  }
+
+  if (await ensureIndex(queryInterface, 'attendance', 'attendance_device_flagged_idx', {
+    fields: ['deviceFlagged'],
+  })) {
+    appliedChanges.push('attendance(deviceFlagged) index');
   }
 
   return appliedChanges;
