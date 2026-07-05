@@ -4793,7 +4793,15 @@ const Dashboard = () => {
                       <form onSubmit={handleCreateSession} className="dashboard-form-grid md:grid-cols-2">
                         <Select label="Course" value={sessionForm.courseId} onChange={(value) => setSessionForm((current) => ({ ...current, courseId: value }))} options={[{ value: '', label: 'Choose course' }, ...courses.map((course) => ({ value: course.id, label: `${course.courseCode} - ${course.courseName}` }))]} />
                         <Input label="Date" type="date" value={sessionForm.date} onChange={(value) => setSessionForm((current) => ({ ...current, date: value }))} />
-                        <Input label="Start time" type="time" value={sessionForm.startTime} onChange={(value) => setSessionForm((current) => ({ ...current, startTime: value }))} />
+                        <Select label="Start time" value={sessionForm.startTime} onChange={(value) => setSessionForm((current) => ({ ...current, startTime: value }))} options={[
+                          { value: '', label: 'Choose start time' },
+                          ...Array.from({ length: 26 }, (_, i) => {
+                            const h = 7 + Math.floor(i / 2);
+                            const m = i % 2 === 0 ? '00' : '30';
+                            const label = `${h.toString().padStart(2, '0')}:${m}`;
+                            return { value: label, label };
+                          }),
+                        ]} />
                         <Input label="Duration (minutes)" type="number" value={sessionForm.durationMinutes} onChange={(value) => setSessionForm((current) => ({ ...current, durationMinutes: value }))} />
                         <Input label="Venue (optional)" value={sessionForm.venue} onChange={(value) => setSessionForm((current) => ({ ...current, venue: value }))} />
                         <div className="dashboard-callout md:col-span-2 rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-slate-700">
