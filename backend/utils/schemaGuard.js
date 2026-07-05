@@ -10,6 +10,17 @@ const ensureColumn = async (queryInterface, tableName, columnName, definition) =
   return true;
 };
 
+const ensureNullable = async (queryInterface, tableName, columnName) => {
+  const columns = await queryInterface.describeTable(tableName);
+  const col = columns[columnName];
+  if (!col || col.allowNull !== false) {
+    return false;
+  }
+
+  await queryInterface.changeColumn(tableName, columnName, { allowNull: true });
+  return true;
+};
+
 const ensureIndex = async (queryInterface, tableName, indexName, definition) => {
   const indexes = await queryInterface.showIndex(tableName);
   const exists = indexes.some((index) => index.name === indexName);
@@ -163,6 +174,10 @@ const ensureSchemaGuard = async (sequelize) => {
     if (await ensureColumn(queryInterface, 'sessions', columnName, definition)) {
       appliedChanges.push(`sessions.${columnName}`);
     }
+  }
+
+  if (await ensureNullable(queryInterface, 'sessions', 'sessionCode')) {
+    appliedChanges.push('sessions.sessionCode → allowNull: true');
   }
 
   if (await ensureIndex(queryInterface, 'sessions', 'sessions_session_key_unique', {
