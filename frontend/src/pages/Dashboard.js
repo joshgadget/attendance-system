@@ -67,14 +67,14 @@ const initialSiteMaintenanceForm = {
   footer: 'Everything is locked during maintenance',
 };
 const TABS_BY_ROLE = {
-  admin: ['overview', 'analytics', 'users', 'registry', 'courses', 'queries', 'reports', 'notifications', 'help'],
-  lecturer: ['overview', 'analytics', 'courses', 'sessions', 'queries', 'reports', 'notifications', 'help'],
+  admin: ['overview', 'analytics', 'users', 'registry', 'courses', 'attempts', 'queries', 'reports', 'notifications', 'help'],
+  lecturer: ['overview', 'analytics', 'courses', 'sessions', 'attempts', 'queries', 'reports', 'notifications', 'help'],
   student: ['overview', 'analytics', 'courses', 'attendance', 'queries', 'reports', 'notifications', 'help'],
 };
 
 const PRIMARY_TABS_BY_ROLE = {
-  admin: ['overview', 'users', 'registry', 'courses', 'queries', 'reports', 'notifications'],
-  lecturer: ['overview', 'courses', 'sessions', 'queries', 'reports', 'notifications'],
+  admin: ['overview', 'users', 'registry', 'courses', 'attempts', 'queries', 'reports', 'notifications'],
+  lecturer: ['overview', 'courses', 'sessions', 'attempts', 'queries', 'reports', 'notifications'],
   student: ['overview', 'courses', 'attendance', 'queries', 'reports', 'notifications'],
 };
 
@@ -87,6 +87,7 @@ const TAB_LABELS = {
   sessions: 'Sessions',
   attendance: 'Attendance',
   queries: 'Queries',
+  attempts: 'Attempt Logs',
   reports: 'Reports',
   notifications: 'Notifications',
   profile: 'Profile',
@@ -103,6 +104,7 @@ const TAB_ICONS = {
   sessions: Calendar,
   attendance: CheckCircle2,
   queries: MessageSquare,
+  attempts: RadioTower,
   reports: FileText,
   notifications: Bell,
   profile: UserCog,
@@ -1149,6 +1151,10 @@ const Dashboard = () => {
   const [buildings, setBuildings] = useState([]);
   const [courses, setCourses] = useState([]);
   const [sessions, setSessions] = useState([]);
+  const [attemptLogs, setAttemptLogs] = useState([]);
+  const [attemptLogsTotal, setAttemptLogsTotal] = useState(0);
+  const [attemptLogsLoading, setAttemptLogsLoading] = useState(false);
+  const [attemptLogsFilter, setAttemptLogsFilter] = useState({ accepted: '', sessionId: '', courseId: '', page: 1 });
   const [queries, setQueries] = useState([]);
   const [history, setHistory] = useState([]);
   const [sessionDetail, setSessionDetail] = useState(null);
@@ -1704,6 +1710,33 @@ const Dashboard = () => {
       setRefreshing(false);
     }
   }, [loadSessionDetail, role, sessionDetail?.id]);
+
+  const loadAttemptLogs = useCallback(async (page = 1) => {
+    if (!['lecturer', 'admin'].includes(role)) return;
+    try {
+      setAttemptLogsLoading(true);
+      const params = new URLSearchParams();
+      if (attemptLogsFilter.accepted) params.set('accepted', attemptLogsFilter.accepted);
+      if (attemptLogsFilter.sessionId) params.set('sessionId', attemptLogsFilter.sessionId);
+      params.set('limit', '50');
+      params.set('offset', String((page - 1) * 50));
+      const response = await api.get(`/attendance/attempts?${params.toString()}`);
+      setAttemptLogs(response.data.data || []);
+      setAttemptLogsTotal(response.data.total || 0);
+      setAttemptLogsFilter((prev) => ({ ...prev, page }));
+    } catch {
+      setAttemptLogs([]);
+      setAttemptLogsTotal(0);
+    } finally {
+      setAttemptLogsLoading(false);
+    }
+  }, [role, attemptLogsFilter.accepted, attemptLogsFilter.sessionId]);
+
+  useEffect(() => {
+    if (activeTab === 'attempts' && ['lecturer', 'admin'].includes(role)) {
+      loadAttemptLogs(1);
+    }
+  }, [activeTab, role, loadAttemptLogs]);
 
   useEffect(() => {
     loadDataRef.current = loadData;
@@ -5013,6 +5046,117 @@ const Dashboard = () => {
                   ) : <EmptyState title="No register loaded" description="Choose a session to see attendance and absent-student detail." />}
                 </Panel>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'attempts' && ['lecturer', 'admin'].includes(role) && (
+            <div className="grid gap-8">
+              <Panel title="Attendance attempt logs" eyebrow="All mark attempts">
+                <div className="space-y-5">
+                  <div className="flex flex-wrap gap-3">
+                    <Select
+                      label="Status"
+                      value={attemptLogsFilter.accepted}
+                      onChange={(value) => setAttemptLogsFilter((prev) => ({ ...prev, accepted: value }))}
+                      options={[
+                        { value: '', label: 'All attempts' },
+                        { value: 'true', label: 'Accepted only' },
+                        { value: 'false', label: 'Rejected only' },
+                      ]}
+                    />
+                    <div className="self-end">
+                      <ActionButton
+                        onClick={() => loadAttemptLogs(1)}
+                        disabled={attemptLogsLoading}
+                        variant="primary"
+                        className="px-4 py-2 text-sm"
+                      >
+                        {attemptLogsLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RadioTower className="h-4 w-4" />}
+                        Refresh
+                      </ActionButton>
+                    </div>
+                    <div className="self-end ml-auto text-sm text-slate-500">
+                      {attemptLogsTotal} total attempt{attemptLogsTotal !== 1 ? 's' : ''}
+                    </div>
+                  </div>
+
+                  {attemptLogsLoading ? (
+                    <div className="flex items-center justify-center py-12"><LoaderCircle className="h-8 w-8 animate-spin text-slate-400" /></div>
+                  ) : attemptLogs.length > 0 ? (
+                    <div className="space-y-4">
+                      {attemptLogs.map((attempt) => (
+                        <div key={attempt.id} className="rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-4">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-semibold text-slate-900">{fullName(attempt.student)}</p>
+                                <Badge tone={attempt.accepted ? 'emerald' : 'rose'}>{attempt.accepted ? 'Accepted' : 'Rejected'}</Badge>
+                              </div>
+                              <p className="mt-1 text-sm text-slate-500">
+                                {attempt.student?.matricNumber || attempt.student?.email || 'Unknown student'}
+                              </p>
+                              {attempt.session && (
+                                <p className="mt-1 text-sm text-slate-500">
+                                  Session: {attempt.session.sessionCode} — {attempt.course?.courseCode || 'N/A'} on {formatDate(attempt.session.date)}
+                                </p>
+                              )}
+                              <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
+                                {attempt.latitude && attempt.longitude && (
+                                  <span>📍 {Number(attempt.latitude).toFixed(4)}, {Number(attempt.longitude).toFixed(4)}</span>
+                                )}
+                                {attempt.accuracy !== null && attempt.accuracy !== undefined && (
+                                  <span>🎯 {Math.round(attempt.accuracy)}m accuracy</span>
+                                )}
+                                {attempt.insidePolygon !== null && attempt.insidePolygon !== undefined && (
+                                  <span>🔲 {attempt.insidePolygon ? 'Inside boundary' : 'Outside boundary'}</span>
+                                )}
+                              </div>
+                              {attempt.rejectionReason && (
+                                <div className="mt-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                                  {attempt.rejectionReason}
+                                </div>
+                              )}
+                              {attempt.metadata && typeof attempt.metadata === 'object' && (
+                                <div className="mt-2 text-xs text-slate-400">
+                                  {attempt.metadata.usePolygon ? `Polygon (${attempt.metadata.polygonVertexCount} vertices)` : 'Circular geofence'} —
+                                  Tolerance: {attempt.metadata.tolerance}m —
+                                  Distance: {attempt.metadata.distanceMeters}m
+                                </div>
+                              )}
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <p className="text-xs text-slate-400">{formatDateTime(attempt.createdAt)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {attemptLogsTotal > 50 && (
+                        <div className="flex items-center justify-center gap-4 pt-4">
+                          <ActionButton
+                            onClick={() => loadAttemptLogs(attemptLogsFilter.page - 1)}
+                            disabled={attemptLogsFilter.page <= 1 || attemptLogsLoading}
+                            variant="secondary"
+                            className="px-4 py-2 text-sm"
+                          >
+                            Previous
+                          </ActionButton>
+                          <span className="text-sm text-slate-500">Page {attemptLogsFilter.page} of {Math.ceil(attemptLogsTotal / 50)}</span>
+                          <ActionButton
+                            onClick={() => loadAttemptLogs(attemptLogsFilter.page + 1)}
+                            disabled={attemptLogsFilter.page >= Math.ceil(attemptLogsTotal / 50) || attemptLogsLoading}
+                            variant="secondary"
+                            className="px-4 py-2 text-sm"
+                          >
+                            Next
+                          </ActionButton>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <EmptyState title="No attempt logs" description="Click Refresh to load logs. Attempts will appear once students mark attendance." />
+                  )}
+                </div>
+              </Panel>
             </div>
           )}
 

@@ -39,5 +39,6 @@ router.get('/sessions/:id', requireAnyRole('lecturer', 'admin'), attendanceContr
 router.put('/sessions/:id/close', requireRole('lecturer'), attendanceController.closeSession);
 router.post('/mark', requireRole('student'), attendanceRateLimiter, attendanceController.markAttendance);
 router.get('/history', requireRole('student'), attendanceController.getStudentHistory);
+router.get('/attempts', requireAnyRole('lecturer', 'admin'), attendanceController.getAttemptLogs);
 
 module.exports = router;

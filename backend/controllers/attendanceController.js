@@ -601,7 +601,7 @@ exports.markAttendance = async (req, res) => {
         deviceInfo: req.get('user-agent') || null,
         location: `${parsedLatitude},${parsedLongitude}`,
         locationAccuracy: parsedAccuracy,
-        distanceFromClass: Math.round(meters),
+        distanceFromClass: distanceMetersValue,
         deviceFlagged,
       });
     } catch (createError) {
@@ -657,7 +657,7 @@ exports.markAttendance = async (req, res) => {
         status,
         verificationMethod: 'qr+pass+geofence',
         locationAccuracy: parsedAccuracy,
-        distanceFromClass: Math.round(meters),
+        distanceFromClass: distanceMetersValue,
         deviceFlagged,
       },
     });
@@ -780,6 +780,56 @@ exports.closeSession = async (req, res) => {
         session,
         absentCount: absentEnrollments.length,
       },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getAttemptLogs = async (req, res) => {
+  try {
+    const { sessionId, courseId, accepted, limit: queryLimit, offset } = req.query;
+
+    if (!['lecturer', 'admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    const where = {};
+    if (sessionId) where.sessionId = sessionId;
+    if (courseId) where.courseId = courseId;
+    if (accepted === 'true' || accepted === 'false') where.accepted = accepted === 'true';
+
+    if (req.user.role === 'lecturer') {
+      const sessions = await Session.findAll({
+        where: { lecturerId: req.user.id },
+        attributes: ['id'],
+      });
+      const sessionIds = sessions.map((s) => s.id);
+      if (!where.sessionId) {
+        where.sessionId = sessionIds;
+      } else if (!sessionIds.includes(Number(where.sessionId))) {
+        return res.status(403).json({ success: false, message: 'Not authorized to view attempts for this session' });
+      }
+    }
+
+    const attempts = await AttendanceAttempt.findAndCountAll({
+      where,
+      include: [
+        { model: User, as: 'student', attributes: ['id', 'firstName', 'lastName', 'matricNumber', 'email'] },
+        { model: Session, as: 'session', attributes: ['id', 'sessionCode', 'date', 'startTime', 'endTime'] },
+        { model: Course, as: 'course', attributes: ['id', 'courseCode', 'courseName'] },
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: Math.min(Number(queryLimit) || 100, 500),
+      offset: Number(offset) || 0,
+    });
+
+    res.json({
+      success: true,
+      data: attempts.rows,
+      total: attempts.count,
+      limit: Math.min(Number(queryLimit) || 100, 500),
+      offset: Number(offset) || 0,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
