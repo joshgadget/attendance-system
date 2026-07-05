@@ -41,5 +41,6 @@ router.put('/sessions/:id/close', requireRole('lecturer'), attendanceController.
 router.post('/mark', requireRole('student'), attendanceRateLimiter, attendanceController.markAttendance);
 router.get('/history', requireRole('student'), attendanceController.getStudentHistory);
 router.get('/attempts', requireAnyRole('lecturer', 'admin'), attendanceController.getAttemptLogs);
+router.get('/sessions/:id/qr-challenge', requireRole('lecturer'), attendanceController.getQrChallenge);
 
 module.exports = router;

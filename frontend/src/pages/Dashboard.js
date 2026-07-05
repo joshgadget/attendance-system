@@ -28,6 +28,7 @@ import {
   ShieldCheck,
   Sparkles,
   Settings2,
+  Smartphone,
   Sun,
   Trash2,
   Upload,
@@ -51,7 +52,7 @@ import { logout } from '../redux/slices/authSlice';
 import { useTheme } from '../theme/ThemeContext';
 import BuildingMap from '../components/BuildingMap';
 import ActiveAttendanceSection from '../components/ActiveAttendanceSection';
-import { getVerifiedLocation } from '../utils/location';
+import { getVerifiedLocation, getSampledLocation } from '../utils/location';
 import './dashboard-theme.css';
 
 const initialUserForm = { firstName: '', lastName: '', email: '', password: '', role: 'student', department: '', faculty: '', program: '', campus: '', matricNumber: '' };
@@ -70,13 +71,13 @@ const initialSiteMaintenanceForm = {
 };
 const TABS_BY_ROLE = {
   admin: ['overview', 'analytics', 'users', 'registry', 'courses', 'attempts', 'queries', 'reports', 'notifications', 'help'],
-  lecturer: ['overview', 'create-session', 'analytics', 'courses', 'sessions', 'attempts', 'queries', 'reports', 'notifications', 'help'],
+  lecturer: ['overview', 'create-session', 'analytics', 'courses', 'sessions', 'attempts', 'review', 'queries', 'reports', 'notifications', 'help'],
   student: ['overview', 'analytics', 'courses', 'attendance', 'queries', 'reports', 'notifications', 'help'],
 };
 
 const PRIMARY_TABS_BY_ROLE = {
   admin: ['overview', 'users', 'registry', 'courses', 'attempts', 'queries', 'reports', 'notifications'],
-  lecturer: ['overview', 'create-session', 'sessions', 'courses', 'attempts', 'queries', 'reports', 'notifications'],
+  lecturer: ['overview', 'create-session', 'sessions', 'courses', 'attempts', 'review', 'queries', 'reports', 'notifications'],
   student: ['overview', 'courses', 'attendance', 'queries', 'reports', 'notifications'],
 };
 
@@ -91,6 +92,7 @@ const TAB_LABELS = {
   attendance: 'Attendance',
   queries: 'Queries',
   attempts: 'Attempt Logs',
+  review: 'Review Flags',
   reports: 'Reports',
   notifications: 'Notifications',
   profile: 'Profile',
@@ -109,6 +111,7 @@ const TAB_ICONS = {
   attendance: CheckCircle2,
   queries: MessageSquare,
   attempts: RadioTower,
+  review: TriangleAlert,
   reports: FileText,
   notifications: Bell,
   profile: UserCog,
@@ -325,7 +328,10 @@ const extractAttendancePayload = (decodedText) => {
   try {
     const parsed = JSON.parse(compactText);
     if (parsed?.type === 'attendance-session' && parsed?.sessionKey) {
-      return { sessionKey: parsed.sessionKey };
+      return {
+        sessionKey: parsed.sessionKey,
+        qrChallenge: parsed,
+      };
     }
   } catch {
     // not JSON
@@ -996,6 +1002,121 @@ const ActionButton = ({ children, variant = 'primary', className = '', ...props 
   );
 };
 
+const ReviewFlagsSection = () => {
+  const { isDark } = useTheme();
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [actionBusy, setActionBusy] = useState('');
+
+  const loadEvents = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/security/review');
+      setEvents(res.data.data || []);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  const handleAction = async (eventId, action) => {
+    try {
+      setActionBusy(`${eventId}-${action}`);
+      await api.put(`/security/review/${eventId}`, { action });
+      await loadEvents();
+    } catch {
+      // ignore
+    } finally {
+      setActionBusy('');
+    }
+  };
+
+  const textPrimary = isDark ? 'text-slate-100' : 'text-slate-900';
+  const textSecondary = isDark ? 'text-slate-400' : 'text-slate-500';
+
+  return (
+    <div className="grid gap-8">
+      <Panel title="Attendance review flags" eyebrow="Security">
+        <div className="space-y-4">
+          <p className={`text-sm leading-relaxed ${textSecondary}`}>
+            These are attendance attempts flagged by the risk scoring system. Review each flag and approve or reject the attendance record.
+          </p>
+
+          {loading && (
+            <div className="flex items-center justify-center py-8">
+              <LoaderCircle className="h-6 w-6 animate-spin text-slate-400" />
+            </div>
+          )}
+
+          {!loading && events.length === 0 && (
+            <div className={`rounded-2xl border border-dashed p-8 text-center ${isDark ? 'border-slate-700' : 'border-slate-300'}`}>
+              <TriangleAlert className="mx-auto h-10 w-10 text-slate-400" />
+              <p className={`mt-3 font-semibold ${textPrimary}`}>No flagged events</p>
+              <p className={`mt-1 text-sm ${textSecondary}`}>All attendance attempts are within normal risk thresholds.</p>
+            </div>
+          )}
+
+          {events.map((event) => (
+            <div key={event.id} className={`rounded-2xl border p-5 ${isDark ? 'border-slate-700' : 'border-amber-200'}`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`font-semibold ${textPrimary}`}>
+                      {event.student?.firstName} {event.student?.lastName}
+                    </span>
+                    <span className="rounded-lg bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                      Score: {event.riskScore}
+                    </span>
+                  </div>
+                  <p className={`mt-1 text-xs ${textSecondary}`}>
+                    {event.student?.matricNumber} &middot; {event.session?.course?.courseCode || '--'}
+                  </p>
+                  {event.riskFlags && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {(() => {
+                        try {
+                          const flags = typeof event.riskFlags === 'string' ? JSON.parse(event.riskFlags) : event.riskFlags;
+                          return Array.isArray(flags) ? flags.map((flag) => (
+                            <span key={flag} className="rounded-lg bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700">
+                              {flag.replace(/_/g, ' ')}
+                            </span>
+                          )) : null;
+                        } catch { return null; }
+                      })()}
+                    </div>
+                  )}
+                  {event.attendanceAttempt?.rejectionReason && (
+                    <p className={`mt-2 text-xs italic ${textSecondary}`}>{event.attendanceAttempt.rejectionReason}</p>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={() => handleAction(event.id, 'allow')}
+                    disabled={actionBusy === `${event.id}-allow`}
+                    className="rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+                  >
+                    {actionBusy === `${event.id}-allow` ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : 'Approve'}
+                  </button>
+                  <button
+                    onClick={() => handleAction(event.id, 'reject')}
+                    disabled={actionBusy === `${event.id}-reject`}
+                    className="rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:opacity-60"
+                  >
+                    {actionBusy === `${event.id}-reject` ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : 'Reject'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+    </div>
+  );
+};
+
 const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
   const { isDark } = useTheme();
   const [scannerError, setScannerError] = useState('');
@@ -1070,7 +1191,7 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
 
             setScannerError('');
             setScannerStatus('Getting fresh GPS...');
-            const freshLocation = await getVerifiedLocation();
+            const freshLocation = await getSampledLocation();
             if (!freshLocation.success) {
               setScannerError(freshLocation.error);
               scanHandledRef.current = false;
@@ -1078,7 +1199,7 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
             }
             setScannerStatus('Submitting attendance...');
             await stopScanner();
-            const result = await onDetectedRef.current(payload.sessionKey, 'qr', freshLocation);
+            const result = await onDetectedRef.current(payload.sessionKey, 'qr', freshLocation, payload.qrChallenge);
             if (result?.success) {
               cancelledRef.current = true;
               await stopScanner();
@@ -1157,6 +1278,8 @@ const Dashboard = () => {
   const [profileForm, setProfileForm] = useState({ firstName: '', lastName: '', department: '', faculty: '', program: '' });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [profilePhoto, setProfilePhoto] = useState('');
+  const [trustedDevices, setTrustedDevices] = useState([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
   const [preferences, setPreferences] = useState({ emailUpdates: true, classReminders: true, compactMode: false, browserNotifications: false });
   const [siteMaintenance, setSiteMaintenance] = useState(initialSiteMaintenanceForm);
   const [users, setUsers] = useState([]);
@@ -1747,6 +1870,13 @@ const Dashboard = () => {
           pendingQueries: myQueries.filter((query) => query.status === 'pending').length,
           lateMarks: myHistory.filter((item) => item.status === 'late').length,
         });
+      }
+
+      try {
+        const devicesRes = await api.get('/security/devices');
+        setTrustedDevices(devicesRes.data.data || []);
+      } catch {
+        // security endpoints may not be available to all roles
       }
     } catch (loadError) {
       setError(loadError.userMessage || loadError.response?.data?.message || 'Dashboard data could not be loaded.');
@@ -2719,7 +2849,7 @@ const Dashboard = () => {
     }
   };
 
-  const handleMarkAttendance = useCallback(async (sessionKey, courseCode, method, location) => {
+  const handleMarkAttendance = useCallback(async (sessionKey, courseCode, method, location, qrChallenge) => {
     if (attendanceRequestRef.current) {
       return { success: false, message: 'Attendance is already being processed. Please wait a moment.' };
     }
@@ -2740,13 +2870,13 @@ const Dashboard = () => {
 
       const body = {
         sessionKey: trimmedKey,
-        courseCode: trimmedCode,
         method: method || 'key',
         latitude: location?.latitude,
         longitude: location?.longitude,
         accuracy: location?.accuracy,
         locationTimestamp: location?.locationTimestamp || (location?.timestamp ? new Date(location.timestamp).toISOString() : undefined),
         deviceInfo: navigator.userAgent,
+        qrChallenge: qrChallenge || undefined,
       };
 
       const response = await api.post('/attendance/mark', body);
@@ -3688,6 +3818,46 @@ const Dashboard = () => {
     }
   };
 
+  const loadDevices = useCallback(async () => {
+    try {
+      setDevicesLoading(true);
+      const res = await api.get('/security/devices');
+      setTrustedDevices(res.data.data || []);
+    } catch {
+      // ignore
+    } finally {
+      setDevicesLoading(false);
+    }
+  }, []);
+
+  const handleRegisterDevice = async () => {
+    try {
+      setBusyAction('register-device');
+      setMessage();
+      await api.post('/security/devices/register', { deviceLabel: `${navigator.userAgent?.slice(0, 80) || 'My device'}` });
+      await loadDevices();
+      setMessage('Device registered successfully. It will be used to verify your attendance.');
+    } catch (err) {
+      setMessage('', err.response?.data?.message || 'Device could not be registered.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleRevokeDevice = async (deviceId) => {
+    try {
+      setBusyAction(`revoke-device-${deviceId}`);
+      setMessage();
+      await api.delete(`/security/devices/${deviceId}`);
+      await loadDevices();
+      setMessage('Device revoked successfully.');
+    } catch (err) {
+      setMessage('', err.response?.data?.message || 'Device could not be revoked.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   const handleToggleSiteMaintenance = async (enabled) => {
     const nextSettings = {
       ...siteMaintenance,
@@ -3733,9 +3903,9 @@ const Dashboard = () => {
 
   return (
     <div className={`dashboard-shell min-h-screen ${isDark ? 'dark dashboard-shell--app text-slate-100' : 'dashboard-shell--light text-slate-900'} ${preferences.compactMode ? 'dashboard-shell--compact' : ''}`}>
-      <QrScannerPanel isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={async (scannedKey, method, location) => {
+      <QrScannerPanel isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={async (scannedKey, method, location, qrChallenge) => {
         const code = String(attendanceForm.courseCode || '').trim().toUpperCase();
-        const result = await handleMarkAttendance(scannedKey, code, method, location);
+        const result = await handleMarkAttendance(scannedKey, code, method, location, qrChallenge);
         return result;
       }} />
       <LiveNotificationToast
@@ -4287,6 +4457,66 @@ const Dashboard = () => {
                       </ActionButton>
                     </div>
                   </form>
+                </Panel>
+
+                <Panel title="Trusted devices" eyebrow="Attendance security">
+                  <div className="space-y-4">
+                    <p className={`text-sm leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Register this device as trusted to improve attendance security. A trusted device helps verify your identity and prevents others from using your account.
+                    </p>
+
+                    {trustedDevices.length === 0 && !devicesLoading && (
+                      <div className={`rounded-2xl border border-dashed p-5 text-center ${isDark ? 'border-slate-700' : 'border-slate-300'}`}>
+                        <Smartphone className="mx-auto h-8 w-8 text-slate-400" />
+                        <p className={`mt-2 text-sm font-medium ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>No trusted devices registered.</p>
+                      </div>
+                    )}
+
+                    {devicesLoading && (
+                      <div className="flex items-center justify-center py-4">
+                        <LoaderCircle className="h-5 w-5 animate-spin text-slate-400" />
+                      </div>
+                    )}
+
+                    {trustedDevices.length > 0 && (
+                      <div className="space-y-3">
+                        {trustedDevices.map((device) => (
+                          <div key={device.id} className={`flex items-center justify-between rounded-2xl border p-4 ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
+                            <div className="flex items-center gap-3">
+                              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${device.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                <Smartphone className="h-5 w-5" />
+                              </div>
+                              <div>
+                                <p className={`text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{device.deviceLabel || 'Unknown device'}</p>
+                                <p className={`text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                                  {device.status === 'active' ? 'Active' : 'Revoked'}
+                                  {device.lastUsedAt ? ` \u00B7 Last used ${new Date(device.lastUsedAt).toLocaleDateString()}` : ''}
+                                </p>
+                              </div>
+                            </div>
+                            {device.status === 'active' && (
+                              <button
+                                onClick={() => handleRevokeDevice(device.id)}
+                                disabled={busyAction === `revoke-device-${device.id}`}
+                                className="rounded-xl px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60"
+                              >
+                                {busyAction === `revoke-device-${device.id}` ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : 'Revoke'}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleRegisterDevice}
+                      disabled={busyAction === 'register-device'}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-60"
+                    >
+                      {busyAction === 'register-device' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Smartphone className="h-4 w-4" />}
+                      Register this device
+                    </button>
+                  </div>
                 </Panel>
               </div>
             </div>
@@ -5261,6 +5491,10 @@ const Dashboard = () => {
             </div>
           )}
 
+          {activeTab === 'review' && ['lecturer', 'admin'].includes(role) && (
+            <ReviewFlagsSection />
+          )}
+
           {activeTab === 'attempts' && ['lecturer', 'admin'].includes(role) && (
             <div className="grid gap-8">
               <Panel title="Attendance attempt logs" eyebrow="All mark attempts">
@@ -5391,7 +5625,7 @@ const Dashboard = () => {
                           setMessage('', 'Enter the session key and course code to mark attendance.');
                           return;
                         }
-                        const locationResult = await getVerifiedLocation();
+                        const locationResult = await getSampledLocation();
                         if (!locationResult.success) {
                           setMessage('', locationResult.error);
                           return;

@@ -84,6 +84,11 @@ const AttendanceAttempt = sequelize.define('AttendanceAttempt', {
       }
     },
   },
+  trustedDeviceId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: { model: 'trusted_devices', key: 'id' },
+  },
 }, {
   tableName: 'attendance_attempts',
   timestamps: true,
@@ -91,6 +96,7 @@ const AttendanceAttempt = sequelize.define('AttendanceAttempt', {
     { fields: ['studentId', 'sessionId'] },
     { fields: ['accepted'] },
     { fields: ['createdAt'] },
+    { fields: ['trustedDeviceId'] },
   ],
 });
 

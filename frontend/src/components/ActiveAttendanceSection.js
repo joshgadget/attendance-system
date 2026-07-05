@@ -49,6 +49,7 @@ export default function ActiveAttendanceSection({ sessions, onRefresh, onCloseSe
   const [sessionDetails, setSessionDetails] = useState({});
   const [attemptLogs, setAttemptLogs] = useState({});
   const [qrUrls, setQrUrls] = useState({});
+  const [challenges, setChallenges] = useState({});
   const [expandedId, setExpandedId] = useState(null);
   const [confirmCloseId, setConfirmCloseId] = useState(null);
   const [busyAction, setBusyAction] = useState('');
@@ -66,15 +67,23 @@ export default function ActiveAttendanceSection({ sessions, onRefresh, onCloseSe
     } catch { /* ignore */ }
   }, []);
 
+  const loadQrChallenge = useCallback(async (session) => {
+    try {
+      const res = await api.get(`/attendance/sessions/${session.id}/qr-challenge`);
+      const challenge = res.data.data;
+      if (!challenge) return;
+      const qrContent = JSON.stringify(challenge);
+      QRCode.toDataURL(qrContent, { width: 280, margin: 2, errorCorrectionLevel: 'H', color: { dark: '#000000', light: '#ffffff' } })
+        .then((url) => setQrUrls((prev) => ({ ...prev, [session.id]: url })))
+        .catch(() => {});
+    } catch { /* ignore */ }
+  }, []);
+
   const loadSessionDetail = useCallback(async (session) => {
     try {
       const res = await api.get(`/attendance/sessions/${session.id}`);
       const detail = res.data.data;
       setSessionDetails((prev) => ({ ...prev, [session.id]: detail }));
-      const qrContent = session.sessionKey;
-      QRCode.toDataURL(qrContent, { width: 280, margin: 2, errorCorrectionLevel: 'H', color: { dark: '#000000', light: '#ffffff' } })
-        .then((url) => setQrUrls((prev) => ({ ...prev, [session.id]: url })))
-        .catch(() => {});
     } catch { /* ignore */ }
   }, []);
 
@@ -82,16 +91,18 @@ export default function ActiveAttendanceSection({ sessions, onRefresh, onCloseSe
     activeSessions.forEach((s) => {
       if (!sessionDetails[s.id]) loadSessionDetail(s);
       if (!attemptLogs[s.id]) loadAttemptLogs(s.id);
+      loadQrChallenge(s);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSessions.length, loadSessionDetail, loadAttemptLogs]);
+  }, [activeSessions.length, loadSessionDetail, loadAttemptLogs, loadQrChallenge]);
 
   const refreshAll = useCallback(() => {
     activeRef.current.forEach((s) => {
       loadAttemptLogs(s.id);
       loadSessionDetail(s);
+      loadQrChallenge(s);
     });
-  }, [loadAttemptLogs, loadSessionDetail]);
+  }, [loadAttemptLogs, loadSessionDetail, loadQrChallenge]);
 
   useEffect(() => {
     if (activeSessions.length === 0) return;

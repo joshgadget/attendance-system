@@ -1,6 +1,5 @@
 const { sequelize } = require('../config/database');
 
-// Import models
 const User = require('./user');
 const Course = require('./course');
 const Session = require('./Session');
@@ -15,90 +14,71 @@ const AuditLog = require('./AuditLog');
 const SiteSetting = require('./SiteSetting');
 const ClassReminderLog = require('./ClassReminderLog');
 const AttendanceAttempt = require('./AttendanceAttempt');
+const TrustedDevice = require('./TrustedDevice');
+const AttendanceQrChallenge = require('./AttendanceQrChallenge');
+const AttendanceRiskEvent = require('./AttendanceRiskEvent');
 
-// Setup associations function
 const setupAssociations = () => {
-  // User (Lecturer) -> Course (One-to-Many)
   User.hasMany(Course, { foreignKey: 'lecturerId', as: 'courses' });
   Course.belongsTo(User, { foreignKey: 'lecturerId', as: 'lecturer' });
 
-  // Course -> Session (One-to-Many)
   Course.hasMany(Session, { foreignKey: 'courseId', as: 'sessions' });
   Session.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
 
-  // User (Lecturer) -> Session (One-to-Many)
   User.hasMany(Session, { foreignKey: 'lecturerId', as: 'lecturedSessions' });
   Session.belongsTo(User, { foreignKey: 'lecturerId', as: 'lecturer' });
 
-  // Session -> Attendance (One-to-Many)
   Session.hasMany(Attendance, { foreignKey: 'sessionId', as: 'attendances' });
   Attendance.belongsTo(Session, { foreignKey: 'sessionId', as: 'session' });
 
-  // User (Student) -> Attendance (One-to-Many)
   User.hasMany(Attendance, { foreignKey: 'studentId', as: 'attendances' });
   Attendance.belongsTo(User, { foreignKey: 'studentId', as: 'student' });
 
-  // Course -> Attendance (One-to-Many)
   Course.hasMany(Attendance, { foreignKey: 'courseId', as: 'attendances' });
   Attendance.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
 
-  // Student registry -> User
   User.hasOne(StudentRegistry, { foreignKey: 'claimedByUserId', as: 'registryRecord' });
   StudentRegistry.belongsTo(User, { foreignKey: 'claimedByUserId', as: 'claimedBy' });
 
-  // User -> Enrollment
   User.hasMany(Enrollment, { foreignKey: 'userId', as: 'enrollments' });
   Enrollment.belongsTo(User, { foreignKey: 'userId', as: 'student' });
 
-  // Course -> Enrollment
   Course.hasMany(Enrollment, { foreignKey: 'courseId', as: 'enrollments' });
   Enrollment.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
 
-  // Course -> CourseSchedule
   Course.hasMany(CourseSchedule, { foreignKey: 'courseId', as: 'schedules' });
   CourseSchedule.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
 
-  // Course -> CourseAudience
   Course.hasMany(CourseAudience, { foreignKey: 'courseId', as: 'audiences' });
   CourseAudience.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
 
-  // Course schedule -> Class reminder logs
   CourseSchedule.hasMany(ClassReminderLog, { foreignKey: 'courseScheduleId', as: 'reminderLogs' });
   ClassReminderLog.belongsTo(CourseSchedule, { foreignKey: 'courseScheduleId', as: 'schedule' });
 
-  // Course -> Class reminder logs
   Course.hasMany(ClassReminderLog, { foreignKey: 'courseId', as: 'reminderLogs' });
   ClassReminderLog.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
 
-  // User -> Class reminder logs
   User.hasMany(ClassReminderLog, { foreignKey: 'userId', as: 'classReminderLogs' });
   ClassReminderLog.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
-  // Lecturer -> AbsenceQuery
   User.hasMany(AbsenceQuery, { foreignKey: 'lecturerId', as: 'sentQueries' });
   AbsenceQuery.belongsTo(User, { foreignKey: 'lecturerId', as: 'lecturer' });
 
-  // Student -> AbsenceQuery
   User.hasMany(AbsenceQuery, { foreignKey: 'studentId', as: 'receivedQueries' });
   AbsenceQuery.belongsTo(User, { foreignKey: 'studentId', as: 'student' });
 
-  // User -> Escalated AbsenceQuery
   User.hasMany(AbsenceQuery, { foreignKey: 'escalatedByUserId', as: 'escalatedQueries' });
   AbsenceQuery.belongsTo(User, { foreignKey: 'escalatedByUserId', as: 'escalatedBy' });
 
-  // Session -> AbsenceQuery
   Session.hasMany(AbsenceQuery, { foreignKey: 'sessionId', as: 'queries' });
   AbsenceQuery.belongsTo(Session, { foreignKey: 'sessionId', as: 'session' });
 
-  // User -> AuditLog
   User.hasMany(AuditLog, { foreignKey: 'actorId', as: 'auditLogs' });
   AuditLog.belongsTo(User, { foreignKey: 'actorId', as: 'actor' });
 
-  // User -> SiteSetting
   User.hasMany(SiteSetting, { foreignKey: 'updatedByUserId', as: 'updatedSiteSettings' });
   SiteSetting.belongsTo(User, { foreignKey: 'updatedByUserId', as: 'updatedBy' });
 
-  // AttendanceAttempt associations
   User.hasMany(AttendanceAttempt, { foreignKey: 'studentId', as: 'attendanceAttempts' });
   AttendanceAttempt.belongsTo(User, { foreignKey: 'studentId', as: 'student' });
 
@@ -107,12 +87,35 @@ const setupAssociations = () => {
 
   Course.hasMany(AttendanceAttempt, { foreignKey: 'courseId', as: 'attempts' });
   AttendanceAttempt.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
+
+  User.hasMany(TrustedDevice, { foreignKey: 'userId', as: 'trustedDevices' });
+  TrustedDevice.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+  Session.hasMany(AttendanceQrChallenge, { foreignKey: 'sessionId', as: 'qrChallenges' });
+  AttendanceQrChallenge.belongsTo(Session, { foreignKey: 'sessionId', as: 'session' });
+
+  Session.hasMany(AttendanceRiskEvent, { foreignKey: 'sessionId', as: 'riskEvents' });
+  AttendanceRiskEvent.belongsTo(Session, { foreignKey: 'sessionId', as: 'session' });
+
+  User.hasMany(AttendanceRiskEvent, { foreignKey: 'studentId', as: 'riskEvents' });
+  AttendanceRiskEvent.belongsTo(User, { foreignKey: 'studentId', as: 'student' });
+
+  AttendanceAttempt.hasMany(AttendanceRiskEvent, { foreignKey: 'attendanceAttemptId', as: 'riskEvents' });
+  AttendanceRiskEvent.belongsTo(AttendanceAttempt, { foreignKey: 'attendanceAttemptId', as: 'attendanceAttempt' });
+
+  TrustedDevice.hasMany(AttendanceRiskEvent, { foreignKey: 'trustedDeviceId', as: 'riskEvents' });
+  AttendanceRiskEvent.belongsTo(TrustedDevice, { foreignKey: 'trustedDeviceId', as: 'trustedDevice' });
+
+  User.hasMany(AttendanceRiskEvent, { foreignKey: 'reviewedByUserId', as: 'reviewedRiskEvents' });
+  AttendanceRiskEvent.belongsTo(User, { foreignKey: 'reviewedByUserId', as: 'reviewedBy' });
+
+  AttendanceAttempt.belongsTo(TrustedDevice, { foreignKey: 'trustedDeviceId', as: 'trustedDevice' });
+  TrustedDevice.hasMany(AttendanceAttempt, { foreignKey: 'trustedDeviceId', as: 'attempts' });
 };
 
-// Sync all models with database
 const syncDatabase = async () => {
   try {
-    setupAssociations(); // Call this before syncing
+    setupAssociations();
     await sequelize.sync({ alter: true });
     console.log('Database synchronized successfully.');
   } catch (error) {
@@ -136,6 +139,9 @@ module.exports = {
   AuditLog,
   SiteSetting,
   AttendanceAttempt,
+  TrustedDevice,
+  AttendanceQrChallenge,
+  AttendanceRiskEvent,
   setupAssociations,
   syncDatabase
 };

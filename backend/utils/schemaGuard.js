@@ -180,7 +180,7 @@ const ensureSchemaGuard = async (sequelize) => {
   }
 
   if (await ensureNullable(queryInterface, 'sessions', 'sessionCode')) {
-    appliedChanges.push('sessions.sessionCode → allowNull: true');
+    appliedChanges.push('sessions.sessionCode \u2192 allowNull: true');
   }
 
   if (await ensureIndex(queryInterface, 'sessions', 'sessions_session_key_unique', {
@@ -197,10 +197,73 @@ const ensureSchemaGuard = async (sequelize) => {
     appliedChanges.push('attendance(sessionId, studentId) unique index');
   }
 
+  if (await ensureColumn(queryInterface, 'attendance_attempts', 'trustedDeviceId', {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: { model: 'trusted_devices', key: 'id' },
+  })) {
+    appliedChanges.push('attendance_attempts.trustedDeviceId');
+  }
+
   if (await ensureIndex(queryInterface, 'attendance', 'attendance_device_flagged_idx', {
     fields: ['deviceFlagged'],
   })) {
     appliedChanges.push('attendance(deviceFlagged) index');
+  }
+
+  const newTableColumns = {
+    trusted_devices: [
+      ['userId', { type: DataTypes.INTEGER, allowNull: false }],
+      ['deviceLabel', { type: DataTypes.STRING(200), allowNull: true }],
+      ['deviceFingerprint', { type: DataTypes.STRING(128), allowNull: false }],
+      ['credentialId', { type: DataTypes.STRING(255), allowNull: true }],
+      ['publicKey', { type: DataTypes.TEXT, allowNull: true }],
+      ['status', { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'active' }],
+      ['lastUsedAt', { type: DataTypes.DATE, allowNull: true }],
+      ['revokedAt', { type: DataTypes.DATE, allowNull: true }],
+    ],
+    attendance_qr_challenges: [
+      ['sessionId', { type: DataTypes.INTEGER, allowNull: false }],
+      ['nonce', { type: DataTypes.STRING(64), allowNull: false }],
+      ['issuedAt', { type: DataTypes.DATE, allowNull: false }],
+      ['expiresAt', { type: DataTypes.DATE, allowNull: false }],
+      ['usedAt', { type: DataTypes.DATE, allowNull: true }],
+      ['usedByUserId', { type: DataTypes.INTEGER, allowNull: true }],
+      ['signatureHash', { type: DataTypes.STRING(128), allowNull: false }],
+    ],
+    attendance_risk_events: [
+      ['attendanceAttemptId', { type: DataTypes.INTEGER, allowNull: true }],
+      ['studentId', { type: DataTypes.INTEGER, allowNull: false }],
+      ['sessionId', { type: DataTypes.INTEGER, allowNull: false }],
+      ['trustedDeviceId', { type: DataTypes.INTEGER, allowNull: true }],
+      ['ipAddress', { type: DataTypes.STRING(120), allowNull: true }],
+      ['riskScore', { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 }],
+      ['riskFlags', { type: DataTypes.TEXT, allowNull: true }],
+      ['action', { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'allow' }],
+      ['reviewedByUserId', { type: DataTypes.INTEGER, allowNull: true }],
+      ['reviewNote', { type: DataTypes.TEXT, allowNull: true }],
+      ['reviewedAt', { type: DataTypes.DATE, allowNull: true }],
+    ],
+  };
+
+  for (const [tableName, columns] of Object.entries(newTableColumns)) {
+    const tableExists = await queryInterface.tableExists(tableName);
+    if (!tableExists) {
+      const columnDefs = {
+        id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true, allowNull: false },
+        ...Object.fromEntries(columns),
+        createdAt: { type: DataTypes.DATE, allowNull: false },
+        updatedAt: { type: DataTypes.DATE, allowNull: false },
+      };
+      await queryInterface.createTable(tableName, columnDefs);
+      appliedChanges.push(`${tableName} (new table)`);
+    } else {
+      for (const [columnName, definition] of columns) {
+        if (await ensureColumn(queryInterface, tableName, columnName, definition)) {
+          appliedChanges.push(`${tableName}.${columnName}`);
+        }
+      }
+    }
   }
 
   return appliedChanges;

@@ -1,5 +1,5 @@
 const { Op, UniqueConstraintError } = require('sequelize');
-const { AbsenceQuery, Session, Attendance, Course, User, Enrollment, AttendanceAttempt } = require('../models');
+const { AbsenceQuery, Session, Attendance, Course, User, Enrollment, AttendanceAttempt, TrustedDevice } = require('../models');
 const { haversineDistance, validateGpsAccuracy, validateLocationTimestamp, isMockedLocation, isInsideNigeriaBounds } = require('../utils/geoValidation');
 const crypto = require('crypto');
 const { sendEmail } = require('../utils/mailer');
@@ -7,6 +7,15 @@ const { logAuditEvent } = require('../utils/auditLogger');
 const { findEnrollmentsForCourse } = require('../utils/enrollmentLookup');
 const { broadcastNotification, buildNotificationPayload } = require('../utils/realtimeNotifications');
 const env = require('../utils/env');
+const {
+  validateQrChallenge,
+  markQrChallengeUsed,
+  getOrCreateDeviceFingerprint,
+  computeRiskScore,
+  saveRiskEvent,
+  checkDevicePerSession,
+  buildQrChallenge,
+} = require('../services/attendanceSecurityService');
 
 const generateSessionKey = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -67,11 +76,7 @@ const getCurrentLagosTimeParts = () => {
   };
 };
 
-const buildDeviceFingerprint = (req) => crypto
-  .createHash('sha256')
-  .update(req.get('user-agent') || 'unknown-device')
-  .digest('hex')
-  .slice(0, 32);
+const buildDeviceFingerprint = (req) => getOrCreateDeviceFingerprint(req.headers);
 
 const buildQrPayload = (sessionId, sessionKey) => JSON.stringify({
   type: 'attendance-session',
@@ -301,7 +306,7 @@ exports.getSession = async (req, res) => {
 
 exports.markAttendance = async (req, res) => {
   try {
-    const { sessionKey, courseCode, method, latitude, longitude, accuracy, locationTimestamp } = req.body;
+    const { sessionKey, courseCode, method, latitude, longitude, accuracy, locationTimestamp, qrChallenge } = req.body;
     const deviceInfo = req.body.deviceInfo;
 
     if (!sessionKey) {
@@ -324,14 +329,6 @@ exports.markAttendance = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Course not found.' });
     }
 
-    if (courseCode) {
-      const normalizedCourseCode = String(courseCode).trim().toUpperCase();
-      const sessionCourseCode = String(course.courseCode || '').trim().toUpperCase();
-      if (normalizedCourseCode !== sessionCourseCode) {
-        return res.status(403).json({ success: false, message: 'The course code does not match this attendance session.' });
-      }
-    }
-
     if (session.status !== 'active') {
       return res.status(403).json({ success: false, message: 'This attendance session has expired.' });
     }
@@ -346,6 +343,7 @@ exports.markAttendance = async (req, res) => {
       console.log(`[dev] markAttendance: sessionKey=${trimmedKey}, method=${attendanceMethod}, latitude=${latitude}, longitude=${longitude}, accuracy=${accuracy}`);
     }
 
+    // Step 1: Duplicate check
     const existing = await Attendance.findOne({ where: { sessionId: session.id, studentId: req.user.id } });
     if (existing) {
       await logAuditEvent({
@@ -362,6 +360,7 @@ exports.markAttendance = async (req, res) => {
       });
     }
 
+    // Step 2: Enrollment check
     const enrollment = await Enrollment.findOne({
       where: {
         userId: req.user.id,
@@ -384,6 +383,7 @@ exports.markAttendance = async (req, res) => {
       return res.status(403).json({ success: false, message: 'You are not registered for this course, so attendance cannot be marked.' });
     }
 
+    // Step 3: Location provided
     if (latitude === undefined || longitude === undefined) {
       await logAuditEvent({
         req,
@@ -402,10 +402,12 @@ exports.markAttendance = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid location coordinates supplied.' });
     }
 
+    // Step 4: Bounds check
     if (!isInsideNigeriaBounds(parsedLatitude, parsedLongitude)) {
       return res.status(403).json({ success: false, message: 'Your GPS coordinates appear to be outside Nigeria. Attendance cannot be marked.' });
     }
 
+    // Step 5: Accuracy check
     if (parsedAccuracy !== null) {
       const maxAccuracy = env.attendanceMaxLocationAccuracy;
       if (parsedAccuracy > maxAccuracy) {
@@ -413,6 +415,7 @@ exports.markAttendance = async (req, res) => {
       }
     }
 
+    // Step 6: Location timestamp freshness
     if (locationTimestamp) {
       const timeCheck = validateLocationTimestamp(locationTimestamp);
       if (!timeCheck.valid) {
@@ -420,6 +423,7 @@ exports.markAttendance = async (req, res) => {
       }
     }
 
+    // Step 7: Mock location check
     if (isMockedLocation(parsedLatitude, parsedLongitude, parsedAccuracy, locationTimestamp, deviceInfo)) {
       await logAuditEvent({
         req, action: 'attendance.mark.rejected.mock_location',
@@ -429,6 +433,20 @@ exports.markAttendance = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Suspicious location detected. Turn off any location simulation apps and try again.' });
     }
 
+    // Step 8: QR challenge validation
+    if (attendanceMethod === 'qr' && qrChallenge) {
+      const qrResult = await validateQrChallenge(qrChallenge);
+      if (!qrResult.valid) {
+        await logAuditEvent({
+          req, action: 'attendance.mark.rejected.invalid_qr',
+          targetType: 'session', targetId: session.id,
+          metadata: { courseId: session.courseId, reason: qrResult.reason },
+        });
+        return res.status(403).json({ success: false, message: qrResult.reason });
+      }
+    }
+
+    // Step 9: Distance calculation
     const hasLecturerLocation = session.lecturerLatitude !== null && session.lecturerLongitude !== null;
     const radiusMeters = session.attendanceRadiusMeters || env.attendanceRadiusMeters;
 
@@ -451,6 +469,27 @@ exports.markAttendance = async (req, res) => {
       console.log(`[dev] Attendance distance: ${distanceMetersValue}m (radius: ${radiusMeters}m, inside: ${insideRadius})`);
     }
 
+    // Step 10: Device fingerprint & trusted device
+    const deviceHash = buildDeviceFingerprint(req);
+    const currentIp = req.ip || req.get('x-forwarded-for') || req.connection?.remoteAddress || null;
+
+    const trustedDevice = await TrustedDevice.findOne({
+      where: { userId: req.user.id, deviceFingerprint: deviceHash, status: 'active' },
+    });
+
+    if (trustedDevice) {
+      const deviceCheck = await checkDevicePerSession(session.id, trustedDevice.id, req.user.id);
+      if (!deviceCheck.allowed) {
+        await logAuditEvent({
+          req, action: 'attendance.mark.rejected.device_conflict',
+          targetType: 'session', targetId: session.id,
+          metadata: { courseId: session.courseId, trustedDeviceId: trustedDevice.id },
+        });
+        return res.status(403).json({ success: false, message: deviceCheck.message });
+      }
+    }
+
+    // Step 11: Build attempt record
     const previousAttempts = await AttendanceAttempt.count({
       where: { studentId: req.user.id, sessionId: session.id },
     });
@@ -467,9 +506,11 @@ exports.markAttendance = async (req, res) => {
       locationTimestamp: locationTimestamp ? new Date(locationTimestamp) : null,
       attemptNumber,
       attendanceMethod,
+      trustedDeviceId: trustedDevice?.id || null,
       metadata: { distanceMeters: distanceMetersValue },
     };
 
+    // Step 12: Outside radius handling
     if (!insideRadius) {
       attemptPayload.accepted = false;
       attemptPayload.rejectionReason = `You are outside the required ${radiusMeters}-metre attendance radius. Your distance is ${distanceMetersValue}m.`;
@@ -491,7 +532,43 @@ exports.markAttendance = async (req, res) => {
       }
 
       attemptPayload.accepted = true;
-      await AttendanceAttempt.create(attemptPayload);
+      const attempt = await AttendanceAttempt.create(attemptPayload);
+
+      // Risk score for late marking
+      const riskResult = await computeRiskScore({
+        studentId: req.user.id,
+        sessionId: session.id,
+        trustedDeviceId: trustedDevice?.id || null,
+        ipAddress: currentIp,
+        latitude: parsedLatitude,
+        longitude: parsedLongitude,
+        accuracy: parsedAccuracy,
+        locationTimestamp,
+      });
+
+      if (riskResult.action === 'reject') {
+        await saveRiskEvent({
+          attendanceAttemptId: attempt.id,
+          studentId: req.user.id,
+          sessionId: session.id,
+          trustedDeviceId: trustedDevice?.id || null,
+          ipAddress: currentIp,
+          riskScore: riskResult.score,
+          riskFlags: riskResult.flags,
+          action: 'reject',
+        });
+
+        await logAuditEvent({
+          req, action: 'attendance.mark.rejected.risk_score',
+          targetType: 'attendance_attempt', targetId: attempt.id,
+          metadata: { sessionId: session.id, courseId: session.courseId, riskScore: riskResult.score, riskFlags: riskResult.flags },
+        });
+
+        return res.status(403).json({
+          success: false,
+          message: 'Your attendance attempt was flagged by our security system. Please contact your lecturer.',
+        });
+      }
 
       let attendance;
       try {
@@ -507,6 +584,7 @@ exports.markAttendance = async (req, res) => {
           location: `${parsedLatitude},${parsedLongitude}`,
           locationAccuracy: parsedAccuracy,
           distanceFromClass: distanceMetersValue,
+          deviceFlagged: riskResult.action === 'review',
         });
       } catch (createError) {
         if (createError instanceof UniqueConstraintError) {
@@ -516,11 +594,28 @@ exports.markAttendance = async (req, res) => {
         throw createError;
       }
 
+      if (riskResult.action === 'review' || riskResult.flags.length > 0) {
+        await saveRiskEvent({
+          attendanceAttemptId: attempt.id,
+          studentId: req.user.id,
+          sessionId: session.id,
+          trustedDeviceId: trustedDevice?.id || null,
+          ipAddress: currentIp,
+          riskScore: riskResult.score,
+          riskFlags: riskResult.flags,
+          action: riskResult.action,
+        });
+      }
+
+      if (qrChallenge && qrChallenge.nonce) {
+        await markQrChallengeUsed(qrChallenge.nonce, req.user.id).catch(() => {});
+      }
+
       await logAuditEvent({
         req, action: 'attendance.marked',
         targetType: 'attendance', targetId: attendance.id,
         campus: course?.campus || null, faculty: course?.faculty || null, department: course?.department || null,
-        metadata: { sessionId: session.id, courseId: session.courseId, status: 'late', distanceFromClass: distanceMetersValue, attemptNumber },
+        metadata: { sessionId: session.id, courseId: session.courseId, status: 'late', distanceFromClass: distanceMetersValue, attemptNumber, riskScore: riskResult.score },
       });
 
       return res.status(201).json({
@@ -530,15 +625,49 @@ exports.markAttendance = async (req, res) => {
       });
     }
 
+    // Step 13: Inside radius — create attempt
     attemptPayload.accepted = true;
-    await AttendanceAttempt.create(attemptPayload);
+    const attempt = await AttendanceAttempt.create(attemptPayload);
 
-    const student = await User.findByPk(req.user.id, { attributes: ['id', 'lastKnownDeviceHash', 'lastKnownIp'] });
-    const deviceHash = buildDeviceFingerprint(req);
-    const currentIp = req.ip || req.get('x-forwarded-for') || req.connection?.remoteAddress || null;
+    // Step 14: Risk scoring
+    const riskResult = await computeRiskScore({
+      studentId: req.user.id,
+      sessionId: session.id,
+      trustedDeviceId: trustedDevice?.id || null,
+      ipAddress: currentIp,
+      latitude: parsedLatitude,
+      longitude: parsedLongitude,
+      accuracy: parsedAccuracy,
+      locationTimestamp,
+    });
+
+    if (riskResult.action === 'reject') {
+      await saveRiskEvent({
+        attendanceAttemptId: attempt.id,
+        studentId: req.user.id,
+        sessionId: session.id,
+        trustedDeviceId: trustedDevice?.id || null,
+        ipAddress: currentIp,
+        riskScore: riskResult.score,
+        riskFlags: riskResult.flags,
+        action: 'reject',
+      });
+
+      await logAuditEvent({
+        req, action: 'attendance.mark.rejected.risk_score',
+        targetType: 'attendance_attempt', targetId: attempt.id,
+        metadata: { sessionId: session.id, courseId: session.courseId, riskScore: riskResult.score, riskFlags: riskResult.flags },
+      });
+
+      return res.status(403).json({
+        success: false,
+        message: 'Your attendance attempt was flagged by our security system. Please contact your lecturer.',
+      });
+    }
+
+    // Step 15: Create attendance record
     const deviceFlagged = Boolean(
-      student && student.lastKnownDeviceHash && student.lastKnownIp &&
-      student.lastKnownDeviceHash !== deviceHash && student.lastKnownIp !== currentIp
+      riskResult.action === 'review' || (trustedDevice === null && riskResult.flags.includes('untrusted_device'))
     );
 
     let attendance;
@@ -565,17 +694,44 @@ exports.markAttendance = async (req, res) => {
       throw createError;
     }
 
+    // Step 16: Mark QR challenge as used
+    if (qrChallenge && qrChallenge.nonce) {
+      await markQrChallengeUsed(qrChallenge.nonce, req.user.id).catch(() => {});
+    }
+
+    // Step 17: Save risk event if flagged
+    if (riskResult.action === 'review' || riskResult.flags.length > 0) {
+      await saveRiskEvent({
+        attendanceAttemptId: attempt.id,
+        studentId: req.user.id,
+        sessionId: session.id,
+        trustedDeviceId: trustedDevice?.id || null,
+        ipAddress: currentIp,
+        riskScore: riskResult.score,
+        riskFlags: riskResult.flags,
+        action: riskResult.action,
+      });
+    }
+
+    // Step 18: Update user's known device/IP
+    const student = await User.findByPk(req.user.id, { attributes: ['id', 'lastKnownDeviceHash', 'lastKnownIp'] });
     if (student) {
       student.lastKnownDeviceHash = deviceHash;
       student.lastKnownIp = currentIp;
       await student.save();
     }
 
+    // Update trusted device last used
+    if (trustedDevice) {
+      trustedDevice.lastUsedAt = new Date();
+      await trustedDevice.save().catch(() => {});
+    }
+
     await logAuditEvent({
       req, action: 'attendance.marked',
       targetType: 'attendance', targetId: attendance.id,
       campus: course?.campus || null, faculty: course?.faculty || null, department: course?.department || null,
-      metadata: { sessionId: session.id, courseId: session.courseId, status: 'present', distanceFromClass: distanceMetersValue, attemptNumber, deviceFlagged },
+      metadata: { sessionId: session.id, courseId: session.courseId, status: 'present', distanceFromClass: distanceMetersValue, attemptNumber, deviceFlagged, riskScore: riskResult.score },
     });
 
     res.status(201).json({ success: true, message: 'Attendance marked successfully.', data: attendance });
@@ -793,6 +949,29 @@ exports.getAttemptLogs = async (req, res) => {
       limit: Math.min(Number(queryLimit) || 100, 500),
       offset: Number(offset) || 0,
     });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getQrChallenge = async (req, res) => {
+  try {
+    const session = await Session.findByPk(req.params.id);
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Session not found.' });
+    }
+
+    if (req.user.role === 'lecturer' && session.lecturerId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Not authorized.' });
+    }
+
+    if (session.status !== 'active') {
+      return res.status(403).json({ success: false, message: 'Session is not active.' });
+    }
+
+    const challenge = await buildQrChallenge(session.id, session.sessionKey);
+
+    res.json({ success: true, data: challenge });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

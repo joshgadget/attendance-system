@@ -69,4 +69,42 @@ const requestPosition = (resolve) => {
   );
 };
 
-export { getVerifiedLocation, LocationErrorMessage };
+const getSingleLocation = () =>
+  new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve({ success: false, error: LocationErrorMessage.NOT_SUPPORTED });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          success: true,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          timestamp: position.timestamp,
+        });
+      },
+      () => resolve({ success: false }),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+    );
+  });
+
+const getSampledLocation = async (sampleCount = 2) => {
+  const primary = await getVerifiedLocation();
+  if (!primary.success || (primary.accuracy !== null && primary.accuracy < 10)) {
+    return primary;
+  }
+
+  const samples = [primary];
+  for (let i = 1; i < sampleCount; i++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const sample = await getSingleLocation();
+    if (sample.success) samples.push(sample);
+  }
+
+  samples.sort((a, b) => (a.accuracy ?? Infinity) - (b.accuracy ?? Infinity));
+  return samples[0];
+};
+
+export { getVerifiedLocation, getSampledLocation, LocationErrorMessage };
