@@ -2,28 +2,20 @@ const { Session, Attendance } = require('../models');
 const { Op } = require('sequelize');
 const logger = require('../utils/logger');
 
-/**
- * CRITICAL SECURITY MIDDLEWARE
- * Ensures only students who are physically in class can sign attendance
- * Validates: Session code, timing, location (optional), and prevents duplicates
- */
-
-// Validate session code and check if session is active
 const validateSessionAccess = async (req, res, next) => {
   try {
-    const { sessionCode } = req.body;
+    const { sessionKey } = req.body;
     
-    if (!sessionCode) {
+    if (!sessionKey) {
       return res.status(400).json({
         success: false,
-        message: 'Session code is required.'
+        message: 'Session key is required.'
       });
     }
 
-    // Find active session with this code
     const session = await Session.findOne({
       where: {
-        sessionCode: sessionCode.toUpperCase().trim(),
+        sessionKey: String(sessionKey).trim().toUpperCase(),
         status: 'active'
       }
     });
@@ -31,11 +23,10 @@ const validateSessionAccess = async (req, res, next) => {
     if (!session) {
       return res.status(404).json({
         success: false,
-        message: 'Invalid or expired session code. Please check with your lecturer.'
+        message: 'Invalid or expired session key. Please check with your lecturer.'
       });
     }
 
-    // Check if session time is valid (can only sign within session duration + grace period)
     const sessionStart = new Date(`${session.date}T${session.startTime}`);
     const sessionEnd = new Date(`${session.date}T${session.endTime}`);
     const now = new Date();
@@ -55,7 +46,6 @@ const validateSessionAccess = async (req, res, next) => {
       });
     }
 
-    // Attach session to request for later use
     req.attendanceSession = session;
     
     next();

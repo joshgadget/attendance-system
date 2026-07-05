@@ -62,6 +62,8 @@ module.exports = {
   rateLimitMaxRequests: toNumber(process.env.RATE_LIMIT_MAX_REQUESTS, 100),
   attendanceRateLimitWindowMs: toNumber(process.env.ATTENDANCE_RATE_LIMIT_WINDOW_MS, 60 * 1000),
   attendanceRateLimitMaxRequests: toNumber(process.env.ATTENDANCE_RATE_LIMIT_MAX_REQUESTS, 5),
+  attendanceRadiusMeters: toNumber(process.env.ATTENDANCE_RADIUS_METERS, 35),
+  attendanceMaxLocationAccuracy: toNumber(process.env.ATTENDANCE_MAX_LOCATION_ACCURACY_METERS, 30),
   validateRequiredEnv,
   getEnvOrFallback,
 };

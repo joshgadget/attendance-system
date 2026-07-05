@@ -54,7 +54,7 @@ const sessionSchema = Joi.object({
 
 // Attendance marking validation
 const attendanceSchema = Joi.object({
-  session_code: Joi.string().length(10).required().trim().uppercase()
+  session_key: Joi.string().length(6).required().trim().uppercase()
 });
 
 module.exports = {

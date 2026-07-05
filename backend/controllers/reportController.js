@@ -92,7 +92,7 @@ const buildMyAttendanceReport = async (requester) => {
     where: { studentId: requester.id },
     include: [
       { model: Course, as: 'course', attributes: ['courseCode', 'courseName', 'semester', 'academicYear'] },
-      { model: Session, as: 'session', attributes: ['date', 'startTime', 'sessionCode'] },
+      { model: Session, as: 'session', attributes: ['date', 'startTime', 'sessionKey'] },
     ],
     order: [['markedAt', 'DESC']],
   });

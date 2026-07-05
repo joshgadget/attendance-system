@@ -264,7 +264,7 @@ exports.getQueries = async (req, res) => {
         {
           model: Session,
           as: 'session',
-          attributes: ['id', 'date', 'startTime', 'sessionCode', 'status'],
+          attributes: ['id', 'date', 'startTime', 'sessionKey', 'status'],
           include: [{ model: Course, as: 'course', attributes: ['id', 'courseCode', 'courseName'] }]
         }
       ],

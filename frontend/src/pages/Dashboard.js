@@ -50,6 +50,7 @@ import { getSocketBaseUrl } from '../services/apiConfig';
 import { logout } from '../redux/slices/authSlice';
 import { useTheme } from '../theme/ThemeContext';
 import BuildingMap from '../components/BuildingMap';
+import { getVerifiedLocation } from '../utils/location';
 import './dashboard-theme.css';
 
 const initialUserForm = { firstName: '', lastName: '', email: '', password: '', role: 'student', department: '', faculty: '', program: '', campus: '', matricNumber: '' };
@@ -58,7 +59,7 @@ const initialRegistryForm = { matricNumber: '', firstName: '', lastName: '', oth
 const initialSessionForm = { courseId: '', date: '', startTime: '', durationMinutes: '120', venue: '', lecturerLatitude: '', lecturerLongitude: '', lecturerLocationAccuracy: '' };
 const initialBuildingForm = { name: '', tag: '', campus: '', latitude: '', longitude: '', radiusMeters: '80' };
 const initialQueryForm = { studentId: '', sessionId: '', title: '', message: '' };
-const initialAttendanceForm = { sessionKey: '', courseCode: '', attendancePass: '', useLocation: true };
+const initialAttendanceForm = { sessionKey: '', courseCode: '' };
 const initialSiteMaintenanceForm = {
   isMaintenanceEnabled: false,
   badge: 'Temporary maintenance',
@@ -283,24 +284,6 @@ const buildSelectOptions = (values, emptyLabel, extraValues = []) => [
   ...collectUniqueValues(values, extraValues).map((value) => ({ value, label: value })),
 ];
 
-const getCurrentLocation = () =>
-  new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve(null);
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => resolve({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracy: position.coords.accuracy,
-        locationTimestamp: new Date(position.timestamp).toISOString(),
-      }),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
-    );
-  });
 
 const readFileAsDataUrl = (file) =>
   new Promise((resolve, reject) => {
@@ -334,32 +317,34 @@ const createEvidencePayload = async (file, note = '') => {
 
 const extractAttendancePayload = (decodedText) => {
   const compactText = String(decodedText || '').trim();
-  if (!compactText) return { attendancePass: '' };
+  if (!compactText) return {};
 
-  // JWT tokens start with eyJ (base64url-encoded JSON)
-  if (compactText.startsWith('eyJ')) {
-    return { attendancePass: compactText };
+  try {
+    const parsed = JSON.parse(compactText);
+    if (parsed?.type === 'attendance-session' && parsed?.sessionKey) {
+      return { sessionKey: parsed.sessionKey };
+    }
+  } catch {
+    // not JSON
+  }
+
+  const upper = compactText.toUpperCase();
+  const clean = upper.replace(/[^A-Z0-9]/g, '');
+  if (clean.length === 6) {
+    return { sessionKey: clean };
   }
 
   try {
     const parsedUrl = new URL(compactText);
-    const tokenParam = parsedUrl.searchParams.get('token') || parsedUrl.searchParams.get('t') || '';
-    if (tokenParam && tokenParam.startsWith('eyJ')) {
-      return { attendancePass: tokenParam };
-    }
-    const hashQueryIndex = parsedUrl.hash.indexOf('?');
-    if (hashQueryIndex >= 0) {
-      const hashParams = new URLSearchParams(parsedUrl.hash.slice(hashQueryIndex + 1));
-      const hashToken = hashParams.get('token') || hashParams.get('t') || '';
-      if (hashToken && hashToken.startsWith('eyJ')) {
-        return { attendancePass: hashToken };
-      }
+    const keyParam = parsedUrl.searchParams.get('key') || parsedUrl.searchParams.get('sessionKey') || parsedUrl.searchParams.get('session_key') || '';
+    if (keyParam && keyParam.length === 6) {
+      return { sessionKey: keyParam.toUpperCase() };
     }
   } catch {
     // not a URL
   }
 
-  return { attendancePass: compactText };
+  return {};
 };
 
 const Panel = ({ title, eyebrow, action, children }) => {
@@ -654,7 +639,7 @@ const LiveClassConsole = ({ sessionDetail, qrDataUrl, busyAction, onCloseSession
     <section className={`live-class-console ${isActive ? 'is-live' : ''}`} aria-label="Live class console">
       <div className="live-class-console__copy">
         <p>{isActive ? 'Live class mode' : 'Session console'}</p>
-        <h2>{sessionDetail.course?.courseCode || sessionDetail.sessionCode}</h2>
+        <h2>{sessionDetail.course?.courseCode || sessionDetail.sessionKey}</h2>
         <span>{sessionDetail.course?.courseName || 'Attendance session'} | {formatDate(sessionDetail.date)} at {formatTime(sessionDetail.startTime)}</span>
         {isActive && expiresAt && (
           <p className="mt-2 text-sm font-semibold text-amber-600">
@@ -689,7 +674,7 @@ const LiveClassConsole = ({ sessionDetail, qrDataUrl, busyAction, onCloseSession
         ) : (
           <RadioTower className="h-12 w-12" />
         )}
-        <p>{sessionDetail.sessionKey || sessionDetail.sessionCode}</p>
+        <p>{sessionDetail.sessionKey}</p>
         {sessionDetail.sessionKey && (
           <span className="text-xs text-slate-500">Session key: {sessionDetail.sessionKey}</span>
         )}
@@ -1022,66 +1007,73 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
       return undefined;
     }
 
-    scanHandledRef.current = false;
-    let cancelled = false;
-    let scannerCleared = false;
-    const scanner = new Html5Qrcode('attendance-qr-reader');
-    const stopScanner = async () => {
-      if (scannerCleared) {
+    setScannerStatus('Requesting location access...');
+    getVerifiedLocation().then((locationResult) => {
+      if (locationResult.success === false) {
+        setScannerError(locationResult.error);
+        scanHandledRef.current = false;
         return;
       }
 
-      scannerCleared = true;
-      if (scanner.isScanning) {
-        await scanner.stop().catch(() => null);
-      }
-      await scanner.clear().catch(() => null);
-    };
-
-    scanner.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: 220 },
-      async (decodedText) => {
-        if (cancelled || scanHandledRef.current) {
-          return;
+      setScannerStatus('Opening camera...');
+      scanHandledRef.current = false;
+      let cancelled = false;
+      let scannerCleared = false;
+      const scanner = new Html5Qrcode('attendance-qr-reader');
+      const stopScanner = async () => {
+        if (scannerCleared) return;
+        scannerCleared = true;
+        if (scanner.isScanning) {
+          await scanner.stop().catch(() => null);
         }
+        await scanner.clear().catch(() => null);
+      };
 
-        scanHandledRef.current = true;
-        const payload = extractAttendancePayload(decodedText);
-        if (!payload.sessionCode) {
-          scanHandledRef.current = false;
-          setScannerError('The scanned QR code does not contain a valid attendance session.');
-          return;
-        }
-
-        try {
-          setScannerError('');
-          setScannerStatus('QR captured. Verifying attendance...');
-          await stopScanner();
-          const result = await onDetected(payload);
-          if (result?.success) {
-            cancelled = true;
-            await stopScanner();
-            onClose();
+      scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: 220 },
+        async (decodedText) => {
+          if (cancelled || scanHandledRef.current) return;
+          scanHandledRef.current = true;
+          const payload = extractAttendancePayload(decodedText);
+          if (!payload.sessionKey) {
+            scanHandledRef.current = false;
+            setScannerError('This QR code does not belong to a valid attendance session.');
             return;
           }
-          setScannerError(result?.message || 'Attendance could not be marked after scanning. Review the message above and try again.');
-        } finally {
-          setScannerStatus('');
-          if (!cancelled) {
-            onClose();
-          }
-        }
-      },
-      () => {}
-    ).catch(() => {
-      setScannerError('Camera scanner could not start. You can still enter the session code manually.');
-    });
 
-    return () => {
-      cancelled = true;
-      stopScanner().catch(() => null);
-    };
+          try {
+            setScannerError('');
+            setScannerStatus('Verifying...');
+            await stopScanner();
+            const result = await onDetected(payload.sessionKey, 'qr', locationResult);
+            if (result?.success) {
+              cancelled = true;
+              await stopScanner();
+              onClose();
+              return;
+            }
+            setScannerError(result?.message || 'Attendance could not be marked after scanning. Review the message above and try again.');
+          } finally {
+            setScannerStatus('');
+            if (!cancelled) {
+              onClose();
+            }
+          }
+        },
+        () => {}
+      ).catch(() => {
+        setScannerError('Camera scanner could not start. You can still enter the session key manually.');
+      });
+
+      return () => {
+        cancelled = true;
+        stopScanner().catch(() => null);
+      };
+    }).catch(() => {
+      setScannerError('Could not access location services.');
+      scanHandledRef.current = false;
+    });
   }, [isOpen, onClose, onDetected]);
 
   if (!isOpen) {
@@ -1337,7 +1329,7 @@ const Dashboard = () => {
     try {
       const pendingEntry = JSON.parse(rawPendingEntry);
       const attendancePass = String(pendingEntry?.attendancePass || '').trim();
-      const sessionKey = String(pendingEntry?.sessionKey || pendingEntry?.sessionCode || '').trim().toUpperCase();
+      const sessionKey = String(pendingEntry?.sessionKey || '').trim().toUpperCase();
       const courseCode = String(pendingEntry?.courseCode || pendingEntry?.attendanceKey || '').trim().toUpperCase();
 
       if (!sessionKey && !attendancePass) {
@@ -1558,8 +1550,9 @@ const Dashboard = () => {
     const detail = response.data.data;
     setSessionDetail(detail);
 
-    if (detail?.qrToken) {
-      const dataUrl = await QRCode.toDataURL(detail.qrToken, {
+    const qrContent = detail?.qrPayload || detail?.qrToken;
+    if (qrContent) {
+      const dataUrl = await QRCode.toDataURL(qrContent, {
         width: 420,
         margin: 1,
         errorCorrectionLevel: 'L',
@@ -2491,12 +2484,18 @@ const Dashboard = () => {
     try {
       setBusyAction('create-session');
       setMessage();
-      const location = await getCurrentLocation();
-      if (!location) {
-        setMessage('', 'Location permission is required before creating an attendance session. Enable GPS and try again.');
+      const locationResult = await getVerifiedLocation();
+      if (!locationResult.success) {
+        setMessage('', locationResult.error);
         setBusyAction('');
         return;
       }
+      const location = {
+        latitude: locationResult.latitude,
+        longitude: locationResult.longitude,
+        accuracy: locationResult.accuracy,
+        locationTimestamp: new Date(locationResult.timestamp).toISOString(),
+      };
       const payload = {
         ...sessionForm,
         lecturerLatitude: location.latitude,
@@ -2604,70 +2603,56 @@ const Dashboard = () => {
     }
   };
 
-  const handleMarkAttendance = useCallback(async (overridePayload) => {
+  const handleMarkAttendance = useCallback(async (sessionKey, courseCode, method, location) => {
     if (attendanceRequestRef.current) {
       return { success: false, message: 'Attendance is already being processed. Please wait a moment.' };
     }
 
     try {
-      const resolvedPayload = overridePayload || {};
-      const attendancePass = String(resolvedPayload.attendancePass || '').trim();
-      const sessionKey = String(resolvedPayload.sessionKey || attendanceForm.sessionKey || '').trim().toUpperCase();
-      const courseCode = String(resolvedPayload.courseCode || attendanceForm.courseCode || '').trim().toUpperCase();
+      const trimmedKey = String(sessionKey || '').trim().toUpperCase();
+      const trimmedCode = String(courseCode || '').trim().toUpperCase();
 
-      if (resolvedPayload.sessionKey || resolvedPayload.courseCode) {
-        setAttendanceForm((current) => ({
-          ...current,
-          sessionKey: sessionKey || current.sessionKey,
-          courseCode: courseCode || current.courseCode,
-        }));
-      }
-
-      if (!attendancePass && (!sessionKey || !courseCode)) {
-        const message = 'Scan the QR code or enter the session key with your course code to mark attendance.';
-        setMessage('', message);
-        return { success: false, message };
+      if (!trimmedKey || !trimmedCode) {
+        const msg = 'Scan the QR code or enter the session key with your course code to mark attendance.';
+        setMessage('', msg);
+        return { success: false, message: msg };
       }
 
       attendanceRequestRef.current = true;
       setBusyAction('mark-attendance');
       setMessage();
-      const location = attendanceForm.useLocation ? await getCurrentLocation() : null;
+
       const body = {
+        sessionKey: trimmedKey,
+        courseCode: trimmedCode,
+        method: method || 'key',
         latitude: location?.latitude,
         longitude: location?.longitude,
         accuracy: location?.accuracy,
-        locationTimestamp: location?.locationTimestamp,
+        locationTimestamp: location?.locationTimestamp || (location?.timestamp ? new Date(location.timestamp).toISOString() : undefined),
         deviceInfo: navigator.userAgent,
       };
-
-      if (attendancePass) {
-        body.attendancePass = attendancePass;
-      } else {
-        body.sessionKey = sessionKey;
-        body.courseCode = courseCode;
-      }
 
       const response = await api.post('/attendance/mark', body);
       setAttendanceForm(initialAttendanceForm);
       setAttendanceEntrySource('');
-      const message = response.data?.message || 'Attendance has been recorded successfully.';
-      setMessage(message);
+      const msg = response.data?.message || 'Attendance marked successfully.';
+      setMessage(msg);
       await loadData(true);
-      return { success: true, message, data: response.data?.data };
+      return { success: true, message: msg, data: response.data?.data };
     } catch (actionError) {
-      const message = actionError.response?.data?.message || 'Attendance could not be marked.';
-      setMessage('', message);
+      const msg = actionError.response?.data?.message || 'Attendance could not be marked.';
+      setMessage('', msg);
       const data = actionError.response?.data?.data;
       if (data?.canRetry) {
-        return { success: false, message, canRetry: true, distanceMeters: data.distanceMeters };
+        return { success: false, message: msg, canRetry: true, distanceMeters: data.distanceMeters };
       }
-      return { success: false, message };
+      return { success: false, message: msg };
     } finally {
       attendanceRequestRef.current = false;
       setBusyAction('');
     }
-  }, [attendanceForm.sessionKey, attendanceForm.courseCode, attendanceForm.useLocation, loadData]);
+  }, [loadData]);
 
   const handleDeactivateUser = async (userId) => {
     try {
@@ -3054,7 +3039,7 @@ const Dashboard = () => {
       return true;
     });
   }, [registry, registryFilters, search]);
-  const filteredSessions = useMemo(() => (!search ? sessions : sessions.filter((entry) => [entry.sessionCode, entry.date, entry.status, entry.course?.courseCode, entry.course?.courseName, entry.venue].some((value) => includesSearch(value, search)))), [search, sessions]);
+  const filteredSessions = useMemo(() => (!search ? sessions : sessions.filter((entry) => [entry.sessionKey, entry.date, entry.status, entry.course?.courseCode, entry.course?.courseName, entry.venue].some((value) => includesSearch(value, search)))), [search, sessions]);
   const filteredQueries = useMemo(() => (!search ? queries : queries.filter((entry) => [entry.title, entry.message, entry.status, fullName(entry.student), entry.student?.matricNumber, entry.session?.course?.courseCode].some((value) => includesSearch(value, search)))), [queries, search]);
   const selectedQuerySession = useMemo(() => {
     if (!queryForm.sessionId) {
@@ -3192,7 +3177,7 @@ const Dashboard = () => {
     if (role === 'lecturer') {
       return sessions.slice(0, 3).map((session) => ({
         title: session.course?.courseName || session.course?.courseCode || 'Attendance session',
-        subtitle: session.course?.courseCode || session.sessionCode,
+        subtitle: session.course?.courseCode || session.sessionKey,
         time: formatTime(session.startTime),
       }));
     }
@@ -3252,7 +3237,7 @@ const Dashboard = () => {
         actions: [
           {
             title: activeSession ? 'Open live console' : 'Start session',
-            description: activeSession ? `${activeSession.course?.courseCode || activeSession.sessionCode} is accepting attendance.` : 'Create the class session and generate the QR.',
+            description: activeSession ? `${activeSession.course?.courseCode || activeSession.sessionKey} is accepting attendance.` : 'Create the class session and generate the QR.',
             meta: 'Class control',
             tab: activeSession ? 'sessions' : 'create-session',
             icon: RadioTower,
@@ -3338,7 +3323,7 @@ const Dashboard = () => {
     if (role === 'lecturer') {
       return {
         eyebrow: 'Today on mobile',
-        title: activeSession ? `${activeSession.course?.courseCode || activeSession.sessionCode} is live` : 'Ready for your next class',
+        title: activeSession ? `${activeSession.course?.courseCode || activeSession.sessionKey} is live` : 'Ready for your next class',
         description: activeSession ? 'Monitor attendance and close the session when class ends.' : 'Start from sessions, then handle replies and exports.',
         primaryLabel: activeSession ? 'Open session' : 'Start session',
         primaryTab: 'sessions',
@@ -3639,7 +3624,16 @@ const Dashboard = () => {
 
   return (
     <div className={`dashboard-shell min-h-screen ${isDark ? 'dark dashboard-shell--app text-slate-100' : 'dashboard-shell--light text-slate-900'} ${preferences.compactMode ? 'dashboard-shell--compact' : ''}`}>
-      <QrScannerPanel isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={handleMarkAttendance} />
+      <QrScannerPanel isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={async (scannedKey, method, location) => {
+        const code = String(attendanceForm.courseCode || '').trim().toUpperCase();
+        if (!code) {
+          setMessage('', 'Enter your course code before scanning.');
+          setScannerOpen(false);
+          return;
+        }
+        const result = await handleMarkAttendance(scannedKey, code, method, location);
+        return result;
+      }} />
       <LiveNotificationToast
         item={liveNotification}
         onOpen={() => {
@@ -4981,7 +4975,7 @@ const Dashboard = () => {
                     <button key={session.id} onClick={() => loadSessionDetail(session.id)} className={`dashboard-record-card dashboard-record-card--interactive w-full rounded-[1.5rem] border p-5 text-left transition ${sessionDetail?.id === session.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-slate-50/80 hover:border-blue-300'}`}>
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">{session.course?.courseCode || 'Course'}</p><p className="mt-2 text-lg font-bold text-slate-950">{session.course?.courseName || 'Attendance session'}</p><p className="mt-2 text-sm text-slate-500">{formatDate(session.date)} at {formatTime(session.startTime)}</p><p className="mt-1 text-sm text-slate-500">Venue: {session.venue || 'Not set'}</p></div>
-                        <div className="flex flex-wrap gap-2"><Badge tone={session.status === 'active' ? 'emerald' : 'slate'}>{session.status}</Badge><Badge tone="blue">{session.sessionCode}</Badge></div>
+                        <div className="flex flex-wrap gap-2"><Badge tone={session.status === 'active' ? 'emerald' : 'slate'}>{session.status}</Badge><Badge tone="blue">{session.sessionKey}</Badge></div>
                       </div>
                     </button>
                   )) : <EmptyState title="No sessions found" description="Create a session to generate a QR code." />}
@@ -5006,7 +5000,7 @@ const Dashboard = () => {
                     <div className="space-y-6">
                       <div className="grid gap-4 md:grid-cols-2">
                         <SummaryTile label="Course" value={sessionDetail.course?.courseCode || 'Not set'} helper={sessionDetail.course?.courseName || 'Linked course'} />
-                        <SummaryTile label="Session code" value={sessionDetail.sessionCode} helper={`${formatDate(sessionDetail.date)} at ${formatTime(sessionDetail.startTime)}`} />
+                        <SummaryTile label="Session key" value={sessionDetail.sessionKey} helper={`${formatDate(sessionDetail.date)} at ${formatTime(sessionDetail.startTime)}`} />
                         <SummaryTile label="Session key" value={sessionDetail.sessionKey || 'N/A'} helper="Students enter this key with their course code to mark attendance." />
                         <SummaryTile label="Expected students" value={sessionDetail.attendanceStats?.expectedCount || 0} helper="Expected count" />
                         <SummaryTile label="Marked attendance" value={sessionDetail.attendanceStats?.markedCount || 0} helper="Present or late" />
@@ -5103,7 +5097,7 @@ const Dashboard = () => {
                               </p>
                               {attempt.session && (
                                 <p className="mt-1 text-sm text-slate-500">
-                                  Session: {attempt.session.sessionCode} — {attempt.course?.courseCode || 'N/A'} on {formatDate(attempt.session.date)}
+                                  Session: {attempt.session.sessionKey} — {attempt.course?.courseCode || 'N/A'} on {formatDate(attempt.session.date)}
                                 </p>
                               )}
                               <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
@@ -5171,15 +5165,27 @@ const Dashboard = () => {
               <div className="grid gap-8">
                 <Panel title="Mark attendance" eyebrow="Student check-in">
                   <div className="space-y-5">
-                    {attendanceEntrySource && <div className="rounded-[1.5rem] border border-emerald-200 bg-emerald-50/80 px-5 py-4 text-sm text-emerald-800">Attendance details were loaded from {attendanceEntrySource}. Confirm the session code and tap <span className="font-semibold">Mark with code</span>.</div>}
-                    <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-5"><p className="text-sm leading-7 text-slate-600">Scan the lecturer QR code, or enter the session key and course code manually.</p></div>
+                    {attendanceEntrySource && <div className="rounded-[1.5rem] border border-emerald-200 bg-emerald-50/80 px-5 py-4 text-sm text-emerald-800">Attendance details were loaded from {attendanceEntrySource}. Confirm the session key and tap <span className="font-semibold">Mark attendance</span>.</div>}
+                    <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 p-5"><p className="text-sm leading-7 text-slate-600">Scan the lecturer QR code, or enter the session key and course code manually. Your location will be requested for verification.</p></div>
                     <div className="grid gap-4">
                       <Input label="Session key" value={attendanceForm.sessionKey} onChange={(value) => setAttendanceForm((current) => ({ ...current, sessionKey: value.toUpperCase() }))} placeholder="e.g. A3F9K2" />
                       <Input label="Course code" value={attendanceForm.courseCode} onChange={(value) => setAttendanceForm((current) => ({ ...current, courseCode: value.toUpperCase() }))} placeholder="e.g. CSC101" />
-                      <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700"><input type="checkbox" checked={attendanceForm.useLocation} onChange={(event) => setAttendanceForm((current) => ({ ...current, useLocation: event.target.checked }))} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />Include device location when available for stronger attendance verification.</label>
                     </div>
                     <div className="flex flex-wrap gap-3">
-                      <button onClick={() => handleMarkAttendance()} disabled={busyAction === 'mark-attendance'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'mark-attendance' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}Mark with key</button>
+                      <button onClick={async () => {
+                        const sessionKey = String(attendanceForm.sessionKey || '').trim().toUpperCase();
+                        const courseCode = String(attendanceForm.courseCode || '').trim().toUpperCase();
+                        if (!sessionKey || !courseCode) {
+                          setMessage('', 'Enter the session key and course code to mark attendance.');
+                          return;
+                        }
+                        const locationResult = await getVerifiedLocation();
+                        if (!locationResult.success) {
+                          setMessage('', locationResult.error);
+                          return;
+                        }
+                        handleMarkAttendance(sessionKey, courseCode, 'key', locationResult);
+                      }} disabled={busyAction === 'mark-attendance'} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{busyAction === 'mark-attendance' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}Mark attendance</button>
                       <button onClick={() => setScannerOpen(true)} disabled={busyAction === 'mark-attendance' || scannerOpen} className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-60"><Camera className="h-4 w-4" />Scan QR code</button>
                     </div>
                   </div>
@@ -5208,7 +5214,7 @@ const Dashboard = () => {
               {role === 'lecturer' && (
                 <Panel title="Send a manual absence query" eyebrow="Lecturer follow-up">
                   <form onSubmit={handleCreateQuery} className="grid gap-4">
-                    <Select label="Session (optional)" value={queryForm.sessionId} onChange={(value) => setQueryForm((current) => ({ ...current, sessionId: value, studentId: '' }))} options={[{ value: '', label: 'No linked session' }, ...sessions.map((session) => ({ value: session.id, label: `${session.course?.courseCode || 'Course'} - ${formatDate(session.date)} (${session.sessionCode})` }))]} />
+                    <Select label="Session (optional)" value={queryForm.sessionId} onChange={(value) => setQueryForm((current) => ({ ...current, sessionId: value, studentId: '' }))} options={[{ value: '', label: 'No linked session' }, ...sessions.map((session) => ({ value: session.id, label: `${session.course?.courseCode || 'Course'} - ${formatDate(session.date)} (${session.sessionKey})` }))]} />
                     {queryForm.sessionId && (
                       <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50/70 px-4 py-4 text-sm text-slate-700">
                         <p className="font-semibold text-slate-900">{selectedQuerySession?.course?.courseCode || 'Selected session'}</p>

@@ -16,16 +16,16 @@ const PENDING_ATTENDANCE_STORAGE_KEY = 'attendance-system-pending-entry';
 
 const storePendingAttendanceEntry = (location) => {
   const params = new URLSearchParams(location.search);
-  const sessionCode = (params.get('sessionCode') || params.get('s') || '').trim().toUpperCase();
-  const attendancePass = (params.get('attendanceKey') || params.get('k') || params.get('attendancePass') || params.get('p') || '').trim().toUpperCase();
+  const sessionKey = (params.get('sessionKey') || params.get('session_code') || params.get('s') || params.get('key') || '').trim().toUpperCase();
+  const courseCode = (params.get('courseCode') || params.get('course_code') || params.get('c') || '').trim().toUpperCase();
 
-  if (!sessionCode) {
+  if (!sessionKey) {
     return false;
   }
 
   window.localStorage.setItem(PENDING_ATTENDANCE_STORAGE_KEY, JSON.stringify({
-    sessionCode,
-    attendancePass,
+    sessionKey,
+    courseCode,
     sourcePath: `${location.pathname}${location.search}`,
     savedAt: new Date().toISOString(),
   }));

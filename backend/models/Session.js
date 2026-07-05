@@ -23,7 +23,7 @@ const Session = sequelize.define('Session', {
       key: 'id'
     }
   },
-  sessionCode: {
+  sessionKey: {
     type: DataTypes.STRING(10),
     allowNull: false,
     unique: true
@@ -75,11 +75,6 @@ const Session = sequelize.define('Session', {
   lecturerLocationAccuracy: {
     type: DataTypes.FLOAT,
     allowNull: true,
-  },
-  sessionKey: {
-    type: DataTypes.STRING(10),
-    allowNull: true,
-    unique: true,
   },
   qrToken: {
     type: DataTypes.TEXT,

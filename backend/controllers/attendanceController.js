@@ -1,15 +1,13 @@
-const jwt = require('jsonwebtoken');
 const { Op, UniqueConstraintError } = require('sequelize');
 const { AbsenceQuery, Session, Attendance, Course, User, Enrollment, AttendanceAttempt } = require('../models');
 const { haversineDistance, validateGpsAccuracy, validateLocationTimestamp, isMockedLocation, isInsideNigeriaBounds } = require('../utils/geoValidation');
 const crypto = require('crypto');
-const authConfig = require('../config/auth');
 const { sendEmail } = require('../utils/mailer');
 const { logAuditEvent } = require('../utils/auditLogger');
 const { findEnrollmentsForCourse } = require('../utils/enrollmentLookup');
 const { broadcastNotification, buildNotificationPayload } = require('../utils/realtimeNotifications');
+const env = require('../utils/env');
 
-const generateSessionCode = () => crypto.randomBytes(5).toString('hex').toUpperCase();
 const generateSessionKey = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let key = '';
@@ -18,8 +16,8 @@ const generateSessionKey = () => {
   }
   return key;
 };
-const SESSION_SUMMARY_ATTRIBUTES = ['id', 'courseId', 'lecturerId', 'sessionCode', 'sessionKey', 'date', 'startTime', 'endTime', 'venue', 'status', 'maxAttendanceTime', 'lecturerLatitude', 'lecturerLongitude', 'lecturerLocationAccuracy', 'expiresAt', 'attendanceRadiusMeters', 'createdAt', 'updatedAt'];
-const ATTENDANCE_RADIUS_METERS = 35;
+
+const SESSION_SUMMARY_ATTRIBUTES = ['id', 'courseId', 'lecturerId', 'sessionKey', 'date', 'startTime', 'endTime', 'venue', 'status', 'maxAttendanceTime', 'lecturerLatitude', 'lecturerLongitude', 'lecturerLocationAccuracy', 'expiresAt', 'attendanceRadiusMeters', 'createdAt', 'updatedAt'];
 const APP_TIMEZONE = 'Africa/Lagos';
 
 const buildEndTime = (startTime, durationMinutes) => {
@@ -75,15 +73,24 @@ const buildDeviceFingerprint = (req) => crypto
   .digest('hex')
   .slice(0, 32);
 
-const signQrToken = (sessionId, sessionKey, ttlSeconds) => {
-  const token = jwt.sign({ t: 'att', sid: sessionId, key: sessionKey }, authConfig.jwt.secret, {
-    expiresIn: ttlSeconds,
-  });
-  const decoded = jwt.decode(token);
-  return {
-    token,
-    expiresAt: decoded?.exp ? new Date(decoded.exp * 1000).toISOString() : null,
-  };
+const buildQrPayload = (sessionId, sessionKey) => JSON.stringify({
+  type: 'attendance-session',
+  sessionId: String(sessionId),
+  sessionKey,
+});
+
+const parseQrPayload = (raw) => {
+  if (!raw) return null;
+  const str = String(raw).trim();
+  try {
+    const parsed = JSON.parse(str);
+    if (parsed?.type === 'attendance-session' && parsed?.sessionKey) {
+      return { sessionId: parsed.sessionId, sessionKey: parsed.sessionKey };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 };
 
 exports.createSession = async (req, res) => {
@@ -117,9 +124,11 @@ exports.createSession = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid lecturer location coordinates.' });
     }
 
-    const accuracyCheck = validateGpsAccuracy(parsedAccuracy);
-    if (!accuracyCheck.valid) {
-      return res.status(403).json({ success: false, message: `Your location accuracy is too low. ${accuracyCheck.reason}` });
+    if (parsedAccuracy !== null) {
+      const maxAccuracy = env.attendanceMaxLocationAccuracy;
+      if (parsedAccuracy > maxAccuracy) {
+        return res.status(403).json({ success: false, message: `Your location signal is not accurate enough (${Math.round(parsedAccuracy)}m). Move to an open area and try again.` });
+      }
     }
 
     const course = await Course.findByPk(courseId);
@@ -134,25 +143,16 @@ exports.createSession = async (req, res) => {
     const resolvedDuration = Number(durationMinutes || 120);
     const resolvedStartTime = startTime.length === 5 ? `${startTime}:00` : startTime;
 
-    let sessionCode;
+    let sessionKey;
     let isUnique = false;
     while (!isUnique) {
-      sessionCode = generateSessionCode();
-      const existing = await Session.findOne({ where: { sessionCode } });
+      sessionKey = generateSessionKey();
+      const existing = await Session.findOne({ where: { sessionKey } });
       if (!existing) isUnique = true;
     }
 
-    let sessionKey;
-    let keyUnique = false;
-    while (!keyUnique) {
-      sessionKey = generateSessionKey();
-      const existing = await Session.findOne({ where: { sessionKey } });
-      if (!existing) keyUnique = true;
-    }
-
     const expiresAt = new Date(Date.now() + resolvedDuration * 60 * 1000);
-    const qrBundle = signQrToken(null, null, resolvedDuration * 60); // placeholder, we sign with real id after create
-    const attendanceRadius = ATTENDANCE_RADIUS_METERS;
+    const attendanceRadius = env.attendanceRadiusMeters;
 
     const session = await Session.create({
       courseId,
@@ -160,7 +160,6 @@ exports.createSession = async (req, res) => {
       date,
       startTime: resolvedStartTime,
       endTime: buildEndTime(resolvedStartTime, resolvedDuration),
-      sessionCode,
       sessionKey,
       venue: venue || course.courseName || '',
       status: 'active',
@@ -172,10 +171,13 @@ exports.createSession = async (req, res) => {
       attendanceRadiusMeters: attendanceRadius,
     });
 
-    // Sign the QR token with the real session id
-    const qrToken = signQrToken(session.id, sessionKey, resolvedDuration * 60);
-    session.qrToken = qrToken.token;
+    const qrPayload = buildQrPayload(session.id, sessionKey);
+    session.qrToken = qrPayload;
     await session.save();
+
+    if (!env.isProduction) {
+      console.log('[dev] QR payload generated:', qrPayload);
+    }
 
     await logAuditEvent({
       req,
@@ -202,10 +204,9 @@ exports.createSession = async (req, res) => {
       message: 'Session created successfully',
       data: {
         session,
-        sessionCode,
         sessionKey,
-        qrToken: qrToken.token,
-        qrTokenExpiresAt: qrToken.expiresAt,
+        qrPayload,
+        qrTokenExpiresAt: expiresAt,
         expiresAt,
         attendanceRadiusMeters: attendanceRadius,
       }
@@ -271,14 +272,15 @@ exports.getSession = async (req, res) => {
       .filter((entry) => !presentStudentIds.has(entry.userId))
       .map((entry) => entry.student);
     const markedStudents = session.attendances.length;
-    const qrBundle = session.status === 'active' && session.sessionKey && session.expiresAt && new Date(session.expiresAt) > new Date()
-      ? signQrToken(session.id, session.sessionKey, Math.max(60, Math.floor((new Date(session.expiresAt) - Date.now()) / 1000)))
+    const qrPayload = session.status === 'active' && session.sessionKey && session.expiresAt && new Date(session.expiresAt) > new Date()
+      ? buildQrPayload(session.id, session.sessionKey)
       : null;
 
     const payload = {
       ...session.toJSON(),
-      qrToken: qrBundle?.token || null,
-      qrTokenExpiresAt: qrBundle?.expiresAt || null,
+      qrPayload,
+      qrToken: qrPayload,
+      qrTokenExpiresAt: session.expiresAt || null,
       attendanceStats: {
         expectedCount: enrollments.length,
         markedCount: markedStudents,
@@ -299,78 +301,51 @@ exports.getSession = async (req, res) => {
 
 exports.markAttendance = async (req, res) => {
   try {
-    const { attendancePass, sessionKey, courseCode, latitude, longitude, accuracy } = req.body;
-    const { locationTimestamp, deviceInfo } = req.body;
+    const { sessionKey, courseCode, method, latitude, longitude, accuracy, locationTimestamp } = req.body;
+    const deviceInfo = req.body.deviceInfo;
 
-    let session;
-    let course;
-    let attendanceMethod;
-
-    if (attendancePass) {
-      // Mode 1: QR code scan - attendancePass is a JWT
-      attendanceMethod = 'qr';
-      let decoded;
-      try {
-        decoded = jwt.verify(attendancePass, authConfig.jwt.secret);
-      } catch {
-        return res.status(403).json({ success: false, message: 'This QR code is invalid or has expired.' });
-      }
-
-      if (decoded?.t !== 'att' || !decoded?.sid || !decoded?.key) {
-        return res.status(403).json({ success: false, message: 'This QR code is invalid or has expired.' });
-      }
-
-      session = await Session.findByPk(decoded.sid);
-      if (!session) {
-        return res.status(404).json({ success: false, message: 'This attendance session could not be found.' });
-      }
-
-      if (session.sessionKey !== decoded.key) {
-        return res.status(403).json({ success: false, message: 'This QR code is invalid or has expired.' });
-      }
-    } else if (sessionKey && courseCode) {
-      // Mode 2: Manual entry - sessionKey + courseCode
-      attendanceMethod = 'key';
-      session = await Session.findOne({ where: { sessionKey: String(sessionKey).trim().toUpperCase() } });
-      if (!session) {
-        return res.status(404).json({ success: false, message: 'The session key is invalid.' });
-      }
-
-      course = await Course.findByPk(session.courseId);
-      if (!course) {
-        return res.status(404).json({ success: false, message: 'Course not found.' });
-      }
-
-      const normalizedCourseCode = String(courseCode || '').trim().toUpperCase();
-      const sessionCourseCode = String(course.courseCode || '').trim().toUpperCase();
-      if (normalizedCourseCode !== sessionCourseCode) {
-        return res.status(403).json({ success: false, message: 'The course code does not match this attendance session.' });
-      }
-    } else {
+    if (!sessionKey) {
       return res.status(400).json({
         success: false,
         message: 'Scan the QR code or enter the session key with your course code to mark attendance.',
       });
     }
 
-    // Find course if not already fetched
-    if (!course) {
-      course = await Course.findByPk(session.courseId, { attributes: ['id', 'courseCode', 'semester', 'academicYear', 'campus', 'faculty', 'department'] });
+    const trimmedKey = String(sessionKey).trim().toUpperCase();
+    const attendanceMethod = method === 'qr' ? 'qr' : 'key';
+
+    const session = await Session.findOne({ where: { sessionKey: trimmedKey } });
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'The session key is invalid.' });
     }
 
-    // Check session is active
+    const course = await Course.findByPk(session.courseId, { attributes: ['id', 'courseCode', 'courseName', 'semester', 'academicYear', 'campus', 'faculty', 'department'] });
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found.' });
+    }
+
+    if (courseCode) {
+      const normalizedCourseCode = String(courseCode).trim().toUpperCase();
+      const sessionCourseCode = String(course.courseCode || '').trim().toUpperCase();
+      if (normalizedCourseCode !== sessionCourseCode) {
+        return res.status(403).json({ success: false, message: 'The course code does not match this attendance session.' });
+      }
+    }
+
     if (session.status !== 'active') {
       return res.status(403).json({ success: false, message: 'This attendance session has expired.' });
     }
 
-    // Check session has not expired
     if (session.expiresAt && new Date(session.expiresAt) <= new Date()) {
       session.status = 'closed';
       await session.save();
       return res.status(403).json({ success: false, message: 'This attendance session has expired.' });
     }
 
-    // Check duplicate attendance
+    if (!env.isProduction) {
+      console.log(`[dev] markAttendance: sessionKey=${trimmedKey}, method=${attendanceMethod}, latitude=${latitude}, longitude=${longitude}, accuracy=${accuracy}`);
+    }
+
     const existing = await Attendance.findOne({ where: { sessionId: session.id, studentId: req.user.id } });
     if (existing) {
       await logAuditEvent({
@@ -387,7 +362,6 @@ exports.markAttendance = async (req, res) => {
       });
     }
 
-    // Check enrollment
     const enrollment = await Enrollment.findOne({
       where: {
         userId: req.user.id,
@@ -410,7 +384,6 @@ exports.markAttendance = async (req, res) => {
       return res.status(403).json({ success: false, message: 'You are not registered for this course, so attendance cannot be marked.' });
     }
 
-    // Validate GPS location
     if (latitude === undefined || longitude === undefined) {
       await logAuditEvent({
         req,
@@ -433,9 +406,11 @@ exports.markAttendance = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Your GPS coordinates appear to be outside Nigeria. Attendance cannot be marked.' });
     }
 
-    const accuracyCheck = validateGpsAccuracy(parsedAccuracy);
-    if (!accuracyCheck.valid) {
-      return res.status(403).json({ success: false, message: accuracyCheck.reason });
+    if (parsedAccuracy !== null) {
+      const maxAccuracy = env.attendanceMaxLocationAccuracy;
+      if (parsedAccuracy > maxAccuracy) {
+        return res.status(403).json({ success: false, message: `Your location signal is not accurate enough (${Math.round(parsedAccuracy)}m). Move to an open area and try again.` });
+      }
     }
 
     if (locationTimestamp) {
@@ -454,10 +429,8 @@ exports.markAttendance = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Suspicious location detected. Turn off any location simulation apps and try again.' });
     }
 
-    // Calculate distance from lecturer's saved location
-    // If session has lecturerLatitude (new-style), use that; otherwise fall back to geofenceLatitude
     const hasLecturerLocation = session.lecturerLatitude !== null && session.lecturerLongitude !== null;
-    const radiusMeters = session.attendanceRadiusMeters || ATTENDANCE_RADIUS_METERS;
+    const radiusMeters = session.attendanceRadiusMeters || env.attendanceRadiusMeters;
 
     let distanceMetersValue;
     let centerLat;
@@ -474,13 +447,15 @@ exports.markAttendance = async (req, res) => {
     distanceMetersValue = Math.round(distanceMeters(parsedLatitude, parsedLongitude, centerLat, centerLng));
     const insideRadius = distanceMetersValue <= radiusMeters;
 
-    // Check previous attempt count
+    if (!env.isProduction) {
+      console.log(`[dev] Attendance distance: ${distanceMetersValue}m (radius: ${radiusMeters}m, inside: ${insideRadius})`);
+    }
+
     const previousAttempts = await AttendanceAttempt.count({
       where: { studentId: req.user.id, sessionId: session.id },
     });
     const attemptNumber = previousAttempts + 1;
 
-    // Create attempt log
     const attemptPayload = {
       studentId: req.user.id,
       sessionId: session.id,
@@ -514,7 +489,6 @@ exports.markAttendance = async (req, res) => {
         });
       }
 
-      // Second attempt and still outside: mark as late
       attemptPayload.accepted = true;
       await AttendanceAttempt.create(attemptPayload);
 
@@ -555,7 +529,6 @@ exports.markAttendance = async (req, res) => {
       });
     }
 
-    // Inside radius: mark as present
     attemptPayload.accepted = true;
     await AttendanceAttempt.create(attemptPayload);
 
@@ -604,7 +577,7 @@ exports.markAttendance = async (req, res) => {
       metadata: { sessionId: session.id, courseId: session.courseId, status: 'present', distanceFromClass: distanceMetersValue, attemptNumber, deviceFlagged },
     });
 
-    res.status(201).json({ success: true, message: 'Attendance has been recorded successfully.', data: attendance });
+    res.status(201).json({ success: true, message: 'Attendance marked successfully.', data: attendance });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -647,58 +620,58 @@ exports.closeSession = async (req, res) => {
     const presentStudentIds = new Set(attendances.map((entry) => entry.studentId));
     const absentEnrollments = enrollments.filter((entry) => !presentStudentIds.has(entry.userId));
 
-  for (const enrollment of absentEnrollments) {
-    const existingQuery = await AbsenceQuery.findOne({
-      where: { sessionId: session.id, studentId: enrollment.userId },
-    });
-
-    if (!existingQuery) {
-      const query = await AbsenceQuery.create({
-        lecturerId: session.lecturerId,
-        studentId: enrollment.userId,
-        sessionId: session.id,
-        title: `Absence query for ${session.course?.courseCode || 'session'}`,
-        message: `You were not marked present for the ${session.course?.courseName || 'class session'} held on ${session.date}. Please explain why you were absent.`,
-        status: 'pending',
-        escalationState: 'none',
+    for (const enrollment of absentEnrollments) {
+      const existingQuery = await AbsenceQuery.findOne({
+        where: { sessionId: session.id, studentId: enrollment.userId },
       });
 
-      try {
-        if (enrollment.student?.email) {
-          const lecturerName = [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') || 'Your lecturer';
+      if (!existingQuery) {
+        const query = await AbsenceQuery.create({
+          lecturerId: session.lecturerId,
+          studentId: enrollment.userId,
+          sessionId: session.id,
+          title: `Absence query for ${session.course?.courseCode || 'session'}`,
+          message: `You were not marked present for the ${session.course?.courseName || 'class session'} held on ${session.date}. Please explain why you were absent.`,
+          status: 'pending',
+          escalationState: 'none',
+        });
+
+        try {
+          if (enrollment.student?.email) {
+            const lecturerName = [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') || 'Your lecturer';
             await sendEmail({
               to: enrollment.student.email,
               subject: `Attendance System: Absence noted for ${session.course?.courseCode || 'your class'}`,
               text: `${lecturerName} has closed attendance for ${session.course?.courseCode || 'your class'} on ${session.date}. You were marked absent and an absence query was created.\n\nTitle: ${query.title}\n\nMessage: ${query.message}`,
               html: `<p>${lecturerName} has closed attendance for <strong>${session.course?.courseCode || 'your class'}</strong> on ${session.date}.</p><p>You were marked absent and an absence query was created for you.</p><p><strong>Title:</strong> ${query.title}</p><p>${query.message}</p>`,
             });
+          }
+        } catch (emailError) {
+          console.warn(`Automatic absence email failed for student ${enrollment.userId}:`, emailError.message);
         }
-      } catch (emailError) {
-        console.warn(`Automatic absence email failed for student ${enrollment.userId}:`, emailError.message);
-      }
 
-      const io = req.app.get('io');
-      const queryNotification = buildNotificationPayload({
-        type: 'absence_query',
-        title: 'Automatic absence query created',
-        description: `${session.course?.courseCode || 'A course'} closed with ${enrollment.student?.firstName || 'a student'} marked absent.`,
-        tone: 'amber',
-        linkTab: 'queries',
-        entityType: 'absence_query',
-        entityId: query.id,
-        meta: {
-          queryId: query.id,
-          sessionId: session.id,
-          studentId: enrollment.userId,
-          lecturerId: session.lecturerId,
-        },
-      });
-      broadcastNotification(io, {
-        userIds: [enrollment.userId, session.lecturerId],
-        notification: queryNotification,
-      });
+        const io = req.app.get('io');
+        const queryNotification = buildNotificationPayload({
+          type: 'absence_query',
+          title: 'Automatic absence query created',
+          description: `${session.course?.courseCode || 'A course'} closed with ${enrollment.student?.firstName || 'a student'} marked absent.`,
+          tone: 'amber',
+          linkTab: 'queries',
+          entityType: 'absence_query',
+          entityId: query.id,
+          meta: {
+            queryId: query.id,
+            sessionId: session.id,
+            studentId: enrollment.userId,
+            lecturerId: session.lecturerId,
+          },
+        });
+        broadcastNotification(io, {
+          userIds: [enrollment.userId, session.lecturerId],
+          notification: queryNotification,
+        });
+      }
     }
-  }
 
     await logAuditEvent({
       req,
@@ -758,7 +731,7 @@ exports.getAttemptLogs = async (req, res) => {
       where,
       include: [
         { model: User, as: 'student', attributes: ['id', 'firstName', 'lastName', 'matricNumber', 'email'] },
-        { model: Session, as: 'session', attributes: ['id', 'sessionCode', 'date', 'startTime', 'endTime'] },
+        { model: Session, as: 'session', attributes: ['id', 'sessionKey', 'date', 'startTime', 'endTime'] },
         { model: Course, as: 'course', attributes: ['id', 'courseCode', 'courseName'] },
       ],
       order: [['createdAt', 'DESC']],
