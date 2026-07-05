@@ -1789,8 +1789,10 @@ const Dashboard = () => {
         program: profileResponse.data.data?.program || '',
       });
 
+      const devicePromise = api.get('/security/devices').then((r) => r.data.data || []).catch(() => []);
+
       if (role === 'admin') {
-        const [summaryResponse, usersResponse, lecturersResponse, studentsResponse, coursesResponse, registryResponse, buildingsResponse, queriesResponse] = await Promise.all([
+        const [summaryResponse, usersResponse, lecturersResponse, studentsResponse, coursesResponse, registryResponse, buildingsResponse, queriesResponse, devices] = await Promise.all([
           api.get('/users/summary'),
           api.get('/users'),
           api.get('/users/lecturers'),
@@ -1799,8 +1801,10 @@ const Dashboard = () => {
           api.get('/registry'),
           api.get('/buildings'),
           api.get('/queries'),
+          devicePromise,
         ]);
 
+        setTrustedDevices(devices);
         setSummary(summaryResponse.data.data);
         setUsers(usersResponse.data.data || []);
         setLecturers(lecturersResponse.data.data || []);
@@ -1817,14 +1821,16 @@ const Dashboard = () => {
       }
 
       if (role === 'lecturer') {
-        const [myCoursesResponse, studentsResponse, sessionsResponse, queriesResponse, buildingsResponse] = await Promise.all([
+        const [myCoursesResponse, studentsResponse, sessionsResponse, queriesResponse, buildingsResponse, devices] = await Promise.all([
           api.get('/courses/mine'),
           api.get('/users/students'),
           api.get('/attendance/sessions'),
           api.get('/queries'),
           api.get('/buildings?activeOnly=true'),
+          devicePromise,
         ]);
 
+        setTrustedDevices(devices);
         const lecturerSessions = sessionsResponse.data.data || [];
         setCourses(myCoursesResponse.data.data || []);
         setBuildings(buildingsResponse.data.data || []);
@@ -1849,12 +1855,14 @@ const Dashboard = () => {
       }
 
       if (role === 'student') {
-        const [myCoursesResponse, historyResponse, queriesResponse] = await Promise.all([
+        const [myCoursesResponse, historyResponse, queriesResponse, devices] = await Promise.all([
           api.get('/courses/mine'),
           api.get('/attendance/history'),
           api.get('/queries'),
+          devicePromise,
         ]);
 
+        setTrustedDevices(devices);
         const myHistory = historyResponse.data.data || [];
         const myQueries = queriesResponse.data.data || [];
         setCourses(myCoursesResponse.data.data || []);
@@ -1870,13 +1878,6 @@ const Dashboard = () => {
           pendingQueries: myQueries.filter((query) => query.status === 'pending').length,
           lateMarks: myHistory.filter((item) => item.status === 'late').length,
         });
-      }
-
-      try {
-        const devicesRes = await api.get('/security/devices');
-        setTrustedDevices(devicesRes.data.data || []);
-      } catch {
-        // security endpoints may not be available to all roles
       }
     } catch (loadError) {
       setError(loadError.userMessage || loadError.response?.data?.message || 'Dashboard data could not be loaded.');
