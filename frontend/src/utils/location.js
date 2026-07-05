@@ -92,7 +92,7 @@ const getSingleLocation = () =>
 
 const getSampledLocation = async (sampleCount = 2) => {
   const primary = await getVerifiedLocation();
-  if (!primary.success || (primary.accuracy !== null && primary.accuracy < 10)) {
+  if (!primary.success || (primary.accuracy !== null && primary.accuracy < 100)) {
     return primary;
   }
 

@@ -63,7 +63,7 @@ module.exports = {
   attendanceRateLimitWindowMs: toNumber(process.env.ATTENDANCE_RATE_LIMIT_WINDOW_MS, 60 * 1000),
   attendanceRateLimitMaxRequests: toNumber(process.env.ATTENDANCE_RATE_LIMIT_MAX_REQUESTS, 5),
   attendanceRadiusMeters: toNumber(process.env.ATTENDANCE_RADIUS_METERS, 35),
-  attendanceMaxLocationAccuracy: toNumber(process.env.ATTENDANCE_MAX_LOCATION_ACCURACY_METERS, 30),
+  attendanceMaxLocationAccuracy: toNumber(process.env.ATTENDANCE_MAX_LOCATION_ACCURACY_METERS, 100),
   attendanceMaxLocationAgeSeconds: toNumber(process.env.ATTENDANCE_MAX_LOCATION_AGE_SECONDS, 15),
   attendanceLocationSampleCount: toNumber(process.env.ATTENDANCE_LOCATION_SAMPLE_COUNT, 2),
   attendanceMaxSampleVariationMeters: toNumber(process.env.ATTENDANCE_MAX_SAMPLE_VARIATION_METERS, 20),
