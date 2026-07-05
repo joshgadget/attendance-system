@@ -37,7 +37,7 @@ exports.getBuildings = async (req, res) => {
 
 exports.createBuilding = async (req, res) => {
   try {
-    const { name, tag, campus, latitude, longitude, radiusMeters } = req.body;
+    const { name, tag, campus, latitude, longitude, radiusMeters, geofenceToleranceMeters } = req.body;
 
     if (!name || latitude === undefined || longitude === undefined || radiusMeters === undefined) {
       return res.status(400).json({
@@ -72,6 +72,7 @@ exports.createBuilding = async (req, res) => {
       latitude: parsedLatitude,
       longitude: parsedLongitude,
       radiusMeters: parsedRadius,
+      geofenceToleranceMeters: geofenceToleranceMeters !== undefined ? Number(geofenceToleranceMeters) : 10,
       isActive: true,
     });
 
@@ -127,6 +128,14 @@ exports.updateBuilding = async (req, res) => {
         return res.status(400).json({ success: false, message: 'radiusMeters must be between 10 and 500' });
       }
       payload.radiusMeters = parsed;
+    }
+
+    if (req.body.geofenceToleranceMeters !== undefined) {
+      const parsed = Number(req.body.geofenceToleranceMeters);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) {
+        return res.status(400).json({ success: false, message: 'geofenceToleranceMeters must be between 0 and 100' });
+      }
+      payload.geofenceToleranceMeters = parsed;
     }
 
     if (req.body.isActive !== undefined) {

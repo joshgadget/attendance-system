@@ -198,6 +198,12 @@ exports.createSession = async (req, res) => {
       }
     }
 
+    const buildingPolygon = building.polygonCoordinates;
+    const sessionPolygon = buildingPolygon && Array.isArray(buildingPolygon) && buildingPolygon.length >= 3
+      ? buildingPolygon
+      : null;
+    const buildingTolerance = building.geofenceToleranceMeters || 10;
+
     const session = await Session.create({
       courseId: resolvedCourseId,
       lecturerId: course.lecturerId,
@@ -211,6 +217,8 @@ exports.createSession = async (req, res) => {
       geofenceLatitude: Number(building.latitude),
       geofenceLongitude: Number(building.longitude),
       geofenceRadiusMeters: Number(building.radiusMeters),
+      polygonCoordinates: sessionPolygon,
+      geofenceToleranceMeters: buildingTolerance,
     });
 
     await logAuditEvent({

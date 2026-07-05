@@ -74,6 +74,11 @@ const Building = sequelize.define(
       allowNull: false,
       defaultValue: 80,
     },
+    geofenceToleranceMeters: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 10,
+    },
     polygonCoordinates: {
       type: DataTypes.TEXT,
       allowNull: true,

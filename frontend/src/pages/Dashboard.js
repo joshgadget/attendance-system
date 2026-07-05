@@ -290,7 +290,12 @@ const getCurrentLocation = () =>
     }
 
     navigator.geolocation.getCurrentPosition(
-      (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy }),
+      (position) => resolve({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        locationTimestamp: new Date(position.timestamp).toISOString(),
+      }),
       () => resolve(null),
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
     );
@@ -2603,6 +2608,8 @@ const Dashboard = () => {
         latitude: location?.latitude,
         longitude: location?.longitude,
         accuracy: location?.accuracy,
+        locationTimestamp: location?.locationTimestamp,
+        deviceInfo: navigator.userAgent,
       });
       setAttendanceForm(initialAttendanceForm);
       setAttendanceEntrySource('');
