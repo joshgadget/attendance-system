@@ -36,6 +36,7 @@ router.use(authMiddleware);
 router.post('/sessions', requireRole('lecturer'), attendanceController.createSession);
 router.get('/sessions', requireAnyRole('lecturer', 'admin'), attendanceController.getSessions);
 router.get('/sessions/:id', requireAnyRole('lecturer', 'admin'), attendanceController.getSession);
+router.put('/sessions/:id/location', requireRole('lecturer'), attendanceController.updateSessionLocation);
 router.put('/sessions/:id/close', requireRole('lecturer'), attendanceController.closeSession);
 router.post('/mark', requireRole('student'), attendanceRateLimiter, attendanceController.markAttendance);
 router.get('/history', requireRole('student'), attendanceController.getStudentHistory);

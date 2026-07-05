@@ -702,6 +702,52 @@ exports.closeSession = async (req, res) => {
   }
 };
 
+exports.updateSessionLocation = async (req, res) => {
+  try {
+    const session = await Session.findByPk(req.params.id);
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Session not found' });
+    }
+
+    if (req.user.role === 'lecturer' && session.lecturerId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    if (session.status !== 'active') {
+      return res.status(403).json({ success: false, message: 'Session is not active' });
+    }
+
+    const { latitude, longitude, accuracy } = req.body;
+    if (latitude === undefined || longitude === undefined) {
+      return res.status(400).json({ success: false, message: 'Latitude and longitude are required' });
+    }
+
+    const parsedLat = Number(latitude);
+    const parsedLng = Number(longitude);
+    const parsedAccuracy = accuracy === undefined || accuracy === null ? null : Number(accuracy);
+
+    if (Number.isNaN(parsedLat) || Number.isNaN(parsedLng)) {
+      return res.status(400).json({ success: false, message: 'Invalid coordinates' });
+    }
+
+    if (parsedAccuracy !== null) {
+      const maxAccuracy = env.attendanceMaxLocationAccuracy;
+      if (parsedAccuracy > maxAccuracy) {
+        return res.status(403).json({ success: false, message: `Your location signal is not accurate enough (${Math.round(parsedAccuracy)}m). Move to an open area and try again.` });
+      }
+    }
+
+    session.lecturerLatitude = parsedLat;
+    session.lecturerLongitude = parsedLng;
+    session.lecturerLocationAccuracy = parsedAccuracy;
+    await session.save();
+
+    res.json({ success: true, message: 'Location updated', data: { latitude: parsedLat, longitude: parsedLng, accuracy: parsedAccuracy } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 exports.getAttemptLogs = async (req, res) => {
   try {
     const { sessionId, courseId, accepted, limit: queryLimit, offset } = req.query;

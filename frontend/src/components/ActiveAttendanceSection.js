@@ -160,8 +160,11 @@ export default function ActiveAttendanceSection({ sessions, onRefresh, onCloseSe
         const msLeft = expiresAt ? Math.max(0, expiresAt.getTime() - now) : 0;
         const minLeft = Math.floor(msLeft / 60000);
         const secLeft = Math.floor((msLeft % 60000) / 1000);
-        const geofence = session.lecturerLatitude != null
-          ? `${Number(session.lecturerLatitude).toFixed(5)}, ${Number(session.lecturerLongitude).toFixed(5)}`
+        const detail = sessionDetails[session.id];
+        const geofenceLat = detail?.lecturerLatitude ?? session.lecturerLatitude;
+        const geofenceLng = detail?.lecturerLongitude ?? session.lecturerLongitude;
+        const geofence = geofenceLat != null
+          ? `${Number(geofenceLat).toFixed(5)}, ${Number(geofenceLng).toFixed(5)}`
           : null;
         const logs = attemptLogs[session.id] || [];
         const isExpanded = expandedId === session.id;

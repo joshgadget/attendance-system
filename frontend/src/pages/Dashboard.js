@@ -1572,7 +1572,7 @@ const Dashboard = () => {
     const detail = response.data.data;
     setSessionDetail(detail);
 
-    const qrContent = detail?.qrPayload || detail?.qrToken;
+    const qrContent = detail?.qrPayload || detail?.qrToken || detail?.sessionKey;
     if (qrContent) {
       const dataUrl = await QRCode.toDataURL(qrContent, {
         width: 420,
@@ -1595,6 +1595,31 @@ const Dashboard = () => {
 
     return () => window.clearInterval(refreshInterval);
   }, [loadSessionDetail, role, sessionDetail?.id, sessionDetail?.status]);
+
+  useEffect(() => {
+    if (role !== 'lecturer' || !sessionDetail?.id || sessionDetail?.status !== 'active') {
+      return undefined;
+    }
+
+    const refreshLocation = async () => {
+      const locationResult = await getVerifiedLocation();
+      if (locationResult.success) {
+        try {
+          await api.put(`/attendance/sessions/${sessionDetail.id}/location`, {
+            latitude: locationResult.latitude,
+            longitude: locationResult.longitude,
+            accuracy: locationResult.accuracy,
+          });
+        } catch {
+          // Location refresh is best-effort
+        }
+      }
+    };
+
+    const locationInterval = window.setInterval(refreshLocation, 600000);
+
+    return () => window.clearInterval(locationInterval);
+  }, [role, sessionDetail?.id, sessionDetail?.status]);
 
   const loadData = useCallback(async (spin = false) => {
     try {
