@@ -144,6 +144,29 @@ const ensureSchemaGuard = async (sequelize) => {
     }
   }
 
+  const sessionColumns = [
+    ['lecturerLatitude', { type: DataTypes.DECIMAL(10, 7), allowNull: true }],
+    ['lecturerLongitude', { type: DataTypes.DECIMAL(10, 7), allowNull: true }],
+    ['lecturerLocationAccuracy', { type: DataTypes.FLOAT, allowNull: true }],
+    ['sessionKey', { type: DataTypes.STRING(10), allowNull: true }],
+    ['qrToken', { type: DataTypes.TEXT, allowNull: true }],
+    ['expiresAt', { type: DataTypes.DATE, allowNull: true }],
+    ['attendanceRadiusMeters', { type: DataTypes.INTEGER, allowNull: false, defaultValue: 35 }],
+  ];
+
+  for (const [columnName, definition] of sessionColumns) {
+    if (await ensureColumn(queryInterface, 'sessions', columnName, definition)) {
+      appliedChanges.push(`sessions.${columnName}`);
+    }
+  }
+
+  if (await ensureIndex(queryInterface, 'sessions', 'sessions_session_key_unique', {
+    unique: true,
+    fields: ['sessionKey'],
+  })) {
+    appliedChanges.push('sessions(sessionKey) unique index');
+  }
+
   if (await ensureIndex(queryInterface, 'attendance', 'attendance_session_student_unique', {
     unique: true,
     fields: ['sessionId', 'studentId'],
