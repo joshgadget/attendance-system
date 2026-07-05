@@ -70,18 +70,19 @@ const initialSiteMaintenanceForm = {
 };
 const TABS_BY_ROLE = {
   admin: ['overview', 'analytics', 'users', 'registry', 'courses', 'attempts', 'queries', 'reports', 'notifications', 'help'],
-  lecturer: ['overview', 'analytics', 'courses', 'sessions', 'attempts', 'queries', 'reports', 'notifications', 'help'],
+  lecturer: ['overview', 'create-session', 'analytics', 'courses', 'sessions', 'attempts', 'queries', 'reports', 'notifications', 'help'],
   student: ['overview', 'analytics', 'courses', 'attendance', 'queries', 'reports', 'notifications', 'help'],
 };
 
 const PRIMARY_TABS_BY_ROLE = {
   admin: ['overview', 'users', 'registry', 'courses', 'attempts', 'queries', 'reports', 'notifications'],
-  lecturer: ['overview', 'courses', 'sessions', 'attempts', 'queries', 'reports', 'notifications'],
+  lecturer: ['overview', 'create-session', 'sessions', 'courses', 'attempts', 'queries', 'reports', 'notifications'],
   student: ['overview', 'courses', 'attendance', 'queries', 'reports', 'notifications'],
 };
 
 const TAB_LABELS = {
   overview: 'Dashboard',
+  'create-session': 'Create Attendance Session',
   analytics: 'Analytics',
   users: 'Users',
   registry: 'Registry',
@@ -99,6 +100,7 @@ const TAB_LABELS = {
 
 const TAB_ICONS = {
   overview: Home,
+  'create-session': WandSparkles,
   analytics: LayoutDashboard,
   users: Users,
   registry: ShieldCheck,
@@ -1210,6 +1212,9 @@ const Dashboard = () => {
   const [queryForm, setQueryForm] = useState(initialQueryForm);
   const [queryEvidence, setQueryEvidence] = useState({ fileName: '', mimeType: '', data: '', note: '' });
   const [attendanceForm, setAttendanceForm] = useState(initialAttendanceForm);
+  const [createWizardForm, setCreateWizardForm] = useState({ courseId: '', durationMinutes: '120', radius: '35' });
+  const [wizardLocation, setWizardLocation] = useState(null);
+  const [wizardLocationLoading, setWizardLocationLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [liveNotification, setLiveNotification] = useState(null);
@@ -2571,6 +2576,61 @@ const Dashboard = () => {
     }
   };
 
+  const handleCaptureLocation = async () => {
+    setWizardLocationLoading(true);
+    try {
+      const result = await getVerifiedLocation();
+      if (result.success) {
+        setWizardLocation(result);
+      } else {
+        setMessage('', result.error);
+      }
+    } catch {
+      setMessage('', 'Could not capture location.');
+    } finally {
+      setWizardLocationLoading(false);
+    }
+  };
+
+  const handleWizardCreateSession = async () => {
+    if (!createWizardForm.courseId) {
+      setMessage('', 'Select a course for the attendance session.');
+      return;
+    }
+
+    try {
+      setBusyAction('create-session');
+      setMessage();
+      const freshLocation = await getVerifiedLocation();
+      if (!freshLocation.success) {
+        setMessage('', freshLocation.error);
+        setBusyAction('');
+        return;
+      }
+      const payload = {
+        courseId: createWizardForm.courseId,
+        date: new Date().toISOString().slice(0, 10),
+        startTime: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+        durationMinutes: createWizardForm.durationMinutes,
+        attendanceRadiusMeters: Number(createWizardForm.radius),
+        lecturerLatitude: freshLocation.latitude,
+        lecturerLongitude: freshLocation.longitude,
+        lecturerLocationAccuracy: freshLocation.accuracy,
+      };
+      const response = await api.post('/attendance/sessions', payload);
+      setCreateWizardForm({ courseId: '', durationMinutes: '120', radius: '35' });
+      setWizardLocation(null);
+      setMessage(`Attendance session created. Session key: ${response.data.data.sessionKey}`);
+      await loadData(true);
+      await loadSessionDetail(response.data.data.session.id);
+      setActiveTab('sessions');
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Session could not be created.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   const handleCloseSession = async (sessionId) => {
     try {
       setBusyAction(`close-session-${sessionId}`);
@@ -3448,14 +3508,7 @@ const Dashboard = () => {
   };
 
   const openWorkspaceTab = (tab) => {
-    if (tab === 'create-session') {
-      setActiveTab('courses');
-      window.setTimeout(() => {
-        createSessionPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 120);
-    } else {
-      setActiveTab(tab);
-    }
+    setActiveTab(tab);
     setAccountMenuOpen(false);
     setSidebarOpen(false);
   };
@@ -3828,6 +3881,106 @@ const Dashboard = () => {
         {error && <div className="mb-6 rounded-[1.5rem] border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>}
         {success && <div className="mb-6 rounded-[1.5rem] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">{success}</div>}
         <div className="mt-2 grid gap-8">
+
+          {activeTab === 'create-session' && role === 'lecturer' && (
+            <div className="grid gap-8 xl:grid-cols-[0.9fr_1.1fr]">
+              <Panel title="Create Attendance Session" eyebrow="New session">
+                <div className="space-y-6">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Step 1: Select Course</label>
+                    <Select label="Course" value={createWizardForm.courseId} onChange={(value) => setCreateWizardForm((prev) => ({ ...prev, courseId: value }))} options={[{ value: '', label: 'Choose a course\u2026' }, ...courses.map((c) => ({ value: c.id, label: `${c.courseCode} \u2013 ${c.courseName}` }))]} />
+                    {(() => {
+                      const sc = courses.find((c) => String(c.id) === String(createWizardForm.courseId));
+                      if (!sc) return null;
+                      return (
+                        <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/80 px-5 py-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Course Code</p><p className="mt-1 font-bold text-slate-900">{sc.courseCode}</p></div>
+                            <div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Course Title</p><p className="mt-1 font-semibold text-slate-900">{sc.courseName}</p></div>
+                            <div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Department</p><p className="mt-1 text-slate-700">{sc.department || 'Not set'}</p></div>
+                            <div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Level</p><p className="mt-1 text-slate-700">{sc.level || 'Not set'}</p></div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <div>
+                    <label className="mb-3 block text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2: Session Settings</label>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-slate-700">Duration (minutes)</label>
+                        <div className="flex flex-wrap gap-2">
+                          {['30', '60', '90', '120'].map((min) => (
+                            <button key={min} type="button" onClick={() => setCreateWizardForm((prev) => ({ ...prev, durationMinutes: min }))} className={`rounded-2xl px-5 py-2 text-sm font-semibold transition ${createWizardForm.durationMinutes === min ? 'bg-blue-700 text-white shadow-md' : 'border border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50'}`}>{min} min</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-slate-700">Attendance radius (metres)</label>
+                        <div className="flex items-center gap-3">
+                          <input type="number" min="10" max="500" value={createWizardForm.radius} onChange={(e) => setCreateWizardForm((prev) => ({ ...prev, radius: e.target.value }))} className="w-24 rounded-2xl border border-slate-300 px-4 py-2 text-center text-sm font-semibold focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+                          <span className="text-sm text-slate-500">metres</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-3 block text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3: Your Location</label>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5">
+                      {wizardLocation ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 text-emerald-700"><CheckCircle2 className="h-5 w-5" /><span className="font-semibold">Location captured</span></div>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div><p className="text-slate-500">Latitude</p><p className="font-mono font-semibold text-slate-900">{wizardLocation.latitude.toFixed(6)}</p></div>
+                            <div><p className="text-slate-500">Longitude</p><p className="font-mono font-semibold text-slate-900">{wizardLocation.longitude.toFixed(6)}</p></div>
+                            <div><p className="text-slate-500">Accuracy</p><p className="font-mono font-semibold text-slate-900">{Math.round(wizardLocation.accuracy)}m</p></div>
+                            <div><p className="text-slate-500">Timestamp</p><p className="text-slate-900">{new Date(wizardLocation.timestamp).toLocaleTimeString()}</p></div>
+                          </div>
+                          <button type="button" onClick={handleCaptureLocation} disabled={wizardLocationLoading} className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60">{wizardLocationLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}Refresh location</button>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <p className="text-sm text-slate-600">Your GPS location will become the centre of the attendance radius. Make sure you are in the classroom.</p>
+                          <button type="button" onClick={handleCaptureLocation} disabled={wizardLocationLoading} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{wizardLocationLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}Capture my location</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <ActionButton type="button" onClick={handleWizardCreateSession} disabled={busyAction === 'create-session' || !createWizardForm.courseId || !wizardLocation}>
+                    {busyAction === 'create-session' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <WandSparkles className="h-4 w-4" />}
+                    Create Attendance Session
+                  </ActionButton>
+                </div>
+              </Panel>
+              <div className="grid gap-8">
+                <Panel title="Session preview" eyebrow="What students will see">
+                  {(() => {
+                    const sc = courses.find((c) => String(c.id) === String(createWizardForm.courseId));
+                    return sc ? (
+                      <div className="space-y-4">
+                        <SummaryTile label="Course" value={`${sc.courseCode} \u2013 ${sc.courseName}`} helper={sc.department || ''} />
+                        <SummaryTile label="Duration" value={`${createWizardForm.durationMinutes} minutes`} helper="Session auto-closes after this time" />
+                        <SummaryTile label="Attendance radius" value={`${createWizardForm.radius} metres`} helper="Students must be within this distance" />
+                        <SummaryTile label="Location status" value={wizardLocation ? 'Captured \u2713' : 'Not captured'} helper={wizardLocation ? `Accuracy: ${Math.round(wizardLocation.accuracy)}m` : 'Capture your location before creating'} />
+                      </div>
+                    ) : (
+                      <EmptyState title="No course selected" description="Select a course to see a preview of the session." />
+                    );
+                  })()}
+                </Panel>
+                <div className="rounded-2xl border border-blue-100 bg-blue-50/60 px-5 py-4 text-sm text-slate-700">
+                  <p className="font-semibold text-blue-800">How it works</p>
+                  <ul className="mt-3 space-y-2">
+                    <li className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" /><span>Select the course for this session</span></li>
+                    <li className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" /><span>Set the duration and allowed radius</span></li>
+                    <li className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" /><span>Capture your classroom location</span></li>
+                    <li className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" /><span>Create the session \u2014 a unique QR code and session key are generated automatically</span></li>
+                    <li className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" /><span>Students scan the QR code to mark attendance within the radius and time window</span></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
 
           {activeTab === 'overview' && (
             <div className="dashboard-overview">
