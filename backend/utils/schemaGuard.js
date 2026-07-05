@@ -78,11 +78,16 @@ const ensureSchemaGuard = async (sequelize) => {
     appliedChanges.push('courses.campus');
   }
 
-  if (await ensureColumn(queryInterface, 'buildings', 'campus', {
-    type: DataTypes.STRING(120),
-    allowNull: true,
-  })) {
-    appliedChanges.push('buildings.campus');
+  const buildingColumns = [
+    ['campus', { type: DataTypes.STRING(120), allowNull: true }],
+    ['geofenceToleranceMeters', { type: DataTypes.INTEGER, allowNull: false, defaultValue: 10 }],
+    ['polygonCoordinates', { type: DataTypes.TEXT, allowNull: true }],
+  ];
+
+  for (const [columnName, definition] of buildingColumns) {
+    if (await ensureColumn(queryInterface, 'buildings', columnName, definition)) {
+      appliedChanges.push(`buildings.${columnName}`);
+    }
   }
 
   if (await ensureColumn(queryInterface, 'student_registry', 'campus', {
