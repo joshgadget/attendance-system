@@ -49,7 +49,6 @@ export default function ActiveAttendanceSection({ sessions, onRefresh, onCloseSe
   const [sessionDetails, setSessionDetails] = useState({});
   const [attemptLogs, setAttemptLogs] = useState({});
   const [qrUrls, setQrUrls] = useState({});
-  const [challenges, setChallenges] = useState({});
   const [expandedId, setExpandedId] = useState(null);
   const [confirmCloseId, setConfirmCloseId] = useState(null);
   const [busyAction, setBusyAction] = useState('');

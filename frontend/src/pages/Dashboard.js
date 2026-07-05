@@ -2857,7 +2857,6 @@ const Dashboard = () => {
 
     try {
       const trimmedKey = String(sessionKey || '').trim().toUpperCase();
-      const trimmedCode = String(courseCode || '').trim().toUpperCase();
 
       if (!trimmedKey) {
         const msg = 'Scan the QR code or enter the session key with your course code to mark attendance.';
