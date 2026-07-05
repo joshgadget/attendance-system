@@ -1067,8 +1067,14 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
           try {
             setScannerError('');
             setScannerStatus('Verifying...');
+            const freshLocation = await getVerifiedLocation();
+            if (!freshLocation.success) {
+              setScannerError(freshLocation.error);
+              scanHandledRef.current = false;
+              return;
+            }
             await stopScanner();
-            const result = await onDetectedRef.current(payload.sessionKey, 'qr', locationResult);
+            const result = await onDetectedRef.current(payload.sessionKey, 'qr', freshLocation);
             if (result?.success) {
               cancelledRef.current = true;
               await stopScanner();
