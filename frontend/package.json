@@ -11,10 +11,13 @@
     "axios": "^1.13.6",
     "framer-motion": "^12.35.2",
     "html5-qrcode": "^2.3.8",
+    "leaflet": "^1.9.4",
+    "leaflet-draw": "^1.0.4",
     "lucide-react": "^0.577.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-leaflet": "^5.0.0",
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.13.1",
     "react-scripts": "^5.0.1",
@@ -24,7 +27,6 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },

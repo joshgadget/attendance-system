@@ -11,4 +11,7 @@ router.post('/', roleMiddleware('admin'), buildingController.createBuilding);
 router.put('/:id', roleMiddleware('admin'), buildingController.updateBuilding);
 router.delete('/:id', roleMiddleware('admin'), buildingController.deactivateBuilding);
 
+router.put('/:id/polygon', roleMiddleware('admin'), buildingController.setBuildingPolygon);
+router.delete('/:id/polygon', roleMiddleware('admin'), buildingController.clearBuildingPolygon);
+
 module.exports = router;

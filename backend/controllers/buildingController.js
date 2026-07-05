@@ -150,6 +150,75 @@ exports.updateBuilding = async (req, res) => {
   }
 };
 
+exports.setBuildingPolygon = async (req, res) => {
+  try {
+    const building = await Building.findByPk(req.params.id);
+    if (!building) {
+      return res.status(404).json({ success: false, message: 'Building not found' });
+    }
+
+    const { polygonCoordinates } = req.body;
+
+    if (!Array.isArray(polygonCoordinates) || polygonCoordinates.length < 3) {
+      return res.status(400).json({ success: false, message: 'polygonCoordinates must be an array of at least 3 [lng, lat] pairs' });
+    }
+
+    for (const coord of polygonCoordinates) {
+      if (!Array.isArray(coord) || coord.length !== 2 || typeof coord[0] !== 'number' || typeof coord[1] !== 'number') {
+        return res.status(400).json({ success: false, message: 'Each coordinate must be a [lng, lat] number pair' });
+      }
+      if (coord[1] < -90 || coord[1] > 90) {
+        return res.status(400).json({ success: false, message: `Latitude ${coord[1]} is out of range (-90 to 90)` });
+      }
+      if (coord[0] < -180 || coord[0] > 180) {
+        return res.status(400).json({ success: false, message: `Longitude ${coord[0]} is out of range (-180 to 180)` });
+      }
+    }
+
+    await building.update({ polygonCoordinates });
+
+    await logAuditEvent({
+      req,
+      action: 'building.polygon_updated',
+      targetType: 'building',
+      targetId: building.id,
+      campus: building.campus,
+      metadata: {
+        name: building.name,
+        vertexCount: polygonCoordinates.length,
+      },
+    });
+
+    return res.json({ success: true, message: 'Building polygon updated successfully', data: building });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.clearBuildingPolygon = async (req, res) => {
+  try {
+    const building = await Building.findByPk(req.params.id);
+    if (!building) {
+      return res.status(404).json({ success: false, message: 'Building not found' });
+    }
+
+    await building.update({ polygonCoordinates: null });
+
+    await logAuditEvent({
+      req,
+      action: 'building.polygon_cleared',
+      targetType: 'building',
+      targetId: building.id,
+      campus: building.campus,
+      metadata: { name: building.name },
+    });
+
+    return res.json({ success: true, message: 'Building polygon cleared. Circular geofence will be used.', data: building });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 exports.deactivateBuilding = async (req, res) => {
   try {
     const building = await Building.findByPk(req.params.id);

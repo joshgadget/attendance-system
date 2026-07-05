@@ -14,6 +14,7 @@ const CourseAudience = require('./CourseAudience');
 const AuditLog = require('./AuditLog');
 const SiteSetting = require('./SiteSetting');
 const ClassReminderLog = require('./ClassReminderLog');
+const AttendanceAttempt = require('./AttendanceAttempt');
 
 // Setup associations function
 const setupAssociations = () => {
@@ -96,6 +97,16 @@ const setupAssociations = () => {
   // User -> SiteSetting
   User.hasMany(SiteSetting, { foreignKey: 'updatedByUserId', as: 'updatedSiteSettings' });
   SiteSetting.belongsTo(User, { foreignKey: 'updatedByUserId', as: 'updatedBy' });
+
+  // AttendanceAttempt associations
+  User.hasMany(AttendanceAttempt, { foreignKey: 'studentId', as: 'attendanceAttempts' });
+  AttendanceAttempt.belongsTo(User, { foreignKey: 'studentId', as: 'student' });
+
+  Session.hasMany(AttendanceAttempt, { foreignKey: 'sessionId', as: 'attempts' });
+  AttendanceAttempt.belongsTo(Session, { foreignKey: 'sessionId', as: 'session' });
+
+  Course.hasMany(AttendanceAttempt, { foreignKey: 'courseId', as: 'attempts' });
+  AttendanceAttempt.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
 };
 
 // Sync all models with database
@@ -124,6 +135,7 @@ module.exports = {
   ClassReminderLog,
   AuditLog,
   SiteSetting,
+  AttendanceAttempt,
   setupAssociations,
   syncDatabase
 };

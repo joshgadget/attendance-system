@@ -49,6 +49,7 @@ import api from '../services/api';
 import { getSocketBaseUrl } from '../services/apiConfig';
 import { logout } from '../redux/slices/authSlice';
 import { useTheme } from '../theme/ThemeContext';
+import BuildingMap from '../components/BuildingMap';
 import './dashboard-theme.css';
 
 const initialUserForm = { firstName: '', lastName: '', email: '', password: '', role: 'student', department: '', faculty: '', program: '', campus: '', matricNumber: '' };
@@ -1179,6 +1180,9 @@ const Dashboard = () => {
   const [registryForm, setRegistryForm] = useState(initialRegistryForm);
   const [sessionForm, setSessionForm] = useState(initialSessionForm);
   const [buildingForm, setBuildingForm] = useState(initialBuildingForm);
+  const [selectedBuildingForMap, setSelectedBuildingForMap] = useState(null);
+  const [buildingPolygon, setBuildingPolygon] = useState(null);
+  const [savingPolygon, setSavingPolygon] = useState(false);
   const [queryForm, setQueryForm] = useState(initialQueryForm);
   const [queryEvidence, setQueryEvidence] = useState({ fileName: '', mimeType: '', data: '', note: '' });
   const [attendanceForm, setAttendanceForm] = useState(initialAttendanceForm);
@@ -1869,6 +1873,48 @@ const Dashboard = () => {
       await loadData(true);
     } catch (actionError) {
       setMessage('', actionError.response?.data?.message || 'Building geofence could not be deactivated.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleEditBuildingPolygon = (building) => {
+    setSelectedBuildingForMap(building);
+    let polygon = null;
+    if (building.polygonCoordinates && Array.isArray(building.polygonCoordinates) && building.polygonCoordinates.length >= 3) {
+      polygon = building.polygonCoordinates;
+    }
+    setBuildingPolygon(polygon);
+  };
+
+  const handleSaveBuildingPolygon = async () => {
+    if (!selectedBuildingForMap || !buildingPolygon) return;
+    try {
+      setSavingPolygon(true);
+      setMessage();
+      await api.put(`/buildings/${selectedBuildingForMap.id}/polygon`, { polygonCoordinates: buildingPolygon });
+      setMessage('Building polygon boundary saved successfully.');
+      setSelectedBuildingForMap(null);
+      setBuildingPolygon(null);
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Polygon could not be saved.');
+    } finally {
+      setSavingPolygon(false);
+    }
+  };
+
+  const handleClearBuildingPolygon = async (building) => {
+    try {
+      setBusyAction(`clear-polygon-${building.id}`);
+      setMessage();
+      await api.delete(`/buildings/${building.id}/polygon`);
+      setMessage('Polygon cleared. Circular geofence will be used.');
+      setSelectedBuildingForMap(null);
+      setBuildingPolygon(null);
+      await loadData(true);
+    } catch (actionError) {
+      setMessage('', actionError.response?.data?.message || 'Polygon could not be cleared.');
     } finally {
       setBusyAction('');
     }
@@ -4534,6 +4580,47 @@ const Dashboard = () => {
                         </div>
                       </form>
 
+                      {selectedBuildingForMap && (
+                        <div className="mt-6 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-semibold text-slate-900">
+                              Polygon boundary for: {selectedBuildingForMap.name}
+                            </p>
+                            <div className="flex gap-2">
+                              <ActionButton
+                                onClick={handleSaveBuildingPolygon}
+                                disabled={savingPolygon || !buildingPolygon}
+                                variant="primary"
+                                className="px-3 py-2 text-xs"
+                              >
+                                {savingPolygon ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
+                                Save polygon
+                              </ActionButton>
+                              <ActionButton
+                                onClick={() => {
+                                  setSelectedBuildingForMap(null);
+                                  setBuildingPolygon(null);
+                                }}
+                                variant="secondary"
+                                className="px-3 py-2 text-xs"
+                              >
+                                Cancel
+                              </ActionButton>
+                            </div>
+                          </div>
+                          {buildingPolygon && buildingPolygon.length >= 3 && (
+                            <p className="text-xs text-slate-500">
+                              {buildingPolygon.length} vertices. Draw a precise outline of the building on the map below.
+                            </p>
+                          )}
+                          <BuildingMap
+                            center={[Number(selectedBuildingForMap.latitude), Number(selectedBuildingForMap.longitude)]}
+                            polygonCoordinates={buildingPolygon}
+                            onPolygonChange={setBuildingPolygon}
+                          />
+                        </div>
+                      )}
+
                       <div className="dashboard-list mt-6 space-y-3">
                         {filteredBuildings.length > 0 ? filteredBuildings.map((building) => (
                           <div key={building.id} className="dashboard-record-card rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4">
@@ -4542,15 +4629,31 @@ const Dashboard = () => {
                                 <p className="font-semibold text-slate-900">{building.name} {building.tag ? `(${building.tag})` : ''}</p>
                                 <p className="mt-1 text-sm text-slate-500">Campus: {building.campus || 'Not set'}</p>
                                 <p className="mt-1 text-sm text-slate-500">Center: {building.latitude}, {building.longitude}</p>
-                                <p className="mt-1 text-sm text-slate-500">Radius: {building.radiusMeters}m</p>
+                                <p className="mt-1 text-sm text-slate-500">
+                                  {building.polygonCoordinates && Array.isArray(building.polygonCoordinates)
+                                    ? `Polygon boundary (${building.polygonCoordinates.length} vertices)`
+                                    : `Radius: ${building.radiusMeters}m`}
+                                </p>
                               </div>
                               <div className="flex flex-wrap gap-2">
                                 <Badge tone={building.isActive ? 'emerald' : 'rose'}>{building.isActive ? 'active' : 'inactive'}</Badge>
                                 {building.isActive && (
-                                  <ActionButton onClick={() => handleDeactivateBuilding(building.id)} disabled={busyAction === `deactivate-building-${building.id}`} variant="danger" className="px-3 py-2 text-xs">
-                                    {busyAction === `deactivate-building-${building.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
-                                    Deactivate
-                                  </ActionButton>
+                                  <>
+                                    <ActionButton onClick={() => handleEditBuildingPolygon(building)} disabled={selectedBuildingForMap?.id === building.id} variant="secondary" className="px-3 py-2 text-xs">
+                                      <MapPin className="h-4 w-4" />
+                                      {building.polygonCoordinates ? 'Edit polygon' : 'Draw polygon'}
+                                    </ActionButton>
+                                    {building.polygonCoordinates && (
+                                      <ActionButton onClick={() => handleClearBuildingPolygon(building)} disabled={busyAction === `clear-polygon-${building.id}`} variant="danger" className="px-3 py-2 text-xs">
+                                        {busyAction === `clear-polygon-${building.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                                        Clear polygon
+                                      </ActionButton>
+                                    )}
+                                    <ActionButton onClick={() => handleDeactivateBuilding(building.id)} disabled={busyAction === `deactivate-building-${building.id}`} variant="danger" className="px-3 py-2 text-xs">
+                                      {busyAction === `deactivate-building-${building.id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                                      Deactivate
+                                    </ActionButton>
+                                  </>
                                 )}
                               </div>
                             </div>

@@ -1,6 +1,18 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
+const buildRectanglePolygon = (centerLat, centerLng, halfSideMeters) => {
+  const metersPerDeg = 111320;
+  const dLat = halfSideMeters / metersPerDeg;
+  const dLng = halfSideMeters / (metersPerDeg * Math.cos((centerLat * Math.PI) / 180));
+  return [
+    [centerLng - dLng, centerLat - dLat],
+    [centerLng + dLng, centerLat - dLat],
+    [centerLng + dLng, centerLat + dLat],
+    [centerLng - dLng, centerLat + dLat],
+  ];
+};
+
 const OOU_BUILDINGS = [
   { name: 'CSE Lecture Hall 1', tag: 'CSE-LH1', campus: 'Ago-Iwoye Main Campus', latitude: 6.9886, longitude: 3.9027, radiusMeters: 60 },
   { name: 'CSE Lecture Hall 2', tag: 'CSE-LH2', campus: 'Ago-Iwoye Main Campus', latitude: 6.9889, longitude: 3.9031, radiusMeters: 60 },
@@ -62,6 +74,26 @@ const Building = sequelize.define(
       allowNull: false,
       defaultValue: 80,
     },
+    polygonCoordinates: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      get() {
+        const raw = this.getDataValue('polygonCoordinates');
+        if (!raw) return null;
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return null;
+        }
+      },
+      set(value) {
+        if (value && Array.isArray(value)) {
+          this.setDataValue('polygonCoordinates', JSON.stringify(value));
+        } else {
+          this.setDataValue('polygonCoordinates', null);
+        }
+      },
+    },
     isActive: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
@@ -76,10 +108,15 @@ const Building = sequelize.define(
 
 Building.seedOOU = async () => {
   for (const building of OOU_BUILDINGS) {
-    await Building.findOrCreate({
-      where: { tag: building.tag },
-      defaults: { ...building, isActive: true },
-    });
+    const polygon = buildRectanglePolygon(building.latitude, building.longitude, building.radiusMeters);
+    const existing = await Building.findOne({ where: { tag: building.tag } });
+    if (!existing) {
+      await Building.create({
+        ...building,
+        polygonCoordinates: polygon,
+        isActive: true,
+      });
+    }
   }
 };
 

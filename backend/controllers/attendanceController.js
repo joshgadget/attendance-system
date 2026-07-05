@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { Op, UniqueConstraintError } = require('sequelize');
-const { AbsenceQuery, Session, Attendance, Course, User, Building, Enrollment } = require('../models');
+const { AbsenceQuery, Session, Attendance, Course, User, Building, Enrollment, AttendanceAttempt } = require('../models');
+const { pointNearPolygon, validateGpsAccuracy, validateLocationTimestamp, isMockedLocation } = require('../utils/geoValidation');
 const crypto = require('crypto');
 const authConfig = require('../config/auth');
 const { sendEmail } = require('../utils/mailer');
@@ -462,21 +463,87 @@ exports.markAttendance = async (req, res) => {
       });
     }
 
-    if (parsedAccuracy !== null && (Number.isNaN(parsedAccuracy) || parsedAccuracy < 0 || parsedAccuracy > 100)) {
+    const accuracyCheck = validateGpsAccuracy(parsedAccuracy);
+    if (!accuracyCheck.valid) {
+      return res.status(403).json({ success: false, message: accuracyCheck.reason });
+    }
+
+    const { locationTimestamp, deviceInfo } = req.body;
+    if (locationTimestamp) {
+      const timeCheck = validateLocationTimestamp(locationTimestamp);
+      if (!timeCheck.valid) {
+        return res.status(403).json({ success: false, message: timeCheck.reason });
+      }
+    }
+
+    if (isMockedLocation(parsedLatitude, parsedLongitude, parsedAccuracy, locationTimestamp, deviceInfo)) {
+      await logAuditEvent({
+        req,
+        action: 'attendance.mark.rejected.mock_location',
+        targetType: 'session',
+        targetId: session.id,
+        metadata: { courseId: session.courseId, latitude: parsedLatitude, longitude: parsedLongitude },
+      });
       return res.status(403).json({
         success: false,
-        message: `Your GPS accuracy is too low${Number.isNaN(parsedAccuracy) ? '' : ` (${Math.round(parsedAccuracy)}m)`}. Move to an open area and try again.`,
+        message: 'Suspicious location detected. Turn off any location simulation apps and try again.',
       });
     }
 
-    const meters = distanceMeters(
-      parsedLatitude,
-      parsedLongitude,
-      Number(session.geofenceLatitude),
-      Number(session.geofenceLongitude)
-    );
+    const usePolygon = Array.isArray(session.polygonCoordinates) && session.polygonCoordinates.length >= 3;
+    const tolerance = session.geofenceToleranceMeters || 10;
 
-    if (meters > Number(session.geofenceRadiusMeters)) {
+    let insideZone = false;
+    let distanceMetersValue = null;
+
+    if (usePolygon) {
+      insideZone = pointNearPolygon(parsedLatitude, parsedLongitude, session.polygonCoordinates, tolerance);
+      const centroid = session.polygonCoordinates.reduce(
+        (acc, [lng, lat]) => [acc[0] + lat, acc[1] + lng],
+        [0, 0]
+      );
+      const centerLat = centroid[0] / session.polygonCoordinates.length;
+      const centerLng = centroid[1] / session.polygonCoordinates.length;
+      distanceMetersValue = Math.round(distanceMeters(parsedLatitude, parsedLongitude, centerLat, centerLng));
+    } else {
+      distanceMetersValue = Math.round(distanceMeters(
+        parsedLatitude,
+        parsedLongitude,
+        Number(session.geofenceLatitude),
+        Number(session.geofenceLongitude)
+      ));
+      insideZone = distanceMetersValue <= Number(session.geofenceRadiusMeters) + tolerance;
+    }
+
+    const attemptPayload = {
+      studentId: req.user.id,
+      sessionId: session.id,
+      courseId: session.courseId,
+      latitude: parsedLatitude,
+      longitude: parsedLongitude,
+      accuracy: parsedAccuracy,
+      insidePolygon: insideZone,
+      deviceInfo: req.get('user-agent') || null,
+      locationTimestamp: locationTimestamp ? new Date(locationTimestamp) : null,
+      metadata: {
+        usePolygon,
+        tolerance,
+        distanceMeters: distanceMetersValue,
+        polygonVertexCount: usePolygon ? session.polygonCoordinates.length : null,
+        geofenceRadius: usePolygon ? null : Number(session.geofenceRadiusMeters),
+      },
+    };
+
+    if (!insideZone) {
+      attemptPayload.accepted = false;
+      if (usePolygon) {
+        attemptPayload.rejectionReason = 'You are outside the approved attendance building boundary. Move closer to the building and try again.';
+      } else {
+        attemptPayload.rejectionReason = `Outside allowed attendance zone. Distance is ${distanceMetersValue}m, max allowed is ${session.geofenceRadiusMeters}m.`;
+      }
+
+      await AttendanceAttempt.create(attemptPayload);
+
       await logAuditEvent({
         req,
         action: 'attendance.mark.rejected.outside_geofence',
@@ -484,16 +551,21 @@ exports.markAttendance = async (req, res) => {
         targetId: session.id,
         metadata: {
           courseId: session.courseId,
-          distanceMeters: Math.round(meters),
-          allowedRadiusMeters: Number(session.geofenceRadiusMeters),
+          distanceMeters: distanceMetersValue,
+          usePolygon,
+          polygonVertexCount: usePolygon ? session.polygonCoordinates.length : null,
+          allowedRadiusMeters: usePolygon ? null : Number(session.geofenceRadiusMeters),
           locationAccuracy: parsedAccuracy,
         },
       });
       return res.status(403).json({
         success: false,
-        message: `Outside allowed attendance zone. Distance is ${Math.round(meters)}m, max allowed is ${session.geofenceRadiusMeters}m.`,
+        message: attemptPayload.rejectionReason,
       });
     }
+
+    attemptPayload.accepted = true;
+    await AttendanceAttempt.create(attemptPayload);
 
     const student = await User.findByPk(req.user.id, {
       attributes: ['id', 'lastKnownDeviceHash', 'lastKnownIp'],
