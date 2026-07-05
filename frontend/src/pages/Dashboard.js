@@ -2668,7 +2668,7 @@ const Dashboard = () => {
       const trimmedKey = String(sessionKey || '').trim().toUpperCase();
       const trimmedCode = String(courseCode || '').trim().toUpperCase();
 
-      if (!trimmedKey || !trimmedCode) {
+      if (!trimmedKey) {
         const msg = 'Scan the QR code or enter the session key with your course code to mark attendance.';
         setMessage('', msg);
         return { success: false, message: msg };
@@ -3682,11 +3682,6 @@ const Dashboard = () => {
     <div className={`dashboard-shell min-h-screen ${isDark ? 'dark dashboard-shell--app text-slate-100' : 'dashboard-shell--light text-slate-900'} ${preferences.compactMode ? 'dashboard-shell--compact' : ''}`}>
       <QrScannerPanel isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onDetected={async (scannedKey, method, location) => {
         const code = String(attendanceForm.courseCode || '').trim().toUpperCase();
-        if (!code) {
-          setMessage('', 'Enter your course code before scanning.');
-          setScannerOpen(false);
-          return;
-        }
         const result = await handleMarkAttendance(scannedKey, code, method, location);
         return result;
       }} />
