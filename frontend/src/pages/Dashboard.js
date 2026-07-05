@@ -998,6 +998,15 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
   const [scannerError, setScannerError] = useState('');
   const [scannerStatus, setScannerStatus] = useState('');
   const scanHandledRef = useRef(false);
+  const onDetectedRef = useRef(onDetected);
+  const onCloseRef = useRef(onClose);
+  const cancelledRef = useRef(false);
+  const cleanupRef = useRef(null);
+
+  useEffect(() => {
+    onDetectedRef.current = onDetected;
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!isOpen) {
@@ -1007,8 +1016,19 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
       return undefined;
     }
 
+    cancelledRef.current = false;
+
+    const stopScanner = async () => {
+      if (cleanupRef.current) {
+        await cleanupRef.current();
+        cleanupRef.current = null;
+      }
+    };
+
     setScannerStatus('Requesting location access...');
     getVerifiedLocation().then((locationResult) => {
+      if (cancelledRef.current) return;
+
       if (locationResult.success === false) {
         setScannerError(locationResult.error);
         scanHandledRef.current = false;
@@ -1017,10 +1037,11 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
 
       setScannerStatus('Opening camera...');
       scanHandledRef.current = false;
-      let cancelled = false;
+
       let scannerCleared = false;
       const scanner = new Html5Qrcode('attendance-qr-reader');
-      const stopScanner = async () => {
+
+      cleanupRef.current = async () => {
         if (scannerCleared) return;
         scannerCleared = true;
         if (scanner.isScanning) {
@@ -1033,7 +1054,7 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
         { facingMode: 'environment' },
         { fps: 10, qrbox: 220 },
         async (decodedText) => {
-          if (cancelled || scanHandledRef.current) return;
+          if (cancelledRef.current || scanHandledRef.current) return;
           scanHandledRef.current = true;
           const payload = extractAttendancePayload(decodedText);
           if (!payload.sessionKey) {
@@ -1046,18 +1067,18 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
             setScannerError('');
             setScannerStatus('Verifying...');
             await stopScanner();
-            const result = await onDetected(payload.sessionKey, 'qr', locationResult);
+            const result = await onDetectedRef.current(payload.sessionKey, 'qr', locationResult);
             if (result?.success) {
-              cancelled = true;
+              cancelledRef.current = true;
               await stopScanner();
-              onClose();
+              onCloseRef.current();
               return;
             }
             setScannerError(result?.message || 'Attendance could not be marked after scanning. Review the message above and try again.');
           } finally {
             setScannerStatus('');
-            if (!cancelled) {
-              onClose();
+            if (!cancelledRef.current) {
+              onCloseRef.current();
             }
           }
         },
@@ -1065,16 +1086,16 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
       ).catch(() => {
         setScannerError('Camera scanner could not start. You can still enter the session key manually.');
       });
-
-      return () => {
-        cancelled = true;
-        stopScanner().catch(() => null);
-      };
     }).catch(() => {
       setScannerError('Could not access location services.');
       scanHandledRef.current = false;
     });
-  }, [isOpen, onClose, onDetected]);
+
+    return () => {
+      cancelledRef.current = true;
+      stopScanner().catch(() => null);
+    };
+  }, [isOpen]);
 
   if (!isOpen) {
     return null;
