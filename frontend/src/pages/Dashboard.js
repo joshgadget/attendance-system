@@ -50,6 +50,7 @@ import { getSocketBaseUrl } from '../services/apiConfig';
 import { logout } from '../redux/slices/authSlice';
 import { useTheme } from '../theme/ThemeContext';
 import BuildingMap from '../components/BuildingMap';
+import ActiveAttendanceSection from '../components/ActiveAttendanceSection';
 import { getVerifiedLocation } from '../utils/location';
 import './dashboard-theme.css';
 
@@ -3809,6 +3810,14 @@ const Dashboard = () => {
                   {role === 'student' && 'Today at a glance.'}
                 </p>
               </section>
+
+              {role === 'lecturer' && (
+                <ActiveAttendanceSection
+                  sessions={sessions}
+                  onRefresh={() => loadData(true)}
+                  onCloseSession={handleCloseSession}
+                />
+              )}
 
               <MobileCommandCenter command={mobileCommand} onOpenTab={openWorkspaceTab} />
 

@@ -467,6 +467,7 @@ exports.markAttendance = async (req, res) => {
       locationTimestamp: locationTimestamp ? new Date(locationTimestamp) : null,
       attemptNumber,
       attendanceMethod,
+      metadata: { distanceMeters: distanceMetersValue },
     };
 
     if (!insideRadius) {
