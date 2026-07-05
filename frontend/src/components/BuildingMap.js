@@ -1,18 +1,46 @@
-import React, { useEffect, useRef, useState } from 'react';
-
-const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-const LEAFLET_DRAW_CSS = 'https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css';
-const LEAFLET_DRAW_JS = 'https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 export default function BuildingMap({ center, polygonCoordinates, onPolygonChange, readOnly }) {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
-  const drawnItemsRef = useRef(null);
-  const drawControlRef = useRef(null);
-  const markerRef = useRef(null);
+  const onPolygonChangeRef = useRef(onPolygonChange);
+  const centerRef = useRef(center);
+  const polygonRef = useRef(polygonCoordinates);
   const [leafletLoaded, setLeafletLoaded] = useState(false);
   const [L, setL] = useState(null);
+
+  useEffect(() => {
+    onPolygonChangeRef.current = onPolygonChange;
+  }, [onPolygonChange]);
+
+  useEffect(() => {
+    centerRef.current = center;
+  }, [center]);
+
+  useEffect(() => {
+    polygonRef.current = polygonCoordinates;
+  }, [polygonCoordinates]);
+
+  const initLeaflet = useCallback((leaflet) => {
+    setL(leaflet);
+    setLeafletLoaded(true);
+  }, []);
+
+  const loadLeaflet = useCallback(() => {
+    if (window.L) {
+      initLeaflet(window.L);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.onload = () => {
+      const drawScript = document.createElement('script');
+      drawScript.src = 'https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js';
+      drawScript.onload = () => initLeaflet(window.L);
+      document.body.appendChild(drawScript);
+    };
+    document.body.appendChild(script);
+  }, [initLeaflet]);
 
   useEffect(() => {
     if (document.getElementById('leaflet-css')) {
@@ -22,38 +50,25 @@ export default function BuildingMap({ center, polygonCoordinates, onPolygonChang
     const link = document.createElement('link');
     link.id = 'leaflet-css';
     link.rel = 'stylesheet';
-    link.href = LEAFLET_CSS;
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
     document.head.appendChild(link);
 
     const drawLink = document.createElement('link');
     drawLink.id = 'leaflet-draw-css';
     drawLink.rel = 'stylesheet';
-    drawLink.href = LEAFLET_DRAW_CSS;
+    drawLink.href = 'https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css';
     document.head.appendChild(drawLink);
 
     loadLeaflet();
+  }, [loadLeaflet]);
+
+  const extractPolygon = useCallback((layer, callback) => {
+    if (!callback) return;
+    const latLngs = layer.getLatLngs();
+    if (latLngs.length === 0) return;
+    const coords = latLngs[0].map((ll) => [ll.lng, ll.lat]);
+    callback(coords);
   }, []);
-
-  const loadLeaflet = () => {
-    if (window.L) {
-      initLeaflet(window.L);
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = LEAFLET_JS;
-    script.onload = () => {
-      const drawScript = document.createElement('script');
-      drawScript.src = LEAFLET_DRAW_JS;
-      drawScript.onload = () => initLeaflet(window.L);
-      document.body.appendChild(drawScript);
-    };
-    document.body.appendChild(script);
-  };
-
-  const initLeaflet = (L) => {
-    setL(L);
-    setLeafletLoaded(true);
-  };
 
   useEffect(() => {
     if (!leafletLoaded || !L || !mapRef.current) return;
@@ -63,8 +78,11 @@ export default function BuildingMap({ center, polygonCoordinates, onPolygonChang
       mapInstanceRef.current = null;
     }
 
+    const currentCenter = centerRef.current;
+    const currentPolygon = polygonRef.current;
+
     const map = L.map(mapRef.current, {
-      center: center ? [center[0], center[1]] : [6.988, 3.902],
+      center: currentCenter ? [currentCenter[0], currentCenter[1]] : [6.988, 3.902],
       zoom: 17,
       attributionControl: false,
     });
@@ -75,15 +93,14 @@ export default function BuildingMap({ center, polygonCoordinates, onPolygonChang
 
     const drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
-    drawnItemsRef.current = drawnItems;
 
-    if (polygonCoordinates && polygonCoordinates.length >= 3) {
-      const latLngs = polygonCoordinates.map(([lng, lat]) => [lat, lng]);
+    if (currentPolygon && currentPolygon.length >= 3) {
+      const latLngs = currentPolygon.map(([lng, lat]) => [lat, lng]);
       const polygon = L.polygon(latLngs, { color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.2, weight: 2 });
       drawnItems.addLayer(polygon);
       map.fitBounds(polygon.getBounds().pad(0.1));
-    } else if (center) {
-      markerRef.current = L.circleMarker([center[0], center[1]], {
+    } else if (currentCenter) {
+      L.circleMarker([currentCenter[0], currentCenter[1]], {
         radius: 8,
         color: '#ef4444',
         fillColor: '#ef4444',
@@ -105,20 +122,19 @@ export default function BuildingMap({ center, polygonCoordinates, onPolygonChang
         },
       });
       map.addControl(drawControl);
-      drawControlRef.current = drawControl;
 
       map.on(L.Draw.Event.CREATED, (event) => {
         drawnItems.clearLayers();
         drawnItems.addLayer(event.layer);
-        extractPolygon(event.layer, onPolygonChange);
+        extractPolygon(event.layer, onPolygonChangeRef.current);
       });
 
       map.on(L.Draw.Event.EDITED, () => {
-        drawnItems.eachLayer((layer) => extractPolygon(layer, onPolygonChange));
+        drawnItems.eachLayer((layer) => extractPolygon(layer, onPolygonChangeRef.current));
       });
 
       map.on(L.Draw.Event.DELETED, () => {
-        if (onPolygonChange) onPolygonChange(null);
+        if (onPolygonChangeRef.current) onPolygonChangeRef.current(null);
       });
     }
 
@@ -130,15 +146,7 @@ export default function BuildingMap({ center, polygonCoordinates, onPolygonChang
         mapInstanceRef.current = null;
       }
     };
-  }, [leafletLoaded, L, center && center[0], center && center[1], readOnly]);
-
-  const extractPolygon = (layer, callback) => {
-    if (!callback) return;
-    const latLngs = layer.getLatLngs();
-    if (latLngs.length === 0) return;
-    const coords = latLngs[0].map((ll) => [ll.lng, ll.lat]);
-    callback(coords);
-  };
+  }, [leafletLoaded, L, readOnly, extractPolygon]);
 
   return (
     <div className="building-map-wrapper">
