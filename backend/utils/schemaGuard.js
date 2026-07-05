@@ -17,7 +17,10 @@ const ensureNullable = async (queryInterface, tableName, columnName) => {
     return false;
   }
 
-  await queryInterface.changeColumn(tableName, columnName, { allowNull: true });
+  await queryInterface.changeColumn(tableName, columnName, {
+    type: col.type,
+    allowNull: true,
+  });
   return true;
 };
 
