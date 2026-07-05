@@ -1066,13 +1066,14 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
             }
 
             setScannerError('');
-            setScannerStatus('Verifying...');
+            setScannerStatus('Getting fresh GPS...');
             const freshLocation = await getVerifiedLocation();
             if (!freshLocation.success) {
               setScannerError(freshLocation.error);
               scanHandledRef.current = false;
               return;
             }
+            setScannerStatus('Submitting attendance...');
             await stopScanner();
             const result = await onDetectedRef.current(payload.sessionKey, 'qr', freshLocation);
             if (result?.success) {
@@ -1081,14 +1082,13 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
               onCloseRef.current();
               return;
             }
+            scanHandledRef.current = false;
             setScannerError(result?.message || 'Attendance could not be marked after scanning.');
           } catch (err) {
+            scanHandledRef.current = false;
             setScannerError(err?.message || 'An error occurred while marking attendance.');
           } finally {
             setScannerStatus('');
-            if (!cancelledRef.current) {
-              onCloseRef.current();
-            }
           }
         },
         () => {}
