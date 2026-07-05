@@ -1045,10 +1045,11 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
       cleanupRef.current = async () => {
         if (scannerCleared) return;
         scannerCleared = true;
-        if (scanner.isScanning) {
-          await scanner.stop().catch(() => null);
+        try {
+          await scanner.stop();
+        } catch {
+          // scanner already stopped or never started
         }
-        await scanner.clear().catch(() => null);
       };
 
       scanner.start(
