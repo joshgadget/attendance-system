@@ -1572,13 +1572,13 @@ const Dashboard = () => {
     const detail = response.data.data;
     setSessionDetail(detail);
 
-    const qrContent = detail?.qrPayload || detail?.qrToken || detail?.sessionKey;
+    const qrContent = detail?.sessionKey;
     if (qrContent) {
       const dataUrl = await QRCode.toDataURL(qrContent, {
         width: 420,
-        margin: 1,
-        errorCorrectionLevel: 'L',
-        color: { dark: '#0f172a', light: '#ffffff' },
+        margin: 2,
+        errorCorrectionLevel: 'H',
+        color: { dark: '#000000', light: '#ffffff' },
       });
       setQrDataUrl(dataUrl);
     }

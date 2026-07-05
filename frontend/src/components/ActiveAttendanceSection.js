@@ -71,8 +71,8 @@ export default function ActiveAttendanceSection({ sessions, onRefresh, onCloseSe
       const res = await api.get(`/attendance/sessions/${session.id}`);
       const detail = res.data.data;
       setSessionDetails((prev) => ({ ...prev, [session.id]: detail }));
-      const qrContent = detail?.qrPayload || detail?.qrToken || session.sessionKey;
-      QRCode.toDataURL(qrContent, { width: 200, margin: 1, errorCorrectionLevel: 'L', color: { dark: '#0f172a', light: '#ffffff' } })
+      const qrContent = session.sessionKey;
+      QRCode.toDataURL(qrContent, { width: 280, margin: 2, errorCorrectionLevel: 'H', color: { dark: '#000000', light: '#ffffff' } })
         .then((url) => setQrUrls((prev) => ({ ...prev, [session.id]: url })))
         .catch(() => {});
     } catch { /* ignore */ }
@@ -246,9 +246,9 @@ export default function ActiveAttendanceSection({ sessions, onRefresh, onCloseSe
             <div className="mt-5 flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-3">
                 {qrUrls[session.id] ? (
-                  <img src={qrUrls[session.id]} alt="QR" className="h-20 w-20 rounded-xl border border-slate-200" />
+                  <img src={qrUrls[session.id]} alt="QR" className="h-28 w-28 rounded-xl border border-slate-200" />
                 ) : (
-                  <div className="flex h-20 w-20 items-center justify-center rounded-xl border border-slate-200 bg-slate-50">
+                  <div className="flex h-28 w-28 items-center justify-center rounded-xl border border-slate-200 bg-slate-50">
                     <svg className="h-6 w-6 text-slate-400" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" /><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 14.625v3.75m0-3.75h3.75m-3.75 0h-3.75" /></svg>
                   </div>
                 )}
