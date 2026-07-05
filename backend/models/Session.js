@@ -64,31 +64,6 @@ const Session = sequelize.define('Session', {
     type: DataTypes.INTEGER,
     allowNull: true
   },
-  polygonCoordinates: {
-    type: DataTypes.TEXT,
-    allowNull: true,
-    get() {
-      const raw = this.getDataValue('polygonCoordinates');
-      if (!raw) return null;
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return null;
-      }
-    },
-    set(value) {
-      if (value && Array.isArray(value)) {
-        this.setDataValue('polygonCoordinates', JSON.stringify(value));
-      } else {
-        this.setDataValue('polygonCoordinates', null);
-      }
-    },
-  },
-  geofenceToleranceMeters: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    defaultValue: 10,
-  },
   lecturerLatitude: {
     type: DataTypes.DECIMAL(10, 7),
     allowNull: true,
