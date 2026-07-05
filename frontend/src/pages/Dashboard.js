@@ -1056,15 +1056,15 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
         { fps: 10, qrbox: 220 },
         async (decodedText) => {
           if (cancelledRef.current || scanHandledRef.current) return;
-          scanHandledRef.current = true;
-          const payload = extractAttendancePayload(decodedText);
-          if (!payload.sessionKey) {
-            scanHandledRef.current = false;
-            setScannerError('This QR code does not belong to a valid attendance session.');
-            return;
-          }
-
           try {
+            scanHandledRef.current = true;
+            const payload = extractAttendancePayload(decodedText);
+            if (!payload.sessionKey) {
+              scanHandledRef.current = false;
+              setScannerError('This QR code does not belong to a valid attendance session.');
+              return;
+            }
+
             setScannerError('');
             setScannerStatus('Verifying...');
             const freshLocation = await getVerifiedLocation();
@@ -1081,7 +1081,9 @@ const QrScannerPanel = ({ isOpen, onClose, onDetected }) => {
               onCloseRef.current();
               return;
             }
-            setScannerError(result?.message || 'Attendance could not be marked after scanning. Review the message above and try again.');
+            setScannerError(result?.message || 'Attendance could not be marked after scanning.');
+          } catch (err) {
+            setScannerError(err?.message || 'An error occurred while marking attendance.');
           } finally {
             setScannerStatus('');
             if (!cancelledRef.current) {
