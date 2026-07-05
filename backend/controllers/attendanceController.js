@@ -462,7 +462,7 @@ exports.markAttendance = async (req, res) => {
       });
     }
 
-    if (parsedAccuracy !== null && (Number.isNaN(parsedAccuracy) || parsedAccuracy <= 0 || parsedAccuracy > 100)) {
+    if (parsedAccuracy !== null && (Number.isNaN(parsedAccuracy) || parsedAccuracy < 0 || parsedAccuracy > 100)) {
       return res.status(403).json({
         success: false,
         message: `Your GPS accuracy is too low${Number.isNaN(parsedAccuracy) ? '' : ` (${Math.round(parsedAccuracy)}m)`}. Move to an open area and try again.`,
