@@ -52,7 +52,7 @@ import { logout } from '../redux/slices/authSlice';
 import { useTheme } from '../theme/ThemeContext';
 import BuildingMap from '../components/BuildingMap';
 import ActiveAttendanceSection from '../components/ActiveAttendanceSection';
-import { getVerifiedLocation, getSampledLocation } from '../utils/location';
+import { ProgressiveLocationService, getVerifiedLocation, getSampledLocation, LocationErrorMessage, LOCATION_PROGRESS, LOCATION_PROGRESS_LABELS } from '../utils/location';
 import './dashboard-theme.css';
 
 const initialUserForm = { firstName: '', lastName: '', email: '', password: '', role: 'student', department: '', faculty: '', program: '', campus: '', matricNumber: '' };
@@ -1338,6 +1338,10 @@ const Dashboard = () => {
   const [createWizardForm, setCreateWizardForm] = useState({ courseId: '', durationMinutes: '120', radius: '35' });
   const [wizardLocation, setWizardLocation] = useState(null);
   const [wizardLocationLoading, setWizardLocationLoading] = useState(false);
+  const [wizardLocationProgress, setWizardLocationProgress] = useState(null);
+  const [wizardLocationError, setWizardLocationError] = useState(null);
+  const [wizardLocationAccuracyWarning, setWizardLocationAccuracyWarning] = useState(null);
+  const locationServiceCleanupRef = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [liveNotification, setLiveNotification] = useState(null);
@@ -1587,9 +1591,22 @@ const Dashboard = () => {
     };
   }, [deliverLiveNotification, queueDashboardRefresh, user?.id]);
 
+  useEffect(() => {
+    if (activeTab !== 'create-session') {
+      if (locationServiceCleanupRef.current) {
+        locationServiceCleanupRef.current();
+        locationServiceCleanupRef.current = null;
+      }
+    }
+  }, [activeTab]);
+
   useEffect(() => () => {
     if (refreshTimerRef.current) {
       window.clearTimeout(refreshTimerRef.current);
+    }
+    if (locationServiceCleanupRef.current) {
+      locationServiceCleanupRef.current();
+      locationServiceCleanupRef.current = null;
     }
   }, []);
 
@@ -2707,20 +2724,40 @@ const Dashboard = () => {
     }
   };
 
-  const handleCaptureLocation = async () => {
-    setWizardLocationLoading(true);
-    try {
-      const result = await getVerifiedLocation();
-      if (result.success) {
-        setWizardLocation(result);
-      } else {
-        setMessage('', result.error);
-      }
-    } catch {
-      setMessage('', 'Could not capture location.');
-    } finally {
-      setWizardLocationLoading(false);
+  const handleCaptureLocation = () => {
+    if (locationServiceCleanupRef.current) {
+      locationServiceCleanupRef.current();
+      locationServiceCleanupRef.current = null;
     }
+    setWizardLocationLoading(true);
+    setWizardLocation(null);
+    setWizardLocationError(null);
+    setWizardLocationAccuracyWarning(null);
+    setWizardLocationProgress(LOCATION_PROGRESS.CHECKING_PERMISSION);
+    setMessage();
+
+    const cleanup = ProgressiveLocationService.start({
+      onProgress: (step) => {
+        setWizardLocationProgress(step);
+      },
+      onSuccess: (location) => {
+        setWizardLocation(location);
+        setWizardLocationLoading(false);
+        setWizardLocationProgress(LOCATION_PROGRESS.VERIFIED);
+        if (location.accuracyWarning) {
+          setWizardLocationAccuracyWarning(location.accuracyWarning);
+        }
+        setMessage(`Location detected with an accuracy of approximately ${Math.round(location.accuracy)} metres.`);
+      },
+      onError: (errorMessage) => {
+        setWizardLocationLoading(false);
+        setWizardLocationProgress(null);
+        setWizardLocationError(errorMessage);
+        setMessage('', errorMessage);
+      },
+      radius: createWizardForm.radius,
+    });
+    locationServiceCleanupRef.current = cleanup;
   };
 
   const handleWizardCreateSession = async () => {
@@ -2732,9 +2769,8 @@ const Dashboard = () => {
     try {
       setBusyAction('create-session');
       setMessage();
-      const freshLocation = await getVerifiedLocation();
-      if (!freshLocation.success) {
-        setMessage('', freshLocation.error);
+      if (!wizardLocation) {
+        setMessage('', 'Capture your location before creating the session.');
         setBusyAction('');
         return;
       }
@@ -2744,9 +2780,9 @@ const Dashboard = () => {
         startTime: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
         durationMinutes: createWizardForm.durationMinutes,
         attendanceRadiusMeters: Number(createWizardForm.radius),
-        lecturerLatitude: freshLocation.latitude,
-        lecturerLongitude: freshLocation.longitude,
-        lecturerLocationAccuracy: freshLocation.accuracy,
+        lecturerLatitude: wizardLocation.latitude,
+        lecturerLongitude: wizardLocation.longitude,
+        lecturerLocationAccuracy: wizardLocation.accuracy,
       };
       const response = await api.post('/attendance/sessions', payload);
       setCreateWizardForm({ courseId: '', durationMinutes: '120', radius: '35' });
@@ -4097,21 +4133,54 @@ const Dashboard = () => {
                   <div>
                     <label className="mb-3 block text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3: Your Location</label>
                     <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5">
-                      {wizardLocation ? (
+                      {wizardLocationLoading && wizardLocationProgress ? (
                         <div className="space-y-3">
-                          <div className="flex items-center gap-2 text-emerald-700"><CheckCircle2 className="h-5 w-5" /><span className="font-semibold">Location captured</span></div>
+                          <div className="flex items-center gap-2 text-blue-700">
+                            <LoaderCircle className="h-5 w-5 animate-spin" />
+                            <span className="font-semibold">{LOCATION_PROGRESS_LABELS[wizardLocationProgress]}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-2 rounded-full bg-slate-200 overflow-hidden">
+                              <div className={`h-full rounded-full bg-blue-600 transition-all duration-500 ${
+                                wizardLocationProgress === LOCATION_PROGRESS.CHECKING_PERMISSION ? 'w-1/4' :
+                                wizardLocationProgress === LOCATION_PROGRESS.REQUESTING_CACHED ? 'w-2/4' :
+                                wizardLocationProgress === LOCATION_PROGRESS.REQUESTING_FRESH ? 'w-3/4' :
+                                wizardLocationProgress === LOCATION_PROGRESS.IMPROVING_ACCURACY ? 'w-4/5' :
+                                'w-full'
+                              }`} />
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-500">This may take a moment. Keep GPS enabled.</p>
+                        </div>
+                      ) : wizardLocation ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 text-emerald-700"><CheckCircle2 className="h-5 w-5" /><span className="font-semibold">Location verified</span></div>
                           <div className="grid grid-cols-2 gap-4 text-sm">
                             <div><p className="text-slate-500">Latitude</p><p className="font-mono font-semibold text-slate-900">{wizardLocation.latitude.toFixed(6)}</p></div>
                             <div><p className="text-slate-500">Longitude</p><p className="font-mono font-semibold text-slate-900">{wizardLocation.longitude.toFixed(6)}</p></div>
                             <div><p className="text-slate-500">Accuracy</p><p className="font-mono font-semibold text-slate-900">{Math.round(wizardLocation.accuracy)}m</p></div>
                             <div><p className="text-slate-500">Timestamp</p><p className="text-slate-900">{new Date(wizardLocation.timestamp).toLocaleTimeString()}</p></div>
                           </div>
+                          {wizardLocationAccuracyWarning && (
+                            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                              <span>{wizardLocationAccuracyWarning}</span>
+                            </div>
+                          )}
                           <button type="button" onClick={handleCaptureLocation} disabled={wizardLocationLoading} className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60">{wizardLocationLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}Refresh location</button>
+                        </div>
+                      ) : wizardLocationError ? (
+                        <div className="space-y-4">
+                          <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                            <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                            <span>{wizardLocationError}</span>
+                          </div>
+                          <button type="button" onClick={handleCaptureLocation} disabled={wizardLocationLoading} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{wizardLocationLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}Retry Location</button>
                         </div>
                       ) : (
                         <div className="space-y-3">
                           <p className="text-sm text-slate-600">Your GPS location will become the centre of the attendance radius. Make sure you are in the classroom.</p>
-                          <button type="button" onClick={handleCaptureLocation} disabled={wizardLocationLoading} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{wizardLocationLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}Capture my location</button>
+                          <button type="button" onClick={handleCaptureLocation} disabled={wizardLocationLoading} className="inline-flex items-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60">{wizardLocationLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}Verify My Location</button>
                         </div>
                       )}
                     </div>
